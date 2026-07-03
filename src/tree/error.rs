@@ -1,0 +1,57 @@
+//! # Errors
+//!
+//! The parsing errors.
+//!
+//! [`IcalParseError`] is the single error type returned by `IcalCst::parse`
+//! and the line tokeniser it drives. Each variant pinpoints one structural
+//! failure (a missing CRLF, a missing colon, an absent or malformed envelope)
+//! and carries the offending text for context. Parsing is the only fallible
+//! bridge in the crate; decoding, encoding and serializing never fail, so this
+//! is the whole error surface.
+
+use core::{error, fmt};
+
+use alloc::string::String;
+
+/// An error raised while parsing iCalendar text.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum IcalParseError {
+    /// A line carried no CR?LF separator.
+    MissingCrlf(String),
+    /// A content line carried no colon separating the name from the value.
+    MissingPropertyColon(String),
+    /// A content line's name or parameters were not valid UTF-8; only a value
+    /// may carry a foreign charset.
+    NonUtf8Header(String),
+    /// A card did not open with a BEGIN:VCALENDAR line.
+    ExpectedBegin(String),
+    /// A card was left open by a missing END:VCALENDAR line.
+    MissingEnd(String),
+}
+
+impl fmt::Display for IcalParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MissingCrlf(data) => {
+                write!(f, "Content is missing a line separator: {data}")
+            }
+            Self::MissingPropertyColon(data) => {
+                write!(f, "Content line is missing a value separator: {data}")
+            }
+            Self::NonUtf8Header(data) => {
+                write!(
+                    f,
+                    "Content line name or parameters are not valid UTF-8: {data}"
+                )
+            }
+            Self::ExpectedBegin(data) => {
+                write!(f, "Card does not open with a BEGIN line: {data}")
+            }
+            Self::MissingEnd(data) => {
+                write!(f, "Card is left open by a missing END line: {data}")
+            }
+        }
+    }
+}
+
+impl error::Error for IcalParseError {}

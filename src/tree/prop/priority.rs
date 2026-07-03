@@ -1,0 +1,40 @@
+//! # PRIORITY lens
+//!
+//! The `PRIORITY` property lens.
+
+use crate::{
+    prop::IcalPropKind,
+    tree::{
+        line::IcalLine,
+        prop::{IcalPropLens, IcalPropSpec},
+        value::IcalValueCursor,
+    },
+    value::IcalValueKind,
+    value::integer::IcalInteger,
+    version::IcalVersion,
+};
+
+/// The `PRIORITY` property lens.
+#[allow(non_camel_case_types)]
+pub struct PRIORITY;
+
+impl IcalPropLens for PRIORITY {
+    type Target<'v> = IcalInteger<'v>;
+
+    type Cursor<'c, 'a>
+        = IcalValueCursor<'c, 'a>
+    where
+        'a: 'c;
+
+    fn cursor<'c, 'a>(line: &'c mut IcalLine<'a>) -> IcalValueCursor<'c, 'a> {
+        IcalValueCursor { line }
+    }
+}
+
+impl IcalPropSpec for PRIORITY {
+    const KIND: IcalPropKind = IcalPropKind::Priority;
+
+    fn allowed_values(_version: IcalVersion) -> &'static [IcalValueKind] {
+        &[IcalValueKind::Integer]
+    }
+}

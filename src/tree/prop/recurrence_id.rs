@@ -1,0 +1,40 @@
+//! # RECURRENCE_ID lens
+//!
+//! The `RECURRENCE_ID` property lens.
+
+use crate::{
+    prop::IcalPropKind,
+    tree::{
+        line::IcalLine,
+        prop::{IcalPropLens, IcalPropSpec},
+        value::IcalValueCursor,
+    },
+    value::IcalValueKind,
+    value::datetime::IcalDateTime,
+    version::IcalVersion,
+};
+
+/// The `RECURRENCE_ID` property lens.
+#[allow(non_camel_case_types)]
+pub struct RECURRENCE_ID;
+
+impl IcalPropLens for RECURRENCE_ID {
+    type Target<'v> = IcalDateTime<'v>;
+
+    type Cursor<'c, 'a>
+        = IcalValueCursor<'c, 'a>
+    where
+        'a: 'c;
+
+    fn cursor<'c, 'a>(line: &'c mut IcalLine<'a>) -> IcalValueCursor<'c, 'a> {
+        IcalValueCursor { line }
+    }
+}
+
+impl IcalPropSpec for RECURRENCE_ID {
+    const KIND: IcalPropKind = IcalPropKind::RecurrenceId;
+
+    fn allowed_values(_version: IcalVersion) -> &'static [IcalValueKind] {
+        &[IcalValueKind::DateTime]
+    }
+}
