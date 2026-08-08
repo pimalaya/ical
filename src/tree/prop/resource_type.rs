@@ -10,6 +10,7 @@ use crate::{
         value::IcalValueCursor,
     },
     value::text::IcalText,
+    version::IcalVersion,
 };
 
 /// The `RESOURCE_TYPE` property lens.
@@ -31,4 +32,8 @@ impl IcalPropLens for RESOURCE_TYPE {
 
 impl IcalPropSpec for RESOURCE_TYPE {
     const KIND: IcalPropKind = IcalPropKind::ResourceType;
+
+    fn allowed_versions() -> &'static [IcalVersion] {
+        &[IcalVersion::V2_0]
+    }
 }

@@ -6,7 +6,7 @@ use crate::{
     prop::IcalPropKind,
     tree::{
         line::IcalLine,
-        prop::{IcalPropLens, IcalPropSpec},
+        prop::{IcalPropCardinality, IcalPropLens, IcalPropSpec},
         value::IcalValueCursor,
     },
     value::IcalValueKind,
@@ -33,6 +33,10 @@ impl IcalPropLens for LAST_MODIFIED {
 
 impl IcalPropSpec for LAST_MODIFIED {
     const KIND: IcalPropKind = IcalPropKind::LastModified;
+
+    fn cardinality(_version: IcalVersion) -> IcalPropCardinality {
+        IcalPropCardinality::AtMostOne
+    }
 
     fn allowed_values(_version: IcalVersion) -> &'static [IcalValueKind] {
         &[IcalValueKind::DateTime]

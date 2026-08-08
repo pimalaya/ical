@@ -6,10 +6,11 @@ use crate::{
     prop::IcalPropKind,
     tree::{
         line::IcalLine,
-        prop::{IcalPropLens, IcalPropSpec},
+        prop::{IcalPropCardinality, IcalPropLens, IcalPropSpec},
         value::IcalValueCursor,
     },
     value::text::IcalText,
+    version::IcalVersion,
 };
 
 /// The `TZID` property lens.
@@ -31,4 +32,12 @@ impl IcalPropLens for TZID {
 
 impl IcalPropSpec for TZID {
     const KIND: IcalPropKind = IcalPropKind::TzId;
+
+    fn allowed_versions() -> &'static [IcalVersion] {
+        &[IcalVersion::V2_0]
+    }
+
+    fn cardinality(_version: IcalVersion) -> IcalPropCardinality {
+        IcalPropCardinality::AtMostOne
+    }
 }

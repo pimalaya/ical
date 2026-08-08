@@ -23,6 +23,8 @@ pub mod error;
 pub mod ical;
 pub mod leaf;
 pub mod line;
+pub mod merge;
 pub mod param;
 pub mod prop;
 pub mod value;
+pub mod wire;

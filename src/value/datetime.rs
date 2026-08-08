@@ -15,7 +15,7 @@
 //! data, no escaping; the owning property's wire name lives on
 //! [`crate::prop::IcalProp::name`].
 
-use alloc::{borrow::Cow, string::String};
+use alloc::{borrow::Cow, string::String, vec::Vec};
 
 /// A decoded date value (`YYYYMMDD`), kept as its raw text.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -36,6 +36,23 @@ impl From<String> for IcalDate<'_> {
 impl<'a> From<Cow<'a, str>> for IcalDate<'a> {
     fn from(value: Cow<'a, str>) -> Self {
         Self(value)
+    }
+}
+
+/// A decoded comma-separated list of date-ish values, each kept as its raw
+/// text.
+///
+/// Backs `RDATE` and `EXDATE`, which RFC 5545 3.8.5.1 and 3.8.5.2 define as
+/// lists rather than single values. An item is a `DATE`, a `DATE-TIME` or (for
+/// `RDATE`) a `PERIOD`, whichever the property's `VALUE` parameter declares,
+/// and it is kept exactly as written, so a period item keeps its `start/end`
+/// or `start/duration` form.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct IcalDateTimeList<'a>(pub Vec<Cow<'a, str>>);
+
+impl<'a> From<Vec<Cow<'a, str>>> for IcalDateTimeList<'a> {
+    fn from(values: Vec<Cow<'a, str>>) -> Self {
+        Self(values)
     }
 }
 

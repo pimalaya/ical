@@ -6,10 +6,11 @@ use crate::{
     prop::IcalPropKind,
     tree::{
         line::IcalLine,
-        prop::{IcalPropLens, IcalPropSpec},
+        prop::{IcalPropCardinality, IcalPropLens, IcalPropSpec},
         value::IcalValueCursor,
     },
     value::text::IcalText,
+    version::IcalVersion,
 };
 
 /// The `STATUS` property lens.
@@ -31,4 +32,8 @@ impl IcalPropLens for STATUS {
 
 impl IcalPropSpec for STATUS {
     const KIND: IcalPropKind = IcalPropKind::Status;
+
+    fn cardinality(_version: IcalVersion) -> IcalPropCardinality {
+        IcalPropCardinality::AtMostOne
+    }
 }

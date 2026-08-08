@@ -143,7 +143,7 @@ impl<'a> IcalValueNode<'a> {
     /// value, not a list separator (so they must not be truncated).
     pub fn decode_joined_at(&self, i: usize) -> Cow<'_, str> {
         match self.component_at(i) {
-            // The whole component slice already has the commas in place, so
+            // NOTE: The whole component slice already has the commas in place, so
             // unescaping it verbatim keeps them literal.
             Some(Component::Raw(bytes)) => unescape_with(bytes, self.escaper),
             Some(Component::Split(leaves)) => {

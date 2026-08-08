@@ -10,6 +10,7 @@ use crate::{
         value::IcalValueCursor,
     },
     value::text::IcalText,
+    version::IcalVersion,
 };
 
 /// The `STRUCTURED_DATA` property lens.
@@ -31,4 +32,8 @@ impl IcalPropLens for STRUCTURED_DATA {
 
 impl IcalPropSpec for STRUCTURED_DATA {
     const KIND: IcalPropKind = IcalPropKind::StructuredData;
+
+    fn allowed_versions() -> &'static [IcalVersion] {
+        &[IcalVersion::V2_0]
+    }
 }

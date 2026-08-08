@@ -6,7 +6,7 @@ use crate::{
     prop::IcalPropKind,
     tree::{
         line::IcalLine,
-        prop::{IcalPropLens, IcalPropSpec},
+        prop::{IcalPropCardinality, IcalPropLens, IcalPropSpec},
         value::IcalValueCursor,
     },
     value::IcalValueKind,
@@ -33,6 +33,14 @@ impl IcalPropLens for PERCENT_COMPLETE {
 
 impl IcalPropSpec for PERCENT_COMPLETE {
     const KIND: IcalPropKind = IcalPropKind::PercentComplete;
+
+    fn allowed_versions() -> &'static [IcalVersion] {
+        &[IcalVersion::V2_0]
+    }
+
+    fn cardinality(_version: IcalVersion) -> IcalPropCardinality {
+        IcalPropCardinality::AtMostOne
+    }
 
     fn allowed_values(_version: IcalVersion) -> &'static [IcalValueKind] {
         &[IcalValueKind::Integer]

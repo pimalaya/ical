@@ -10,6 +10,7 @@ use crate::{
         value::IcalValueCursor,
     },
     value::text::IcalText,
+    version::IcalVersion,
 };
 
 /// The `NAME` property lens.
@@ -31,4 +32,8 @@ impl IcalPropLens for NAME {
 
 impl IcalPropSpec for NAME {
     const KIND: IcalPropKind = IcalPropKind::Name;
+
+    fn allowed_versions() -> &'static [IcalVersion] {
+        &[IcalVersion::V2_0]
+    }
 }

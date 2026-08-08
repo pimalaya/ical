@@ -44,7 +44,7 @@ use crate::value::{
     binary::IcalBinary,
     boolean::IcalBoolean,
     cal_address::IcalCalAddress,
-    datetime::{IcalDate, IcalDateTime, IcalTime},
+    datetime::{IcalDate, IcalDateTime, IcalDateTimeList, IcalTime},
     duration::IcalDuration,
     float::IcalFloat,
     geo::IcalGeo,
@@ -88,6 +88,9 @@ pub enum IcalValueKind {
     Date,
     /// A date with time (RFC 5545 3.3.5).
     DateTime,
+    /// A comma-separated list of dates, date-times or periods, as `RDATE` and
+    /// `EXDATE` carry (RFC 5545 3.8.5.1, 3.8.5.2).
+    DateTimeList,
     /// A duration (RFC 5545 3.3.6).
     Duration,
     /// A floating-point number (RFC 5545 3.3.7).
@@ -114,6 +117,32 @@ pub enum IcalValueKind {
     UtcOffset,
 }
 
+impl IcalValueKind {
+    /// Every known value kind, for iterating the closed vocabulary, as
+    /// [`IcalPropKind::ALL`](crate::prop::IcalPropKind::ALL) does for
+    /// properties.
+    pub const ALL: [Self; 18] = [
+        Self::Binary,
+        Self::Boolean,
+        Self::CalAddress,
+        Self::Date,
+        Self::DateTime,
+        Self::DateTimeList,
+        Self::Duration,
+        Self::Float,
+        Self::Geo,
+        Self::Integer,
+        Self::Period,
+        Self::Recur,
+        Self::RequestStatus,
+        Self::Text,
+        Self::TextList,
+        Self::Time,
+        Self::Uri,
+        Self::UtcOffset,
+    ];
+}
+
 impl str::FromStr for IcalValueKind {
     type Err = ParseIcalValueKindError;
 
@@ -127,6 +156,7 @@ impl str::FromStr for IcalValueKind {
             kind if kind.eq_ignore_ascii_case("CAL-ADDRESS") => Ok(Self::CalAddress),
             kind if kind.eq_ignore_ascii_case("DATE") => Ok(Self::Date),
             kind if kind.eq_ignore_ascii_case("DATE-TIME") => Ok(Self::DateTime),
+            kind if kind.eq_ignore_ascii_case("DATE-TIME-LIST") => Ok(Self::DateTimeList),
             kind if kind.eq_ignore_ascii_case("DURATION") => Ok(Self::Duration),
             kind if kind.eq_ignore_ascii_case("FLOAT") => Ok(Self::Float),
             kind if kind.eq_ignore_ascii_case("GEO") => Ok(Self::Geo),
@@ -154,6 +184,7 @@ impl ops::Deref for IcalValueKind {
             Self::CalAddress => "CAL-ADDRESS",
             Self::Date => "DATE",
             Self::DateTime => "DATE-TIME",
+            Self::DateTimeList => "DATE-TIME-LIST",
             Self::Duration => "DURATION",
             Self::Float => "FLOAT",
             Self::Geo => "GEO",
@@ -184,6 +215,8 @@ pub enum IcalValue<'a> {
     Date(IcalDate<'a>),
     /// A date with time (`DTSTAMP`, `DTSTART`, ...).
     DateTime(IcalDateTime<'a>),
+    /// A list of dates, date-times or periods (`RDATE`, `EXDATE`).
+    DateTimeList(IcalDateTimeList<'a>),
     /// A duration (`DURATION`, `TRIGGER`).
     Duration(IcalDuration<'a>),
     /// A floating-point number.
@@ -224,6 +257,7 @@ impl IcalValue<'_> {
             Self::CalAddress(_) => Some(IcalValueKind::CalAddress),
             Self::Date(_) => Some(IcalValueKind::Date),
             Self::DateTime(_) => Some(IcalValueKind::DateTime),
+            Self::DateTimeList(_) => Some(IcalValueKind::DateTimeList),
             Self::Duration(_) => Some(IcalValueKind::Duration),
             Self::Float(_) => Some(IcalValueKind::Float),
             Self::Geo(_) => Some(IcalValueKind::Geo),
@@ -239,6 +273,65 @@ impl IcalValue<'_> {
             Self::Unknown(_) => None,
         }
     }
+
+    /// The same value with every borrow replaced by an allocation, so it
+    /// outlives the bytes it was decoded from.
+    ///
+    /// The counterpart of [`Cow::into_owned`](alloc::borrow::Cow::into_owned),
+    /// for a whole value: a calendar read from a buffer that is about to go
+    /// away, or rebuilt from data that was never one line to begin with, needs
+    /// exactly this.
+    pub fn into_owned(self) -> IcalValue<'static> {
+        match self {
+            Self::Binary(IcalBinary::Uri(value)) => {
+                IcalValue::Binary(IcalBinary::Uri(owned(value)))
+            }
+            Self::Binary(IcalBinary::Base64(value)) => {
+                IcalValue::Binary(IcalBinary::Base64(owned(value)))
+            }
+            Self::Boolean(value) => IcalValue::Boolean(IcalBoolean(owned(value.0))),
+            Self::CalAddress(value) => IcalValue::CalAddress(IcalCalAddress(owned(value.0))),
+            Self::Date(value) => IcalValue::Date(IcalDate(owned(value.0))),
+            Self::DateTime(value) => IcalValue::DateTime(IcalDateTime(owned(value.0))),
+            Self::DateTimeList(value) => {
+                IcalValue::DateTimeList(IcalDateTimeList(value.0.into_iter().map(owned).collect()))
+            }
+            Self::Duration(value) => IcalValue::Duration(IcalDuration(owned(value.0))),
+            Self::Float(value) => IcalValue::Float(IcalFloat(owned(value.0))),
+            Self::Geo(value) => IcalValue::Geo(IcalGeo {
+                latitude: owned(value.latitude),
+                longitude: owned(value.longitude),
+            }),
+            Self::Integer(value) => IcalValue::Integer(IcalInteger(owned(value.0))),
+            Self::Period(value) => IcalValue::Period(IcalPeriod(owned(value.0))),
+            Self::Recur(value) => IcalValue::Recur(IcalRecur(owned(value.0))),
+            Self::RequestStatus(value) => IcalValue::RequestStatus(IcalRequestStatus {
+                code: owned(value.code),
+                description: owned(value.description),
+                extra: owned(value.extra),
+            }),
+            Self::Text(value) => IcalValue::Text(IcalText(owned(value.0))),
+            Self::TextList(value) => {
+                IcalValue::TextList(IcalTextList(value.0.into_iter().map(owned).collect()))
+            }
+            Self::Time(value) => IcalValue::Time(IcalTime(owned(value.0))),
+            Self::Uri(value) => IcalValue::Uri(IcalUri(owned(value.0))),
+            Self::UtcOffset(value) => IcalValue::UtcOffset(IcalUtcOffset(owned(value.0))),
+            Self::Unknown(value) => IcalValue::Unknown(IcalUnknownValue {
+                components: value
+                    .components
+                    .into_iter()
+                    .map(|component| component.into_iter().map(owned).collect())
+                    .collect(),
+            }),
+        }
+    }
+}
+
+/// One borrowed string as an owned one, the step every `into_owned` in the
+/// model is made of.
+pub(crate) fn owned(text: Cow<'_, str>) -> Cow<'static, str> {
+    Cow::Owned(text.into_owned())
 }
 
 /// An undecoded property value: its unescaped components, in source order. The

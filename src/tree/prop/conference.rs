@@ -34,6 +34,10 @@ impl IcalPropLens for CONFERENCE {
 impl IcalPropSpec for CONFERENCE {
     const KIND: IcalPropKind = IcalPropKind::Conference;
 
+    fn allowed_versions() -> &'static [IcalVersion] {
+        &[IcalVersion::V2_0]
+    }
+
     fn allowed_values(_version: IcalVersion) -> &'static [IcalValueKind] {
         &[IcalValueKind::Uri]
     }

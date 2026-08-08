@@ -26,7 +26,10 @@ use alloc::{
     vec::Vec,
 };
 
-use crate::{param::IcalParam, value::IcalValue};
+use crate::{
+    param::IcalParam,
+    value::{IcalValue, owned},
+};
 
 /// Parse iCalendar property kind error.
 #[derive(Debug)]
@@ -103,6 +106,30 @@ impl<'a> From<Cow<'a, str>> for IcalPropName<'a> {
 impl<'a> From<&'a str> for IcalPropName<'a> {
     fn from(name: &'a str) -> Self {
         Cow::Borrowed(name).into()
+    }
+}
+
+impl IcalPropName<'_> {
+    /// The same name with every borrow replaced by an allocation. See
+    /// [`IcalValue::into_owned`](crate::value::IcalValue::into_owned).
+    pub fn into_owned(self) -> IcalPropName<'static> {
+        match self {
+            Self::Kind(kind) => IcalPropName::Kind(kind),
+            Self::Unknown(name) => IcalPropName::Unknown(owned(name)),
+        }
+    }
+}
+
+impl IcalProp<'_> {
+    /// The same property with every borrow replaced by an allocation, so it
+    /// outlives the bytes it was decoded from. See
+    /// [`IcalValue::into_owned`](crate::value::IcalValue::into_owned).
+    pub fn into_owned(self) -> IcalProp<'static> {
+        IcalProp {
+            name: self.name.into_owned(),
+            params: self.params.into_iter().map(IcalParam::into_owned).collect(),
+            value: self.value.into_owned(),
+        }
     }
 }
 
@@ -227,6 +254,14 @@ pub enum IcalPropKind {
     LocationType,
     /// `STRUCTURED-DATA`: structured ancillary data (RFC 9073 6.6).
     StructuredData,
+    /// `LINK`: a typed link to a related resource (RFC 9253 8.1).
+    Link,
+    /// `REFID`: a reference identifier grouping components (RFC 9253 8.2).
+    Refid,
+    /// `CONCEPT`: a categorisation of a component (RFC 9253 8.3).
+    Concept,
+    /// `BUSYTYPE`: the busy state an availability window states (RFC 7953 3.2).
+    BusyType,
     /// `STYLED-DESCRIPTION`: rich-text description (RFC 9073 6.5).
     StyledDescription,
     /// `ACKNOWLEDGED`: alarm acknowledgement time (RFC 9074 6).
@@ -250,7 +285,7 @@ pub enum IcalPropKind {
 impl IcalPropKind {
     /// Every known property kind, for iterating the closed vocabulary (e.g. a
     /// validator checking which required properties are absent).
-    pub const ALL: [Self; 66] = [
+    pub const ALL: [Self; 70] = [
         Self::CalScale,
         Self::Method,
         Self::ProdId,
@@ -308,6 +343,10 @@ impl IcalPropKind {
         Self::CalendarAddress,
         Self::LocationType,
         Self::StructuredData,
+        Self::Link,
+        Self::Refid,
+        Self::Concept,
+        Self::BusyType,
         Self::StyledDescription,
         Self::Acknowledged,
         Self::Proximity,
@@ -383,6 +422,10 @@ impl str::FromStr for IcalPropKind {
             kind if kind.eq_ignore_ascii_case("CALENDAR-ADDRESS") => Self::CalendarAddress,
             kind if kind.eq_ignore_ascii_case("LOCATION-TYPE") => Self::LocationType,
             kind if kind.eq_ignore_ascii_case("STRUCTURED-DATA") => Self::StructuredData,
+            kind if kind.eq_ignore_ascii_case("LINK") => Self::Link,
+            kind if kind.eq_ignore_ascii_case("REFID") => Self::Refid,
+            kind if kind.eq_ignore_ascii_case("CONCEPT") => Self::Concept,
+            kind if kind.eq_ignore_ascii_case("BUSYTYPE") => Self::BusyType,
             kind if kind.eq_ignore_ascii_case("STYLED-DESCRIPTION") => Self::StyledDescription,
             kind if kind.eq_ignore_ascii_case("ACKNOWLEDGED") => Self::Acknowledged,
             kind if kind.eq_ignore_ascii_case("PROXIMITY") => Self::Proximity,
@@ -461,6 +504,10 @@ impl ops::Deref for IcalPropKind {
             Self::CalendarAddress => "CALENDAR-ADDRESS",
             Self::LocationType => "LOCATION-TYPE",
             Self::StructuredData => "STRUCTURED-DATA",
+            Self::Link => "LINK",
+            Self::Refid => "REFID",
+            Self::Concept => "CONCEPT",
+            Self::BusyType => "BUSYTYPE",
             Self::StyledDescription => "STYLED-DESCRIPTION",
             Self::Acknowledged => "ACKNOWLEDGED",
             Self::Proximity => "PROXIMITY",

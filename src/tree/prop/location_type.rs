@@ -10,6 +10,7 @@ use crate::{
         value::IcalValueCursor,
     },
     value::text::IcalText,
+    version::IcalVersion,
 };
 
 /// The `LOCATION_TYPE` property lens.
@@ -31,4 +32,8 @@ impl IcalPropLens for LOCATION_TYPE {
 
 impl IcalPropSpec for LOCATION_TYPE {
     const KIND: IcalPropKind = IcalPropKind::LocationType;
+
+    fn allowed_versions() -> &'static [IcalVersion] {
+        &[IcalVersion::V2_0]
+    }
 }

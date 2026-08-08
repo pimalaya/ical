@@ -6,7 +6,7 @@ use crate::{
     prop::IcalPropKind,
     tree::{
         line::IcalLine,
-        prop::{IcalPropLens, IcalPropSpec},
+        prop::{IcalPropCardinality, IcalPropLens, IcalPropSpec},
         value::IcalValueCursor,
     },
     value::IcalValueKind,
@@ -33,6 +33,10 @@ impl IcalPropLens for GEO {
 
 impl IcalPropSpec for GEO {
     const KIND: IcalPropKind = IcalPropKind::Geo;
+
+    fn cardinality(_version: IcalVersion) -> IcalPropCardinality {
+        IcalPropCardinality::AtMostOne
+    }
 
     fn allowed_values(_version: IcalVersion) -> &'static [IcalValueKind] {
         &[IcalValueKind::Geo]

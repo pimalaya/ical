@@ -10,6 +10,7 @@ use crate::{
         value::IcalValueCursor,
     },
     value::text::IcalText,
+    version::IcalVersion,
 };
 
 /// The `PARTICIPANT_TYPE` property lens.
@@ -31,4 +32,8 @@ impl IcalPropLens for PARTICIPANT_TYPE {
 
 impl IcalPropSpec for PARTICIPANT_TYPE {
     const KIND: IcalPropKind = IcalPropKind::ParticipantType;
+
+    fn allowed_versions() -> &'static [IcalVersion] {
+        &[IcalVersion::V2_0]
+    }
 }

@@ -33,3 +33,20 @@ pub struct Ical<'a> {
     /// ...), in source order.
     pub components: Vec<IcalComponent<'a>>,
 }
+
+impl Ical<'_> {
+    /// The same calendar with every borrow replaced by an allocation, so it
+    /// outlives the bytes it was decoded from. See
+    /// [`IcalValue::into_owned`](crate::value::IcalValue::into_owned).
+    pub fn into_owned(self) -> Ical<'static> {
+        Ical {
+            version: self.version,
+            props: self.props.into_iter().map(IcalProp::into_owned).collect(),
+            components: self
+                .components
+                .into_iter()
+                .map(IcalComponent::into_owned)
+                .collect(),
+        }
+    }
+}

@@ -10,6 +10,7 @@ use crate::{
         value::IcalValueCursor,
     },
     value::text::IcalText,
+    version::IcalVersion,
 };
 
 /// The `COMMENT` property lens.
@@ -31,4 +32,8 @@ impl IcalPropLens for COMMENT {
 
 impl IcalPropSpec for COMMENT {
     const KIND: IcalPropKind = IcalPropKind::Comment;
+
+    fn allowed_versions() -> &'static [IcalVersion] {
+        &[IcalVersion::V2_0]
+    }
 }

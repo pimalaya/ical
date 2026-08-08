@@ -24,6 +24,7 @@ impl IcalComponentSpec for VCALENDAR {
             IcalComponentKind::VJournal,
             IcalComponentKind::VFreeBusy,
             IcalComponentKind::VTimezone,
+            IcalComponentKind::VAvailability,
         ]
     }
 

@@ -23,7 +23,7 @@ use alloc::{
     vec::Vec,
 };
 
-use crate::prop::IcalProp;
+use crate::{prop::IcalProp, value::owned};
 
 /// Parse iCalendar component kind error.
 #[derive(Debug)]
@@ -94,6 +94,34 @@ impl<'a> From<&'a str> for IcalComponentName<'a> {
     }
 }
 
+impl IcalComponentName<'_> {
+    /// The same name with every borrow replaced by an allocation. See
+    /// [`IcalValue::into_owned`](crate::value::IcalValue::into_owned).
+    pub fn into_owned(self) -> IcalComponentName<'static> {
+        match self {
+            Self::Kind(kind) => IcalComponentName::Kind(kind),
+            Self::Unknown(name) => IcalComponentName::Unknown(owned(name)),
+        }
+    }
+}
+
+impl IcalComponent<'_> {
+    /// The same component, and everything nested in it, with every borrow
+    /// replaced by an allocation. See
+    /// [`IcalValue::into_owned`](crate::value::IcalValue::into_owned).
+    pub fn into_owned(self) -> IcalComponent<'static> {
+        IcalComponent {
+            name: self.name.into_owned(),
+            props: self.props.into_iter().map(IcalProp::into_owned).collect(),
+            components: self
+                .components
+                .into_iter()
+                .map(IcalComponent::into_owned)
+                .collect(),
+        }
+    }
+}
+
 /// The closed iCalendar component-name vocabulary, one fieldless variant per
 /// known component. An identity for dispatch and nesting rules; the
 /// open-vocabulary counterpart that also carries unknown names is
@@ -124,11 +152,15 @@ pub enum IcalComponentKind {
     VLocation,
     /// `VRESOURCE`: a resource (RFC 9073 7.3).
     VResource,
+    /// `VAVAILABILITY`: an availability window (RFC 7953 3.1).
+    VAvailability,
+    /// `AVAILABLE`: one available period of a `VAVAILABILITY` (RFC 7953 3.1).
+    Available,
 }
 
 impl IcalComponentKind {
     /// Every known component kind, for iterating the closed vocabulary.
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 14] = [
         Self::VCalendar,
         Self::VEvent,
         Self::VTodo,
@@ -141,6 +173,8 @@ impl IcalComponentKind {
         Self::Participant,
         Self::VLocation,
         Self::VResource,
+        Self::VAvailability,
+        Self::Available,
     ];
 }
 
@@ -162,6 +196,8 @@ impl str::FromStr for IcalComponentKind {
             kind if kind.eq_ignore_ascii_case("PARTICIPANT") => Self::Participant,
             kind if kind.eq_ignore_ascii_case("VLOCATION") => Self::VLocation,
             kind if kind.eq_ignore_ascii_case("VRESOURCE") => Self::VResource,
+            kind if kind.eq_ignore_ascii_case("VAVAILABILITY") => Self::VAvailability,
+            kind if kind.eq_ignore_ascii_case("AVAILABLE") => Self::Available,
             _ => return Err(ParseIcalComponentKindError(kind.to_string())),
         };
 
@@ -186,6 +222,8 @@ impl ops::Deref for IcalComponentKind {
             Self::Participant => "PARTICIPANT",
             Self::VLocation => "VLOCATION",
             Self::VResource => "VRESOURCE",
+            Self::VAvailability => "VAVAILABILITY",
+            Self::Available => "AVAILABLE",
         }
     }
 }

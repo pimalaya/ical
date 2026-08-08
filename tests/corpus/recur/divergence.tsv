@@ -1,0 +1,12 @@
+# The recurrence divergence corpus: the cases where ical-rs deliberately answers
+# something an oracle does not. Four tab-separated fields: the DTSTART, the
+# RRULE, the occurrences ical-rs yields, and why that is the answer.
+#
+# Hand-curated, unlike consensus.tsv beside it, and every answer here was read
+# off the same differential run: see cairn/log/2026-08-08-recur-consensus.md for
+# how many cases each divergence covers. An empty third field means the rule
+# yields nothing, which is itself an answer.
+20260105T090000	FREQ=WEEKLY;BYYEARDAY=100,200	20260105T090000,20260112T090000,20260119T090000,20260126T090000,20260202T090000,20260209T090000,20260216T090000,20260223T090000,20260302T090000,20260309T090000,20260316T090000,20260323T090000	A part its frequency forbids is ignored whole, so this is a plain weekly rule. python-dateutil applies BYYEARDAY as a limit and yields the 100th and 200th day of each year; libical refuses the rule outright.
+20260105T090000	FREQ=WEEKLY;BYSETPOS=2		BYSETPOS is honoured at WEEKLY, and a week whose candidate set holds one day has no second position, so the rule yields nothing. libical ignores BYSETPOS at WEEKLY and yields the whole weekly series. python-dateutil agrees with us.
+20260105T090000	FREQ=YEARLY;BYWEEKNO=1	20270104T090000,20270105T090000,20270106T090000,20270107T090000,20270108T090000,20270109T090000,20270110T090000,20280103T090000,20280104T090000,20280105T090000,20280106T090000,20280107T090000	Week 1 is the ISO week-year's, so the week of 2026 that this start falls after is already spent and the first occurrence is in 2027. libical numbers weeks its own way and starts in 2026. python-dateutil agrees with us.
+20260115T090000	FREQ=MONTHLY;BYDAY=MO;BYSETPOS=1	20260202T090000,20260302T090000,20260406T090000,20260504T090000,20260601T090000,20260706T090000,20260803T090000,20260907T090000,20261005T090000,20261102T090000,20261207T090000,20270104T090000	BYSETPOS picks from the whole period and DTSTART then drops what precedes it, so January's first Monday is selected and then dropped rather than the period being truncated first. Both oracles agree here; it is recorded because the RFC leaves the reading to the implementer.

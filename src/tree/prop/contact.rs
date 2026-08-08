@@ -10,6 +10,7 @@ use crate::{
         value::IcalValueCursor,
     },
     value::text::IcalText,
+    version::IcalVersion,
 };
 
 /// The `CONTACT` property lens.
@@ -31,4 +32,8 @@ impl IcalPropLens for CONTACT {
 
 impl IcalPropSpec for CONTACT {
     const KIND: IcalPropKind = IcalPropKind::Contact;
+
+    fn allowed_versions() -> &'static [IcalVersion] {
+        &[IcalVersion::V2_0]
+    }
 }

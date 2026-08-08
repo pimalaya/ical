@@ -12,7 +12,7 @@
 
 use core::fmt;
 
-use alloc::{borrow::Cow, string::ToString, vec, vec::Vec};
+use alloc::{borrow::Cow, boxed::Box, string::ToString, vec, vec::Vec};
 
 use crate::{
     component::IcalComponent,
@@ -26,6 +26,7 @@ use crate::{
         line::IcalLine,
         param::IcalParamNode,
         value::IcalValueNode,
+        wire::IcalWire,
     },
 };
 
@@ -48,13 +49,14 @@ impl Ical<'_> {
         items.extend(
             self.components
                 .iter()
-                .map(|component| IcalItem::Component(component.encode(escaper))),
+                .map(|component| IcalItem::Component(Box::new(component.encode(escaper)))),
         );
 
         IcalCst {
             begin: Some(IcalLine::text("BEGIN", "VCALENDAR")),
             items,
             end: Some(IcalLine::text("END", "VCALENDAR")),
+            trailing: Cow::Borrowed(""),
         }
     }
 }
@@ -74,13 +76,14 @@ impl IcalComponent<'_> {
         items.extend(
             self.components
                 .iter()
-                .map(|component| IcalItem::Component(component.encode(escaper))),
+                .map(|component| IcalItem::Component(Box::new(component.encode(escaper)))),
         );
 
         IcalCst {
             begin: Some(IcalLine::text("BEGIN", name.clone())),
             items,
             end: Some(IcalLine::text("END", name)),
+            trailing: Cow::Borrowed(""),
         }
     }
 }
@@ -100,6 +103,9 @@ impl IcalProp<'_> {
             params: self.params.iter().map(IcalParam::encode).collect(),
             value: self.value.encode(escaper),
             eol: IcalLeaf::from("\r\n".to_string()),
+            // NOTE: An encoded property has no wire history: it is written out
+            // unfolded, in canonical form.
+            wire: IcalWire::default(),
         }
     }
 }
@@ -137,6 +143,11 @@ impl IcalParam<'_> {
             IcalParam::Order(v) => param_scalar(&Order, v),
             IcalParam::Schema(v) => param_scalar(&Schema, v),
             IcalParam::Derived(v) => param_scalar(&Derived, v),
+            IcalParam::ScheduleAgent(v) => param_scalar(&ScheduleAgent, v),
+            IcalParam::ScheduleForceSend(v) => param_scalar(&ScheduleForceSend, v),
+            IcalParam::ScheduleStatus(v) => param_scalar(&ScheduleStatus, v),
+            IcalParam::LinkRel(v) => param_scalar(&LinkRel, v),
+            IcalParam::Gap(v) => param_scalar(&Gap, v),
             IcalParam::Charset(v) => param_scalar(&Charset, v),
 
             IcalParam::Unknown { name, values } => IcalParamNode {

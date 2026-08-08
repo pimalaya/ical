@@ -9,14 +9,15 @@ use crate::{
     tree::{
         param::COMMON_PARAMS,
         prop::{
-            IcalPropCardinality, aalarm, acknowledged, action, attach, attendee, calendar_address,
-            calscale, categories, class, color, comment, completed, conference, contact, created,
-            dalarm, description, dtend, dtstamp, dtstart, due, duration, exdate, exrule, freebusy,
-            geo, image, last_modified, location, location_type, malarm, method, name, organizer,
-            palarm, participant_type, percent_complete, priority, prodid, proximity, rdate,
-            recurrence_id, refresh_interval, related_to, repeat, request_status, resource_type,
-            resources, rnum, rrule, sequence, source, status, structured_data, styled_description,
-            summary, transp, trigger, tz, tzid, tzname, tzoffsetfrom, tzoffsetto, tzurl, uid, url,
+            IcalPropCardinality, aalarm, acknowledged, action, attach, attendee, busytype,
+            calendar_address, calscale, categories, class, color, comment, completed, concept,
+            conference, contact, created, dalarm, description, dtend, dtstamp, dtstart, due,
+            duration, exdate, exrule, freebusy, geo, image, last_modified, link, location,
+            location_type, malarm, method, name, organizer, palarm, participant_type,
+            percent_complete, priority, prodid, proximity, rdate, recurrence_id, refid,
+            refresh_interval, related_to, repeat, request_status, resource_type, resources, rnum,
+            rrule, sequence, source, status, structured_data, styled_description, summary, transp,
+            trigger, tz, tzid, tzname, tzoffsetfrom, tzoffsetto, tzurl, uid, url,
         },
     },
     value::IcalValueKind,
@@ -71,6 +72,9 @@ pub trait IcalPropSpec {
 /// open [`IcalPropKind`] back to the static per-marker [`IcalPropSpec`] impls.
 #[allow(dead_code)]
 pub(crate) struct IcalPropSpecFns {
+    /// The property this spec describes, so the dispatch can be checked
+    /// against itself.
+    pub kind: IcalPropKind,
     /// See [`IcalPropSpec::allowed_versions`].
     pub allowed_versions: fn() -> &'static [IcalVersion],
     /// See [`IcalPropSpec::cardinality`].
@@ -86,6 +90,7 @@ pub(crate) struct IcalPropSpecFns {
 /// Collect the spec function pointers of a marker type.
 fn spec_fns<L: IcalPropSpec>() -> IcalPropSpecFns {
     IcalPropSpecFns {
+        kind: L::KIND,
         allowed_versions: L::allowed_versions,
         cardinality: L::cardinality,
         allowed_values: L::allowed_values,
@@ -156,6 +161,10 @@ pub(crate) fn prop_spec(prop: IcalPropKind) -> IcalPropSpecFns {
         CalendarAddress => spec_fns::<calendar_address::CALENDAR_ADDRESS>(),
         LocationType => spec_fns::<location_type::LOCATION_TYPE>(),
         StructuredData => spec_fns::<structured_data::STRUCTURED_DATA>(),
+        Link => spec_fns::<link::LINK>(),
+        Refid => spec_fns::<refid::REFID>(),
+        Concept => spec_fns::<concept::CONCEPT>(),
+        BusyType => spec_fns::<busytype::BUSYTYPE>(),
         StyledDescription => spec_fns::<styled_description::STYLED_DESCRIPTION>(),
         Acknowledged => spec_fns::<acknowledged::ACKNOWLEDGED>(),
         Proximity => spec_fns::<proximity::PROXIMITY>(),
@@ -165,5 +174,73 @@ pub(crate) fn prop_spec(prop: IcalPropKind) -> IcalPropSpecFns {
         MAlarm => spec_fns::<malarm::MALARM>(),
         PAlarm => spec_fns::<palarm::PALARM>(),
         RNum => spec_fns::<rnum::RNUM>(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        prop::IcalPropKind, tree::prop::spec::prop_spec, value::IcalValueKind, version::IcalVersion,
+    };
+
+    #[test]
+    fn dispatches_every_property_onto_its_own_marker() {
+        // NOTE: The dispatch is seventy hand-written arms over seventy files. A
+        // marker whose KIND does not match the arm it sits in would answer for
+        // the wrong property, silently, for every caller of the spec.
+        for kind in IcalPropKind::ALL {
+            assert_eq!(prop_spec(kind).kind, kind, "{}", &*kind);
+        }
+    }
+
+    #[test]
+    fn every_property_states_a_value_kind_it_allows() {
+        for kind in IcalPropKind::ALL {
+            let spec = prop_spec(kind);
+
+            for version in (spec.allowed_versions)() {
+                let allowed = (spec.allowed_values)(*version);
+                let in_force = (spec.value)(*version, None);
+
+                // NOTE: With nothing declared, the kind in force is the first
+                // allowed one, so an empty allowed set would make the decoder
+                // fall back to text behind the spec's back.
+                assert!(!allowed.is_empty(), "{} allows no value kind", &*kind);
+                assert!(
+                    allowed.contains(&in_force),
+                    "{} decodes as {} which it does not allow",
+                    &*kind,
+                    &*in_force,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_declared_kind_wins_over_the_default() {
+        let spec = prop_spec(IcalPropKind::Attach);
+
+        assert_eq!(
+            (spec.value)(IcalVersion::V2_0, None),
+            IcalValueKind::Uri,
+            "the default is the first allowed kind"
+        );
+        assert_eq!(
+            (spec.value)(IcalVersion::V2_0, Some(IcalValueKind::Binary)),
+            IcalValueKind::Binary,
+            "a declared kind is honoured even outside the allowed set"
+        );
+    }
+
+    #[test]
+    fn a_list_property_stays_a_list_whatever_is_declared() {
+        let spec = prop_spec(IcalPropKind::RDate);
+
+        // NOTE: The declared kind describes each item, not the value as a
+        // whole, so RDATE;VALUE=PERIOD is still a list of periods.
+        assert_eq!(
+            (spec.value)(IcalVersion::V2_0, Some(IcalValueKind::Period)),
+            IcalValueKind::DateTimeList
+        );
     }
 }

@@ -8,8 +8,8 @@ use crate::{
     component::IcalComponentKind,
     prop::IcalPropKind,
     tree::component::{
-        daylight, participant, standard, valarm, vcalendar, vevent, vfreebusy, vjournal, vlocation,
-        vresource, vtimezone, vtodo,
+        available, daylight, participant, standard, valarm, vavailability, vcalendar, vevent,
+        vfreebusy, vjournal, vlocation, vresource, vtimezone, vtodo,
     },
 };
 
@@ -36,6 +36,9 @@ pub trait IcalComponentSpec {
 /// open [`IcalComponentKind`] back to the static per-marker impls.
 #[allow(dead_code)]
 pub(crate) struct IcalComponentSpecFns {
+    /// The component this spec describes, so the dispatch can be checked
+    /// against itself.
+    pub kind: IcalComponentKind,
     /// See [`IcalComponentSpec::allowed_children`].
     pub allowed_children: fn() -> &'static [IcalComponentKind],
     /// See [`IcalComponentSpec::required_props`].
@@ -45,6 +48,7 @@ pub(crate) struct IcalComponentSpecFns {
 /// Collect the spec function pointers of a marker type.
 fn spec_fns<C: IcalComponentSpec>() -> IcalComponentSpecFns {
     IcalComponentSpecFns {
+        kind: C::KIND,
         allowed_children: C::allowed_children,
         required_props: C::required_props,
     }
@@ -67,5 +71,44 @@ pub(crate) fn component_spec(component: IcalComponentKind) -> IcalComponentSpecF
         Participant => spec_fns::<participant::PARTICIPANT>(),
         VLocation => spec_fns::<vlocation::VLOCATION>(),
         VResource => spec_fns::<vresource::VRESOURCE>(),
+        VAvailability => spec_fns::<vavailability::VAVAILABILITY>(),
+        Available => spec_fns::<available::AVAILABLE>(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::vec::Vec;
+
+    use crate::{component::IcalComponentKind, tree::component::spec::component_spec};
+
+    #[test]
+    fn dispatches_every_component_onto_its_own_marker() {
+        for kind in IcalComponentKind::ALL {
+            assert_eq!(component_spec(kind).kind, kind, "{}", &*kind);
+        }
+    }
+
+    #[test]
+    fn every_required_property_is_one_the_component_could_hold() {
+        for kind in IcalComponentKind::ALL {
+            let spec = component_spec(kind);
+
+            // NOTE: A component that requires a property no version defines
+            // would be unsatisfiable, so every required name has to be a real
+            // one, which `IcalPropKind` already guarantees; what is worth
+            // checking is that nothing requires itself twice.
+            let mut required: Vec<&str> = (spec.required_props)().iter().map(|p| &**p).collect();
+            let count = required.len();
+            required.sort_unstable();
+            required.dedup();
+
+            assert_eq!(
+                required.len(),
+                count,
+                "{} requires a property twice",
+                &*kind
+            );
+        }
     }
 }

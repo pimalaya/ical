@@ -1,41 +1,61 @@
 [package]
 name = "ical-rs"
-description = "iCalendar (vCalendar 1.0, iCalendar 2.0): a byte-faithful syntax tree and a decoded model"
+description = "iCalendar parser, validator, editor and builder library for Rust"
 version = "0.0.1"
-authors = ["soywod <clement.douin@posteo.net>"]
-edition = "2024"
+authors = ["soywod <pimalaya.org@posteo.net>"]
 rust-version = "1.88"
+edition = "2024"
 license = "MIT OR Apache-2.0"
-categories = ["data-structures", "parser-implementations", "encoding"]
+categories = ["data-structures", "parser-implementations", "encoding", "no-std"]
 keywords = ["icalendar", "calendar", "caldav", "rfc5545", "codec"]
 homepage = "https://pimalaya.org"
-documentation = "https://docs.rs/ical-rs/latest/ical-rs"
+documentation = "https://docs.rs/ical-rs/latest/ical"
 repository = "https://github.com/pimalaya/ical-rs"
 
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
+[lib]
+name = "ical"
+
 [features]
 default = ["parser", "quoted-printable", "base64", "encoding"]
 parser = ["dep:memchr"]
+jcal = ["parser", "dep:serde_json"]
+jscalendar = ["jcal"]
 quoted-printable = ["dep:quoted_printable"]
 base64 = ["dep:base64"]
 encoding = ["dep:encoding_rs"]
 
-[dependencies]
-memchr = { version = "2", default-features = false, optional = true }
-quoted_printable = { version = "0.5", default-features = false, optional = true }
-base64 = { version = "0.22", default-features = false, features = ["alloc"], optional = true }
-encoding_rs = { version = "0.8", optional = true }
-
-[dev-dependencies]
-criterion = "0.5"
-
-[lib]
-name = "ical"
-path = "src/lib.rs"
-
 [[bench]]
 name = "parse"
+path = "benches/parse.rs"
 harness = false
+required-features = ["parser"]
+
+[[example]]
+name = "parse_edit_export"
+path = "examples/parse_edit_export.rs"
+required-features = ["parser"]
+
+[[example]]
+name = "strict_builder"
+path = "examples/strict_builder.rs"
+required-features = ["parser"]
+
+[[example]]
+name = "raw_builder"
+path = "examples/raw_builder.rs"
+required-features = ["parser"]
+
+[dev-dependencies]
+calcard = { version = "0.3", default-features = false }
+criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
+
+[dependencies]
+base64 = { version = "0.22", default-features = false, features = ["alloc"], optional = true }
+encoding_rs = { version = "0.8", default-features = false, features = ["alloc"], optional = true }
+memchr = { version = "2", default-features = false, optional = true }
+quoted_printable = { version = "0.5", default-features = false, optional = true }
+serde_json = { version = "1", default-features = false, features = ["alloc"], optional = true }

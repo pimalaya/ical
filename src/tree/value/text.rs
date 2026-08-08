@@ -18,7 +18,11 @@ use crate::{
 
 impl<'v> Codec<'v> for IcalText<'v> {
     fn decode(node: &'v IcalValueNode<'_>) -> Self {
-        IcalText(node.decode_scalar_at(0))
+        // NOTE: A single text value has no list to be separated into, so an
+        // unescaped comma in one is data rather than a separator. RFC 5545
+        // 3.3.11 says it should have been escaped; truncating the value at it
+        // would be strictness applied to the wrong end of Postel's law.
+        IcalText(node.decode_joined_at(0))
     }
 
     fn encode(&self, escaper: Escaper) -> IcalValueNode<'static> {

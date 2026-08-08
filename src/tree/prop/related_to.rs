@@ -3,6 +3,7 @@
 //! The `RELATED_TO` property lens.
 
 use crate::{
+    param::IcalParamKind,
     prop::IcalPropKind,
     tree::{
         line::IcalLine,
@@ -10,6 +11,7 @@ use crate::{
         value::IcalValueCursor,
     },
     value::text::IcalText,
+    version::IcalVersion,
 };
 
 /// The `RELATED_TO` property lens.
@@ -31,4 +33,14 @@ impl IcalPropLens for RELATED_TO {
 
 impl IcalPropSpec for RELATED_TO {
     const KIND: IcalPropKind = IcalPropKind::RelatedTo;
+
+    /// RFC 9253 6.2 adds `GAP` here, the lag or lead between the two related
+    /// components, beside the RFC 5545 `RELTYPE`.
+    fn allowed_params(_version: IcalVersion) -> &'static [IcalParamKind] {
+        &[
+            IcalParamKind::Value,
+            IcalParamKind::RelType,
+            IcalParamKind::Gap,
+        ]
+    }
 }

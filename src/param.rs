@@ -21,6 +21,8 @@ use alloc::{
     vec::Vec,
 };
 
+use crate::value::owned;
+
 /// Parse iCalendar parameter kind error.
 #[derive(Debug)]
 pub struct ParseIcalParamKindError(
@@ -95,8 +97,59 @@ pub enum IcalParamKind {
     Schema,
     /// `DERIVED`: marks a derived property value (RFC 9073 5.3).
     Derived,
+    /// `SCHEDULE-AGENT`: who performs scheduling for an attendee (RFC 6638 7.1).
+    ScheduleAgent,
+    /// `SCHEDULE-FORCE-SEND`: a request to resend a scheduling message (RFC 6638 7.2).
+    ScheduleForceSend,
+    /// `SCHEDULE-STATUS`: the status of a scheduling operation (RFC 6638 7.3).
+    ScheduleStatus,
+    /// `LINKREL`: the relation type of a `LINK` (RFC 9253 6.1).
+    LinkRel,
+    /// `GAP`: the lag or lead between two related components (RFC 9253 6.2).
+    Gap,
     /// `CHARSET`: character set of the value (vCalendar 1.0).
     Charset,
+}
+
+impl IcalParamKind {
+    /// Every known parameter kind, for iterating the closed vocabulary, as
+    /// [`IcalPropKind::ALL`](crate::prop::IcalPropKind::ALL) does for
+    /// properties.
+    pub const ALL: [Self; 33] = [
+        Self::AltRep,
+        Self::Cn,
+        Self::CuType,
+        Self::DelegatedFrom,
+        Self::DelegatedTo,
+        Self::Dir,
+        Self::Encoding,
+        Self::FmtType,
+        Self::FbType,
+        Self::Language,
+        Self::Member,
+        Self::PartStat,
+        Self::Range,
+        Self::Related,
+        Self::RelType,
+        Self::Role,
+        Self::Rsvp,
+        Self::SentBy,
+        Self::TzId,
+        Self::Value,
+        Self::Display,
+        Self::Email,
+        Self::Feature,
+        Self::Label,
+        Self::Order,
+        Self::Schema,
+        Self::Derived,
+        Self::ScheduleAgent,
+        Self::ScheduleForceSend,
+        Self::ScheduleStatus,
+        Self::LinkRel,
+        Self::Gap,
+        Self::Charset,
+    ];
 }
 
 impl str::FromStr for IcalParamKind {
@@ -132,6 +185,11 @@ impl str::FromStr for IcalParamKind {
             kind if kind.eq_ignore_ascii_case("ORDER") => Self::Order,
             kind if kind.eq_ignore_ascii_case("SCHEMA") => Self::Schema,
             kind if kind.eq_ignore_ascii_case("DERIVED") => Self::Derived,
+            kind if kind.eq_ignore_ascii_case("SCHEDULE-AGENT") => Self::ScheduleAgent,
+            kind if kind.eq_ignore_ascii_case("SCHEDULE-FORCE-SEND") => Self::ScheduleForceSend,
+            kind if kind.eq_ignore_ascii_case("SCHEDULE-STATUS") => Self::ScheduleStatus,
+            kind if kind.eq_ignore_ascii_case("LINKREL") => Self::LinkRel,
+            kind if kind.eq_ignore_ascii_case("GAP") => Self::Gap,
             kind if kind.eq_ignore_ascii_case("CHARSET") => Self::Charset,
             _ => return Err(ParseIcalParamKindError(kind.to_string())),
         };
@@ -172,6 +230,11 @@ impl ops::Deref for IcalParamKind {
             Self::Order => "ORDER",
             Self::Schema => "SCHEMA",
             Self::Derived => "DERIVED",
+            Self::ScheduleAgent => "SCHEDULE-AGENT",
+            Self::ScheduleForceSend => "SCHEDULE-FORCE-SEND",
+            Self::ScheduleStatus => "SCHEDULE-STATUS",
+            Self::LinkRel => "LINKREL",
+            Self::Gap => "GAP",
             Self::Charset => "CHARSET",
         }
     }
@@ -236,6 +299,16 @@ pub enum IcalParam<'a> {
     Schema(Cow<'a, str>),
     /// `DERIVED`: whether the property value is derived (`TRUE`, `FALSE`).
     Derived(Cow<'a, str>),
+    /// `SCHEDULE-AGENT`: who performs scheduling for an attendee.
+    ScheduleAgent(Cow<'a, str>),
+    /// `SCHEDULE-FORCE-SEND`: a request to resend a scheduling message.
+    ScheduleForceSend(Cow<'a, str>),
+    /// `SCHEDULE-STATUS`: the status of a scheduling operation.
+    ScheduleStatus(Cow<'a, str>),
+    /// `LINKREL`: the relation type of a `LINK`.
+    LinkRel(Cow<'a, str>),
+    /// `GAP`: the lag or lead between two related components.
+    Gap(Cow<'a, str>),
     /// `CHARSET`: the character set of the value (vCalendar 1.0).
     Charset(Cow<'a, str>),
 
@@ -280,8 +353,60 @@ impl IcalParam<'_> {
             Self::Order(_) => Some(IcalParamKind::Order),
             Self::Schema(_) => Some(IcalParamKind::Schema),
             Self::Derived(_) => Some(IcalParamKind::Derived),
+            Self::ScheduleAgent(_) => Some(IcalParamKind::ScheduleAgent),
+            Self::ScheduleForceSend(_) => Some(IcalParamKind::ScheduleForceSend),
+            Self::ScheduleStatus(_) => Some(IcalParamKind::ScheduleStatus),
+            Self::LinkRel(_) => Some(IcalParamKind::LinkRel),
+            Self::Gap(_) => Some(IcalParamKind::Gap),
             Self::Charset(_) => Some(IcalParamKind::Charset),
             Self::Unknown { .. } => None,
+        }
+    }
+
+    /// The same parameter with every borrow replaced by an allocation, so it
+    /// outlives the bytes it was decoded from. See
+    /// [`IcalValue::into_owned`](crate::value::IcalValue::into_owned).
+    pub fn into_owned(self) -> IcalParam<'static> {
+        use IcalParam::*;
+
+        match self {
+            AltRep(value) => AltRep(owned(value)),
+            Cn(value) => Cn(owned(value)),
+            CuType(value) => CuType(owned(value)),
+            DelegatedFrom(values) => DelegatedFrom(values.into_iter().map(owned).collect()),
+            DelegatedTo(values) => DelegatedTo(values.into_iter().map(owned).collect()),
+            Dir(value) => Dir(owned(value)),
+            Encoding(value) => Encoding(owned(value)),
+            FmtType(value) => FmtType(owned(value)),
+            FbType(value) => FbType(owned(value)),
+            Language(value) => Language(owned(value)),
+            Member(values) => Member(values.into_iter().map(owned).collect()),
+            PartStat(value) => PartStat(owned(value)),
+            Range(value) => Range(owned(value)),
+            Related(value) => Related(owned(value)),
+            RelType(value) => RelType(owned(value)),
+            Role(value) => Role(owned(value)),
+            Rsvp(value) => Rsvp(owned(value)),
+            SentBy(value) => SentBy(owned(value)),
+            TzId(value) => TzId(owned(value)),
+            Value(value) => Value(owned(value)),
+            Display(value) => Display(owned(value)),
+            Email(value) => Email(owned(value)),
+            Feature(values) => Feature(values.into_iter().map(owned).collect()),
+            Label(value) => Label(owned(value)),
+            Order(value) => Order(owned(value)),
+            Schema(value) => Schema(owned(value)),
+            Derived(value) => Derived(owned(value)),
+            ScheduleAgent(value) => ScheduleAgent(owned(value)),
+            ScheduleForceSend(value) => ScheduleForceSend(owned(value)),
+            ScheduleStatus(value) => ScheduleStatus(owned(value)),
+            LinkRel(value) => LinkRel(owned(value)),
+            Gap(value) => Gap(owned(value)),
+            Charset(value) => Charset(owned(value)),
+            Unknown { name, values } => Unknown {
+                name: owned(name),
+                values: values.into_iter().map(owned).collect(),
+            },
         }
     }
 }

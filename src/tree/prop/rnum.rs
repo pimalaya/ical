@@ -34,6 +34,10 @@ impl IcalPropLens for RNUM {
 impl IcalPropSpec for RNUM {
     const KIND: IcalPropKind = IcalPropKind::RNum;
 
+    fn allowed_versions() -> &'static [IcalVersion] {
+        &[IcalVersion::V1_0]
+    }
+
     fn allowed_values(_version: IcalVersion) -> &'static [IcalValueKind] {
         &[IcalValueKind::Integer]
     }

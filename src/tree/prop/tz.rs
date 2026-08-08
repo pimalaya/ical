@@ -34,6 +34,10 @@ impl IcalPropLens for TZ {
 impl IcalPropSpec for TZ {
     const KIND: IcalPropKind = IcalPropKind::Tz;
 
+    fn allowed_versions() -> &'static [IcalVersion] {
+        &[IcalVersion::V1_0]
+    }
+
     fn allowed_values(_version: IcalVersion) -> &'static [IcalValueKind] {
         &[IcalValueKind::UtcOffset]
     }

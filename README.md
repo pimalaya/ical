@@ -1,76 +1,83 @@
 # 📅 ical-rs [![Documentation](https://img.shields.io/docsrs/ical-rs?style=flat&logo=docs.rs&logoColor=white)](https://docs.rs/ical-rs/latest/ical) [![Matrix](https://img.shields.io/badge/chat-%23pimalaya-blue?style=flat&logo=matrix&logoColor=white)](https://matrix.to/#/#pimalaya:matrix.org) [![Mastodon](https://img.shields.io/badge/news-%40pimalaya-blue?style=flat&logo=mastodon&logoColor=white)](https://fosstodon.org/@pimalaya)
 
-[iCalendar](https://www.rfc-editor.org/rfc/rfc5545) Rust library
-
-`ical-rs` reads, edits and writes calendar objects in both iCalendar flavours: vCalendar 1.0 (versit) and iCalendar 2.0 ([RFC 5545](https://www.rfc-editor.org/rfc/rfc5545), extended by [7986](https://www.rfc-editor.org/rfc/rfc7986), [7529](https://www.rfc-editor.org/rfc/rfc7529), [9073](https://www.rfc-editor.org/rfc/rfc9073) and [9074](https://www.rfc-editor.org/rfc/rfc9074)). It treats them interchangeably, so you never pick a dialect up front, and it preserves the nested structure of a calendar (events, alarms, time zones) as it is.
-
-Its defining trait is faithful editing: change one field of a parsed calendar and everything you did not touch, down to the exact bytes and the line endings, comes back unchanged. It is forgiving on the way in, accepting any real-world calendar including its odd or vendor-specific parts, and strict on the way out when you ask for it, building and checking a calendar against the standard so you know it conforms before you send it.
+iCalendar parser, validator, editor and builder library for Rust
 
 ## Table of contents
 
 - [Features](#features)
-- [Installation](#installation)
+- [RFC coverage](#rfc-coverage)
 - [Usage](#usage)
-- [Benchmarks](#benchmarks)
-- [License](#license)
+- [Examples](#examples)
 - [AI disclosure](#ai-disclosure)
-- [Contributing](CONTRIBUTING.md)
+- [License](#license)
 - [Social](#social)
+- [Contributing](#contributing)
 - [Sponsoring](#sponsoring)
 
 ## Features
 
-- **Every version, one library**: read, edit and write vCalendar 1.0 and iCalendar 2.0 without choosing a dialect; the version travels with the calendar.
-- **Nested structure, preserved**: a calendar is a tree of components (events, to-dos, journals, free/busy, time zones, alarms); the whole tree is parsed, walked and round-tripped.
-- **Faithful editing**: change a field and every untouched part of the calendar is preserved exactly, so a round-trip never rewrites what you did not mean to change. A value written in a foreign character set survives unaltered.
-- **Forgiving on input**: any real calendar is accepted, including components, properties, parameters and value types the library has never heard of, so nothing is silently dropped.
-- **Strict on output when you want it**: build a calendar guided by the standard and check it for conformance, or take the escape hatch and assemble one by hand with no checks.
-- **Small and portable**: runs in constrained environments with no operating system, and stays lean, pulling in nothing beyond what the optional decoders you enable need.
-- **Optional decoders**: opt in to decode encoded text, inline binary data such as attachments, and text in foreign character sets.
+- **Both iCalendar flavours**: read and write vCalendar 1.0 and iCalendar 2.0 through a single, version-agnostic model, with no dialect to pick up front.
+- **Nested structure, preserved**: a calendar is a tree of events, to-dos, journals, free/busy blocks, time zones and alarms, parsed and round-tripped whole.
+- **Byte-faithful editing**: change one field and every other byte comes back unchanged, line endings and fold points included.
+- **Forgiving parser**: accept any real calendar, and a recovering mode that keeps going through the lines a strict reading throws the whole file away for.
+- **Strict building and validation**: construct calendars checked against the standard, with an escape hatch when you need to step outside it.
+- **Recurrence and time zones**: expand a rule, or the whole set of occurrences an event denotes, and resolve a time zone from the calendar's own rules.
+- **Small and portable**: no_std compatible, with an allocation-only core that pulls in no dependencies.
+- **Optional content decoding**: quoted-printable text, inline base64 binary and foreign character sets, each behind its own feature.
+- **Three-way merge**: reconcile two divergent edits of a calendar against their common base, matched by UID and RECURRENCE-ID, with every action and every conflict reported and the untouched bytes kept.
+- **Optional JSON**: read and write a calendar as jCal, or convert it to and from the JSCalendar data model a JMAP server exchanges.
 
-## Installation
+> [!TIP]
+> ical-rs uses [cargo features](https://doc.rust-lang.org/cargo/reference/features.html) to gate optional support. The default feature set is declared in [Cargo.toml](./Cargo.toml) or on [docs.rs](https://docs.rs/crate/ical-rs/latest/features).
 
-```toml
-[dependencies]
-ical-rs = "0.0.1"
-```
+## RFC coverage
+
+| Spec   | What is covered                                                                                          |
+|--------|----------------------------------------------------------------------------------------------------------|
+| [1.0]  | vCalendar 1.0: the original versit format, including its quoted-printable and charset conventions         |
+| [5545] | iCalendar 2.0: the current standard, with its full component tree, property set, value types and parameters, its recurrence rules and its time zones |
+| [5546] | iTIP: whose the properties of a scheduled component are, which the merge enforces                         |
+| [6638] | CalDAV scheduling: the parameters a server reads and writes on an attendee                                |
+| [7265] | jCal: the JSON representation of a calendar                                                               |
+| [7529] | Non-Gregorian recurrence: `SKIP` is expanded for the Gregorian scale; another scale is carried, not expanded |
+| [7953] | Availability: the availability window and the periods inside it                                           |
+| [7986] | Calendar extensions: the newer calendar-level properties                                                  |
+| [8984] | JSCalendar: the JSON data model a JMAP calendar server exchanges, converted both ways                     |
+| [9073] | Event publishing extensions: participants, locations, resources and structured data                       |
+| [9074] | Alarm extensions: acknowledgement, proximity and the alarm relations                                      |
+| [9253] | Relationships: typed links, reference identifiers and concepts                                            |
+
+[1.0]: https://www.imc.org/pdi/vcal-10.txt
+[5545]: https://www.rfc-editor.org/rfc/rfc5545
+[5546]: https://www.rfc-editor.org/rfc/rfc5546
+[6638]: https://www.rfc-editor.org/rfc/rfc6638
+[7265]: https://www.rfc-editor.org/rfc/rfc7265
+[7529]: https://www.rfc-editor.org/rfc/rfc7529
+[7953]: https://www.rfc-editor.org/rfc/rfc7953
+[7986]: https://www.rfc-editor.org/rfc/rfc7986
+[8984]: https://www.rfc-editor.org/rfc/rfc8984
+[9073]: https://www.rfc-editor.org/rfc/rfc9073
+[9074]: https://www.rfc-editor.org/rfc/rfc9074
+[9253]: https://www.rfc-editor.org/rfc/rfc9253
 
 ## Usage
 
-The snippets below are condensed; full runnable versions live in [`examples/`](examples), each launchable with `cargo run --example <name>`.
+The whole API is documented on [docs.rs](https://docs.rs/ical-rs/latest/ical), from parsing and byte-faithful editing to the strict builder, validation, recurrence expansion, the three-way merge and the optional jCal and JSCalendar conversions.
 
-### Parse a calendar, edit a field, and write it back
+## Examples
 
-Only the field you touch changes; every other byte of the original calendar, including the line endings and the parameters you did not edit, round-trips exactly.
+Complete runnable programs live in [./examples](./examples); the tests also demonstrate real usage.
 
-```rust
-use ical::tree::cst::IcalCst;
-use ical::tree::prop::summary::SUMMARY;
+## AI disclosure
 
-let mut cal = IcalCst::parse(
-    "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\nBEGIN:VEVENT\r\nUID:1\r\nDTSTAMP:20260101T000000Z\r\nSUMMARY:Lunch\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
-).unwrap();
+This project is developed with AI assistance. This section documents how, so users and downstream packagers can make informed decisions.
 
-cal.component_mut::<ical::tree::component::vevent::VEVENT>()
-    .unwrap()
-    .prop_mut::<SUMMARY>()
-    .unwrap()
-    .set_text("Dinner");
-```
-
-### Build a calendar, checked against the standard
-
-Each property is checked as it is built, and the finished calendar is validated as a whole before it is written out; a calendar that does not conform gives you the list of problems instead. See [`examples/strict_builder.rs`](examples/strict_builder.rs).
-
-### Build a calendar by hand, unchecked
-
-The escape hatch: place whatever properties and components you like and write them out directly, with no validation. Correctness is your responsibility. See [`examples/raw_builder.rs`](examples/raw_builder.rs).
-
-Beyond parsing and building, the library projects a calendar onto a decoded model and back, and, behind opt-in features, decodes encoded text, inline binary data and foreign character sets.
-
-## Benchmarks
-
-Single-object [criterion](https://crates.io/crates/criterion) medians, run with `cargo bench --bench parse`. The suite measures this crate's own stages over a realistic `VCALENDAR` with a nested `VEVENT` and `VALARM`: parsing to the byte-faithful CST, decoding onto the model, encoding back to bytes, and a full round-trip.
+- **Tools**: Claude Code (Anthropic), invoked locally with a persistent project-scoped memory and a small set of repo-specific rules.
+- **Used for**: Refactors, mechanical multi-file edits, boilerplate (feature gates, error enums, derive macros, trait impls), test scaffolding, doc polish, exploratory design conversations.
+- **Not used for**: Engineering, critical code, git manipulation (commit, merge, rebase…), real-world tests.
+- **Verification**: Every AI-assisted change is read, compiled, tested, and formatted before commit. Behavioural correctness is verified against the relevant RFC or upstream spec, not assumed from the model output. Tests are never adjusted to fit AI-generated code; the code is adjusted to fit correct behaviour.
+- **Limitations**: AI models occasionally produce code that compiles and passes tests but is subtly wrong. The verification workflow catches most of this; it does not catch all of it. Bug reports are welcome and taken seriously.
+- **Last reviewed**: 08/08/2026
 
 ## License
 
@@ -81,22 +88,15 @@ This project is licensed under either of:
 
 at your option.
 
-## AI disclosure
-
-This project is developed with AI assistance. This section documents how, so users and downstream packagers can make informed decisions.
-
-- **Tools**: Claude Code (Anthropic), Opus 4.8, invoked locally with a persistent project-scoped memory and a small set of repo-specific rules.
-- **Used for**: Refactors, mechanical multi-file edits, boilerplate (feature gates, error enums, derive macros, trait impls), test scaffolding, doc polish, exploratory design conversations.
-- **Not used for**: Engineering, critical code, git manipulation (commit, merge, rebase…), real-world tests.
-- **Verification**: Every AI-assisted change is read, compiled, tested, and formatted before commit (`nix develop --command cargo check / cargo test / cargo fmt`). Behavioural correctness is verified against the relevant RFC or upstream spec, not assumed from the model output. Tests are never adjusted to fit AI-generated code; the code is adjusted to fit correct behaviour.
-- **Limitations**: AI models occasionally produce code that compiles and passes tests but is subtly wrong: off-by-one errors, missed edge cases, plausible but nonexistent APIs, stale RFC references. The verification workflow catches most of this; it does not catch all of it. Bug reports are welcome and taken seriously.
-- **Last reviewed**: 02/07/2026
-
 ## Social
 
 - Chat on [Matrix](https://matrix.to/#/#pimalaya:matrix.org)
 - News on [Mastodon](https://fosstodon.org/@pimalaya) or [RSS](https://fosstodon.org/@pimalaya.rss)
 - Mail at [pimalaya.org@posteo.net](mailto:pimalaya.org@posteo.net)
+
+## Contributing
+
+Contributions are welcome: start with [CONTRIBUTING.md](./CONTRIBUTING.md), which opens with the Pimalaya-wide guides to read first.
 
 ## Sponsoring
 
@@ -115,4 +115,5 @@ If you appreciate the project, feel free to donate using one of the following pr
 [![Ko-fi](https://img.shields.io/badge/-Ko--fi-ff5e5a?logo=Ko-fi&logoColor=ffffff)](https://ko-fi.com/soywod)
 [![Buy Me a Coffee](https://img.shields.io/badge/-Buy%20Me%20a%20Coffee-ffdd00?logo=Buy%20Me%20A%20Coffee&logoColor=000000)](https://www.buymeacoffee.com/soywod)
 [![Liberapay](https://img.shields.io/badge/-Liberapay-f6c915?logo=Liberapay&logoColor=222222)](https://liberapay.com/soywod)
+[![thanks.dev](https://img.shields.io/badge/-thanks.dev-000000?logo=data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQuMDk3IiBoZWlnaHQ9IjE3LjU5NyIgY2xhc3M9InctMzYgbWwtMiBsZzpteC0wIHByaW50Om14LTAgcHJpbnQ6aW52ZXJ0IiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxwYXRoIGQ9Ik05Ljc4MyAxNy41OTdINy4zOThjLTEuMTY4IDAtMi4wOTItLjI5Ny0yLjc3My0uODktLjY4LS41OTMtMS4wMi0xLjQ2Mi0xLjAyLTIuNjA2di0xLjM0NmMwLTEuMDE4LS4yMjctMS43NS0uNjc4LTIuMTk1LS40NTItLjQ0Ni0xLjIzMi0uNjY5LTIuMzQtLjY2OUgwVjcuNzA1aC41ODdjMS4xMDggMCAxLjg4OC0uMjIyIDIuMzQtLjY2OC40NTEtLjQ0Ni42NzctMS4xNzcuNjc3LTIuMTk1VjMuNDk2YzAtMS4xNDQuMzQtMi4wMTMgMS4wMjEtMi42MDZDNS4zMDUuMjk3IDYuMjMgMCA3LjM5OCAwaDIuMzg1djEuOTg3aC0uOTg1Yy0uMzYxIDAtLjY4OC4wMjctLjk4LjA4MmExLjcxOSAxLjcxOSAwIDAgMC0uNzM2LjMwN2MtLjIwNS4xNTYtLjM1OC4zODQtLjQ2LjY4Mi0uMTAzLjI5OC0uMTU0LjY4Mi0uMTU0IDEuMTUxVjUuMjNjMCAuODY3LS4yNDkgMS41ODYtLjc0NSAyLjE1NS0uNDk3LjU2OS0xLjE1OCAxLjAwNC0xLjk4MyAxLjMwNXYuMjE3Yy44MjUuMyAxLjQ4Ni43MzYgMS45ODMgMS4zMDUuNDk2LjU3Ljc0NSAxLjI4Ny43NDUgMi4xNTR2MS4wMjFjMCAuNDcuMDUxLjg1NC4xNTMgMS4xNTIuMTAzLjI5OC4yNTYuNTI1LjQ2MS42ODIuMTkzLjE1Ny40MzcuMjYuNzMyLjMxMi4yOTUuMDUuNjIzLjA3Ni45ODQuMDc2aC45ODVabTE0LjMxNC03LjcwNmgtLjU4OGMtMS4xMDggMC0xLjg4OC4yMjMtMi4zNC42NjktLjQ1LjQ0Ni0uNjc3IDEuMTc3LS42NzcgMi4xOTVWMTQuMWMwIDEuMTQ0LS4zNCAyLjAxMy0xLjAyIDIuNjA2LS42OC41OTMtMS42MDUuODktMi43NzQuODloLTIuMzg0di0xLjk4OGguOTg0Yy4zNjIgMCAuNjg4LS4wMjcuOTgtLjA4LjI5Mi0uMDU1LjUzOC0uMTU3LjczNy0uMzA4LjIwNC0uMTU3LjM1OC0uMzg0LjQ2LS42ODIuMTAzLS4yOTguMTU0LS42ODIuMTU0LTEuMTUydi0xLjAyYzAtLjg2OC4yNDgtMS41ODYuNzQ1LTIuMTU1LjQ5Ny0uNTcgMS4xNTgtMS4wMDQgMS45ODMtMS4zMDV2LS4yMTdjLS44MjUtLjMwMS0xLjQ4Ni0uNzM2LTEuOTgzLTEuMzA1LS40OTctLjU3LS43NDUtMS4yODgtLjc0NS0yLjE1NXYtMS4wMmMwLS40Ny0uMDUxLS44NTQtLjE1NC0xLjE1Mi0uMTAyLS4yOTgtLjI1Ni0uNTI2LS40Ni0uNjgyYTEuNzE5IDEuNzE5IDAgMCAwLS43MzctLjMwNyA1LjM5NSA1LjM5NSAwIDAgMC0uOTgtLjA4MmgtLjk4NFYwaDIuMzg0YzEuMTY5IDAgMi4wOTMuMjk3IDIuNzc0Ljg5LjY4LjU5MyAxLjAyIDEuNDYyIDEuMDIgMi42MDZ2MS4zNDZjMCAxLjAxOC4yMjYgMS43NS42NzggMi4xOTUuNDUxLjQ0NiAxLjIzMS42NjggMi4zNC42NjhoLjU4N3oiIGZpbGw9IiNmZmYiLz48L3N2Zz4=)](https://thanks.dev/soywod)
 [![PayPal](https://img.shields.io/badge/-PayPal-0079c1?logo=PayPal&logoColor=ffffff)](https://www.paypal.com/paypalme/soywod)

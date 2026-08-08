@@ -32,7 +32,7 @@ use crate::{
         binary::IcalBinary,
         boolean::IcalBoolean,
         cal_address::IcalCalAddress,
-        datetime::{IcalDate, IcalDateTime, IcalTime},
+        datetime::{IcalDate, IcalDateTime, IcalDateTimeList, IcalTime},
         duration::IcalDuration,
         float::IcalFloat,
         geo::IcalGeo,
@@ -60,6 +60,8 @@ impl IcalCst<'_> {
                 IcalItem::Prop(line) if line.name.get().eq_ignore_ascii_case("VERSION") => {}
                 IcalItem::Prop(line) => props.push(line.decode(version)),
                 IcalItem::Component(child) => components.push(child.decode_component(version)),
+                // NOTE: An opaque line carried no structure to decode.
+                IcalItem::Opaque(_) => {}
             }
         }
 
@@ -79,6 +81,8 @@ impl IcalCst<'_> {
             match item {
                 IcalItem::Prop(line) => props.push(line.decode(version)),
                 IcalItem::Component(child) => components.push(child.decode_component(version)),
+                // NOTE: An opaque line carried no structure to decode.
+                IcalItem::Opaque(_) => {}
             }
         }
 
@@ -100,7 +104,14 @@ impl IcalLine<'_> {
 
         let value = match name.parse::<IcalPropKind>() {
             Ok(prop) => self.decode_value(prop, version),
-            Err(_) => IcalValue::Unknown(IcalUnknownValue::decode(&self.value)),
+            // NOTE: A name outside the vocabulary has no spec to consult, but a
+            // line that declares its own VALUE has said what to read it as
+            // (RFC 5545 3.2.20), and that holds for an X- name as much as for a
+            // registered one.
+            Err(_) => match self.declared_value_kind() {
+                Some(kind) => decode_value_kind(kind, &self.value),
+                None => IcalValue::Unknown(IcalUnknownValue::decode(&self.value)),
+            },
         };
 
         IcalProp {
@@ -155,6 +166,7 @@ fn decode_value_kind<'v>(kind: IcalValueKind, node: &'v IcalValueNode<'_>) -> Ic
         IcalValueKind::CalAddress => IcalValue::CalAddress(IcalCalAddress::decode(node)),
         IcalValueKind::Date => IcalValue::Date(IcalDate::decode(node)),
         IcalValueKind::DateTime => IcalValue::DateTime(IcalDateTime::decode(node)),
+        IcalValueKind::DateTimeList => IcalValue::DateTimeList(IcalDateTimeList::decode(node)),
         IcalValueKind::Duration => IcalValue::Duration(IcalDuration::decode(node)),
         IcalValueKind::Float => IcalValue::Float(IcalFloat::decode(node)),
         IcalValueKind::Geo => IcalValue::Geo(IcalGeo::decode(node)),
@@ -208,6 +220,11 @@ impl IcalParamNode<'_> {
             IcalParamKind::Order => IcalParam::Order(self.scalar()),
             IcalParamKind::Schema => IcalParam::Schema(self.scalar()),
             IcalParamKind::Derived => IcalParam::Derived(self.scalar()),
+            IcalParamKind::ScheduleAgent => IcalParam::ScheduleAgent(self.scalar()),
+            IcalParamKind::ScheduleForceSend => IcalParam::ScheduleForceSend(self.scalar()),
+            IcalParamKind::ScheduleStatus => IcalParam::ScheduleStatus(self.scalar()),
+            IcalParamKind::LinkRel => IcalParam::LinkRel(self.scalar()),
+            IcalParamKind::Gap => IcalParam::Gap(self.scalar()),
             IcalParamKind::Charset => IcalParam::Charset(self.scalar()),
         }
     }
@@ -264,7 +281,7 @@ mod tests {
         let cst = IcalCst::parse(input).unwrap();
         let cal = cst.decode();
 
-        // VERSION is the indicator; PRODID is the only calendar-level prop.
+        // NOTE: VERSION is the indicator; PRODID is the only calendar-level prop.
         assert_eq!(cal.version, crate::version::IcalVersion::V2_0);
         assert_eq!(cal.props.len(), 1);
         assert_eq!(&*cal.props[0].name, "PRODID");

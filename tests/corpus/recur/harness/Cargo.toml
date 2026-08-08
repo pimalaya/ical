@@ -1,0 +1,16 @@
+[package]
+name = "ical-recur-harness"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[dependencies]
+ical-rs = { path = "../../../..", default-features = false, features = ["recur"] }
+
+[[bin]]
+name = "harness"
+path = "src/main.rs"
+
+# Detach from the parent package so this regeneration tool builds standalone and
+# never joins the crate's own build.
+[workspace]

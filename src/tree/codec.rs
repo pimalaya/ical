@@ -59,6 +59,7 @@ impl<'v> Codec<'v> for IcalValue<'v> {
             IcalValue::CalAddress(v) => v.encode(escaper),
             IcalValue::Date(v) => v.encode(escaper),
             IcalValue::DateTime(v) => v.encode(escaper),
+            IcalValue::DateTimeList(v) => v.encode(escaper),
             IcalValue::Duration(v) => v.encode(escaper),
             IcalValue::Float(v) => v.encode(escaper),
             IcalValue::Geo(v) => v.encode(escaper),

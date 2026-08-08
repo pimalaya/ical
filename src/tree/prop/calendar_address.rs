@@ -34,6 +34,10 @@ impl IcalPropLens for CALENDAR_ADDRESS {
 impl IcalPropSpec for CALENDAR_ADDRESS {
     const KIND: IcalPropKind = IcalPropKind::CalendarAddress;
 
+    fn allowed_versions() -> &'static [IcalVersion] {
+        &[IcalVersion::V2_0]
+    }
+
     fn allowed_values(_version: IcalVersion) -> &'static [IcalValueKind] {
         &[IcalValueKind::CalAddress]
     }

@@ -122,7 +122,7 @@ mod tests {
     fn unescapes_only_the_semicolon_in_v2_1() {
         use crate::tree::codec::{mode::Escaper, unescape::unescape_with};
 
-        // vCalendar 1.0 resolves `\;` only; `\n` keeps its literal backslash, and a
+        // NOTE: vCalendar 1.0 resolves `\;` only; `\n` keeps its literal backslash, and a
         // trailing backslash stays.
         assert_eq!(unescape_with(br"a\;b\nc\", Escaper::V1_0), "a;b\\nc\\");
     }

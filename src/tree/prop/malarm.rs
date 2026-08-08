@@ -10,6 +10,7 @@ use crate::{
         value::IcalValueCursor,
     },
     value::text::IcalText,
+    version::IcalVersion,
 };
 
 /// The `MALARM` property lens.
@@ -31,4 +32,8 @@ impl IcalPropLens for MALARM {
 
 impl IcalPropSpec for MALARM {
     const KIND: IcalPropKind = IcalPropKind::MAlarm;
+
+    fn allowed_versions() -> &'static [IcalVersion] {
+        &[IcalVersion::V1_0]
+    }
 }

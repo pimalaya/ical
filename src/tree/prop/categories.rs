@@ -37,4 +37,10 @@ impl IcalPropSpec for CATEGORIES {
     fn allowed_values(_version: IcalVersion) -> &'static [IcalValueKind] {
         &[IcalValueKind::TextList]
     }
+
+    /// A list whatever `VALUE` declares: `TEXT` describes each item, not the
+    /// value as a whole.
+    fn value(_version: IcalVersion, _declared: Option<IcalValueKind>) -> IcalValueKind {
+        IcalValueKind::TextList
+    }
 }

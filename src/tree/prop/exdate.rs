@@ -10,7 +10,7 @@ use crate::{
         value::IcalValueCursor,
     },
     value::IcalValueKind,
-    value::datetime::IcalDateTime,
+    value::datetime::IcalDateTimeList,
     version::IcalVersion,
 };
 
@@ -19,7 +19,7 @@ use crate::{
 pub struct EXDATE;
 
 impl IcalPropLens for EXDATE {
-    type Target<'v> = IcalDateTime<'v>;
+    type Target<'v> = IcalDateTimeList<'v>;
 
     type Cursor<'c, 'a>
         = IcalValueCursor<'c, 'a>
@@ -35,6 +35,13 @@ impl IcalPropSpec for EXDATE {
     const KIND: IcalPropKind = IcalPropKind::ExDate;
 
     fn allowed_values(_version: IcalVersion) -> &'static [IcalValueKind] {
-        &[IcalValueKind::DateTime]
+        &[IcalValueKind::DateTimeList]
+    }
+
+    /// A list whatever its items are: a declared `DATE`, `DATE-TIME` or
+    /// `PERIOD` describes each item, not the value as a whole, and every item
+    /// is kept as raw text.
+    fn value(_version: IcalVersion, _declared: Option<IcalValueKind>) -> IcalValueKind {
+        IcalValueKind::DateTimeList
     }
 }

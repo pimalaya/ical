@@ -34,6 +34,10 @@ impl IcalPropLens for FREEBUSY {
 impl IcalPropSpec for FREEBUSY {
     const KIND: IcalPropKind = IcalPropKind::FreeBusy;
 
+    fn allowed_versions() -> &'static [IcalVersion] {
+        &[IcalVersion::V2_0]
+    }
+
     fn allowed_values(_version: IcalVersion) -> &'static [IcalValueKind] {
         &[IcalValueKind::Period]
     }
