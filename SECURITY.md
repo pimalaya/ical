@@ -8,4 +8,4 @@
 
 ## Reporting a Vulnerability
 
-https://github.com/pimalaya/ical-rs/issues
+https://github.com/pimalaya/ical/issues

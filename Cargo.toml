@@ -10,7 +10,7 @@ categories = ["data-structures", "parser-implementations", "encoding", "no-std"]
 keywords = ["icalendar", "calendar", "caldav", "rfc5545", "codec"]
 homepage = "https://pimalaya.org"
 documentation = "https://docs.rs/ical-rs/latest/ical"
-repository = "https://github.com/pimalaya/ical-rs"
+repository = "https://github.com/pimalaya/ical"
 
 [package.metadata.docs.rs]
 all-features = true

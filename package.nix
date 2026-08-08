@@ -19,15 +19,15 @@ rustPlatform.buildRustPackage {
 
   src = fetchFromGitHub {
     owner = "pimalaya";
-    repo = "ical-rs";
+    repo = "ical";
     rev = "v0.0.1";
     hash = "";
   };
 
   meta = {
     description = "iCalendar (RFC 5545) model with parser and builder, written in Rust";
-    homepage = "https://github.com/pimalaya/ical-rs";
-    changelog = "https://github.com/pimalaya/ical-rs/blob/master/CHANGELOG.md";
+    homepage = "https://github.com/pimalaya/ical";
+    changelog = "https://github.com/pimalaya/ical/blob/master/CHANGELOG.md";
     license = [
       lib.licenses.mit
       lib.licenses.asl20

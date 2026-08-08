@@ -12,7 +12,7 @@
 
 #![cfg(feature = "parser")]
 
-use std::str::FromStr;
+use std::{borrow::Cow, str::FromStr};
 
 use ical::{
     component::{IcalComponentKind, IcalComponentName},
@@ -20,6 +20,17 @@ use ical::{
     param::{IcalParam, IcalParamKind},
     prop::{IcalProp, IcalPropKind, IcalPropName},
     tree::cst::IcalCst,
+    tree::error::IcalParseError,
+    tree::param::{
+        IcalParamLens, IcalParamNode, altrep::ALTREP, charset::CHARSET, cn::CN, cutype::CUTYPE,
+        delegated_from::DELEGATED_FROM, delegated_to::DELEGATED_TO, derived::DERIVED, dir::DIR,
+        display::DISPLAY, email::EMAIL, encoding::ENCODING, fbtype::FBTYPE, feature::FEATURE,
+        fmttype::FMTTYPE, gap::GAP, label::LABEL, language::LANGUAGE, linkrel::LINKREL,
+        member::MEMBER, order::ORDER, partstat::PARTSTAT, range::RANGE, related::RELATED,
+        reltype::RELTYPE, role::ROLE, rsvp::RSVP, schedule_agent::SCHEDULE_AGENT,
+        schedule_force_send::SCHEDULE_FORCE_SEND, schedule_status::SCHEDULE_STATUS, schema::SCHEMA,
+        sent_by::SENT_BY, tzid::TZID, value::VALUE,
+    },
     value::{
         IcalUnknownValue, IcalValue, IcalValueKind,
         binary::IcalBinary,
@@ -413,4 +424,135 @@ fn an_unknown_name_keeps_its_own_spelling() {
     assert!(matches!(prop.name, IcalPropName::Unknown(_)));
     assert_eq!(&*prop.name, "X-VENDOR");
     assert_eq!(&*prop.clone().into_owned().name, "X-VENDOR");
+}
+
+// --- the parameter lenses ---
+
+/// Assert one scalar lens reads the value a wire parameter carries, and writes
+/// back the name it is named after.
+///
+/// The wire name is spelled out here rather than taken from the lens' own
+/// `KIND`, so a marker pointing at the wrong kind (the copy-paste hazard of
+/// thirty-odd near-identical modules) has somewhere to fail.
+macro_rules! assert_scalar_lens {
+    ($lens:ty, $name:literal, $sample:literal) => {{
+        let wire = concat!($name, "=", $sample);
+
+        let node = IcalParamNode::parse(wire);
+        assert_eq!(<$lens>::decode(&node), $sample, "{wire} does not decode");
+
+        let encoded = <$lens>::encode(&Cow::Borrowed($sample));
+        assert_eq!(encoded.to_string(), wire, "{wire} does not encode back");
+        assert_eq!(
+            <$lens>::decode(&encoded),
+            $sample,
+            "{wire} does not survive"
+        );
+    }};
+}
+
+/// The list counterpart: the values split on the commas outside quotes, and
+/// join back into one parameter.
+macro_rules! assert_list_lens {
+    ($lens:ty, $name:literal, $sample:literal) => {{
+        let wire = concat!($name, "=", $sample);
+        let expected: Vec<Cow<'_, str>> = $sample.split(',').map(Cow::Borrowed).collect();
+
+        let node = IcalParamNode::parse(wire);
+        assert_eq!(<$lens>::decode(&node), expected, "{wire} does not decode");
+
+        let encoded = <$lens>::encode(&expected);
+        assert_eq!(encoded.to_string(), wire, "{wire} does not encode back");
+        assert_eq!(
+            <$lens>::decode(&encoded),
+            expected,
+            "{wire} does not survive"
+        );
+    }};
+}
+
+#[test]
+fn every_scalar_parameter_lens_round_trips_under_its_own_name() {
+    assert_scalar_lens!(ALTREP, "ALTREP", "cid:part1.msg@example.com");
+    assert_scalar_lens!(CHARSET, "CHARSET", "UTF-8");
+    assert_scalar_lens!(CN, "CN", "Jane");
+    assert_scalar_lens!(CUTYPE, "CUTYPE", "GROUP");
+    assert_scalar_lens!(DERIVED, "DERIVED", "TRUE");
+    assert_scalar_lens!(DIR, "DIR", "ldap://example.com");
+    assert_scalar_lens!(DISPLAY, "DISPLAY", "BADGE");
+    assert_scalar_lens!(EMAIL, "EMAIL", "jane@example.com");
+    assert_scalar_lens!(ENCODING, "ENCODING", "BASE64");
+    assert_scalar_lens!(FBTYPE, "FBTYPE", "BUSY-TENTATIVE");
+    assert_scalar_lens!(FMTTYPE, "FMTTYPE", "text/plain");
+    assert_scalar_lens!(GAP, "GAP", "PT5M");
+    assert_scalar_lens!(LABEL, "LABEL", "Room-12");
+    assert_scalar_lens!(LANGUAGE, "LANGUAGE", "en-GB");
+    assert_scalar_lens!(LINKREL, "LINKREL", "describedby");
+    assert_scalar_lens!(ORDER, "ORDER", "1");
+    assert_scalar_lens!(PARTSTAT, "PARTSTAT", "NEEDS-ACTION");
+    assert_scalar_lens!(RANGE, "RANGE", "THISANDFUTURE");
+    assert_scalar_lens!(RELATED, "RELATED", "START");
+    assert_scalar_lens!(RELTYPE, "RELTYPE", "PARENT");
+    assert_scalar_lens!(ROLE, "ROLE", "REQ-PARTICIPANT");
+    assert_scalar_lens!(RSVP, "RSVP", "TRUE");
+    assert_scalar_lens!(SCHEDULE_AGENT, "SCHEDULE-AGENT", "SERVER");
+    assert_scalar_lens!(SCHEDULE_FORCE_SEND, "SCHEDULE-FORCE-SEND", "REQUEST");
+    assert_scalar_lens!(SCHEDULE_STATUS, "SCHEDULE-STATUS", "2.0");
+    assert_scalar_lens!(SCHEMA, "SCHEMA", "https://schema.org/Event");
+    assert_scalar_lens!(SENT_BY, "SENT-BY", "mailto:sec@example.com");
+    assert_scalar_lens!(TZID, "TZID", "Europe/Paris");
+    assert_scalar_lens!(VALUE, "VALUE", "DATE-TIME");
+}
+
+#[test]
+fn every_list_parameter_lens_round_trips_under_its_own_name() {
+    assert_list_lens!(DELEGATED_FROM, "DELEGATED-FROM", "mailto:a@example.com");
+    assert_list_lens!(
+        DELEGATED_TO,
+        "DELEGATED-TO",
+        "mailto:a@example.com,mailto:b@example.com"
+    );
+    assert_list_lens!(FEATURE, "FEATURE", "AUDIO,VIDEO");
+    assert_list_lens!(MEMBER, "MEMBER", "mailto:team@example.com");
+}
+
+/// Each structural failure is reported as its own variant, naming the text it
+/// choked on.
+///
+/// The classification is what a caller branches on, and the message is what a
+/// user reads; a parse that returned the right shape of error with the wrong
+/// variant, or a message that named nothing, would otherwise go unnoticed.
+#[test]
+fn every_structural_failure_is_classified_and_quoted() {
+    // NOTE: A last line left without its CRLF is accepted, so what is left for
+    // MissingCrlf is input that holds no content line at all.
+    let missing_crlf = IcalCst::parse("\r\n\r\n").unwrap_err();
+    assert!(matches!(missing_crlf, IcalParseError::MissingCrlf(_)));
+    assert!(missing_crlf.to_string().contains("line separator"));
+
+    let missing_colon =
+        IcalCst::parse("BEGIN:VCALENDAR\r\nSUMMARY\r\nEND:VCALENDAR\r\n").unwrap_err();
+    assert!(matches!(
+        missing_colon,
+        IcalParseError::MissingPropertyColon(_)
+    ));
+    assert!(missing_colon.to_string().contains("SUMMARY"));
+
+    let non_utf8 =
+        IcalCst::parse(b"BEGIN:VCALENDAR\r\nSUMM\xffARY:x\r\nEND:VCALENDAR\r\n").unwrap_err();
+    assert!(matches!(non_utf8, IcalParseError::NonUtf8Header(_)));
+
+    // NOTE: A single envelope-less record is read as a bare calendar rather
+    // than refused, so ExpectedBegin is what a second one, following a proper
+    // calendar, is met with.
+    let expected_begin = IcalCst::parse_many("BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\nSUMMARY:x\r\n")
+        .nth(1)
+        .expect("a second entry")
+        .unwrap_err();
+    assert!(matches!(expected_begin, IcalParseError::ExpectedBegin(_)));
+    assert!(expected_begin.to_string().contains("SUMMARY"));
+
+    let missing_end = IcalCst::parse("BEGIN:VCALENDAR\r\nSUMMARY:x\r\n").unwrap_err();
+    assert!(matches!(missing_end, IcalParseError::MissingEnd(_)));
+    assert!(missing_end.to_string().contains("VCALENDAR"));
 }
