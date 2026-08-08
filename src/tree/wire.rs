@@ -145,8 +145,8 @@ impl<'a> IcalWire<'a> {
         let mut at = 0;
 
         for (offset, part) in &self.parts {
-            // NOTE: Clamped, so a shape recorded against other bytes can never index
-            // out of this line or walk backwards.
+            // NOTE: Clamped, so a shape recorded against other bytes can never
+            // index out of this line or walk backwards.
             let offset = (*offset).clamp(at, logical.len());
             out.extend_from_slice(&logical[at..offset]);
             part.write_bytes(out);
@@ -210,8 +210,8 @@ mod tests {
 
     #[test]
     fn drops_a_shape_taken_against_other_bytes() {
-        // NOTE: What an edit leaves behind: the value grew, so every fold point after
-        // it is wrong and the whole shape has to go.
+        // NOTE: What an edit leaves behind: the value grew, so every fold point
+        // after it is wrong and the whole shape has to go.
         let mut wire = IcalWire::default();
         wire.fold(3, true, b' ');
         wire.seal(6);

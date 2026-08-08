@@ -77,8 +77,8 @@ impl<'a> IcalLine<'a> {
     /// unfolding drops them. A line with no folds borrows the source; a folded
     /// line is rebuilt owned, since its bytes are no longer contiguous.
     pub fn take(rest: &'a [u8]) -> Result<(Self, &'a [u8]), IcalParseError> {
-        // NOTE: Everything this tokeniser resolves is recorded here, so serialization
-        // can put it back.
+        // NOTE: Everything this tokeniser resolves is recorded here, so
+        // serialization can put it back.
         let mut wire = IcalWire::default();
 
         // NOTE: skip blank lines: real-world exports sometimes emit them.
@@ -99,10 +99,11 @@ impl<'a> IcalLine<'a> {
             wire.skipped(0, ascii(&rest[..rest.len() - head.len()]));
         }
 
-        // NOTE: A line that begins with folding whitespace but has no line to continue
-        // (a dangling continuation, e.g. left after a dropped blank line) would
-        // fold into the previous line on reparse; strip the leading whitespace so
-        // it stays its own line, and record it so it still round-trips.
+        // NOTE: A line that begins with folding whitespace but has no line to
+        // continue (a dangling continuation, e.g. left after a dropped blank
+        // line) would fold into the previous line on reparse; strip the leading
+        // whitespace so it stays its own line, and record it so it still
+        // round-trips.
         let indented = first;
         let first = strip_leading_wsp(first);
 
@@ -127,9 +128,9 @@ impl<'a> IcalLine<'a> {
                     Some(head) => {
                         logical.extend_from_slice(head);
                         if tail.is_empty() {
-                            // NOTE: The last continuation ends with a soft-break
-                            // marker and nothing follows: the `=` is on the
-                            // wire, the break after it is the line's own
+                            // NOTE: The last continuation ends with a
+                            // soft-break marker and nothing follows: the `=` is
+                            // on the wire, the break after it is the line's own
                             // ending.
                             wire.skipped(logical.len(), "=");
                             break;
@@ -270,13 +271,13 @@ impl<'a> IcalLine<'a> {
         let mut value = &content[colon + 1..];
         let mut wire = IcalWire::default();
 
-        // NOTE: A QUOTED-PRINTABLE value ending in `=` is a dangling soft-break marker,
-        // however it got there (a soft-break join, a folded continuation, or raw
-        // input): valid content would encode a literal `=` as `=3D`. Left in, it
-        // would re-trigger soft-break joining on reparse and swallow the next
-        // line, so the logical line drops it and the wire shape keeps it. This
-        // never touches base64 padding, since `ENCODING=BASE64` is not
-        // quoted-printable.
+        // NOTE: A QUOTED-PRINTABLE value ending in `=` is a dangling soft-break
+        // marker, however it got there (a soft-break join, a folded
+        // continuation, or raw input): valid content would encode a literal `=`
+        // as `=3D`. Left in, it would re-trigger soft-break joining on reparse
+        // and swallow the next line, so the logical line drops it and the wire
+        // shape keeps it. This never touches base64 padding, since
+        // `ENCODING=BASE64` is not quoted-printable.
         if head_is_quoted_printable(content) {
             let full = value.len();
             while value.last() == Some(&b'=') {
@@ -367,8 +368,8 @@ fn starts_with_wsp(rest: &[u8]) -> bool {
 }
 
 /// Strip any leading folding whitespace (space, tab) or stray line-break byte
-/// (`\r`, `\n`) from a line's content, so its name never begins with a byte that
-/// another layer (folding, blank-line skipping) would re-strip on reparse.
+/// (`\r`, `\n`) from a line's content, so its name never begins with a byte
+/// that another layer (folding, blank-line skipping) would re-strip on reparse.
 fn strip_leading_wsp(mut bytes: &[u8]) -> &[u8] {
     while matches!(bytes.first(), Some(b' ' | b'\t' | b'\r' | b'\n')) {
         bytes = &bytes[1..];
@@ -469,8 +470,8 @@ mod tests {
 
     #[test]
     fn drops_the_fold_points_once_the_value_is_edited() {
-        // NOTE: The old offsets index bytes that are no longer there, so the edited
-        // line goes out unfolded rather than folded in the wrong places.
+        // NOTE: The old offsets index bytes that are no longer there, so the
+        // edited line goes out unfolded rather than folded in the wrong places.
         let (mut line, _) = IcalLine::take(b"NOTE:foo\r\n bar\r\n").unwrap();
         line.value = IcalValueNode::parse(b"something else entirely");
         assert_eq!(line.to_string(), "NOTE:something else entirely\r\n");
@@ -478,8 +479,8 @@ mod tests {
 
     #[test]
     fn keeps_the_fold_points_when_an_edit_keeps_the_length() {
-        // NOTE: Same length, so every offset still indexes what it did: the line is
-        // folded exactly where it was.
+        // NOTE: Same length, so every offset still indexes what it did: the
+        // line is folded exactly where it was.
         let (mut line, _) = IcalLine::take(b"NOTE:foo\r\n bar\r\n").unwrap();
         line.value = IcalValueNode::parse(b"BARFOO");
         assert_eq!(line.to_string(), "NOTE:BAR\r\n FOO\r\n");
@@ -510,8 +511,8 @@ mod tests {
 
     #[test]
     fn joins_a_quoted_printable_soft_broken_line() {
-        // NOTE: Two soft breaks: the first continuation itself ends with `=` (the
-        // Some arm), the second does not (the None arm).
+        // NOTE: Two soft breaks: the first continuation itself ends with `=`
+        // (the Some arm), the second does not (the None arm).
         let (line, _) = IcalLine::take(
             b"NOTE;ENCODING=QUOTED-PRINTABLE:caf=\r\n=C3=\r\n=A9\r\nEND:VCALENDAR\r\n",
         )
@@ -545,15 +546,16 @@ mod tests {
 
     #[test]
     fn a_trailing_equals_without_a_colon_is_not_quoted_printable() {
-        // NOTE: `abc=` ends with `=` but has no colon, so the QP soft-break check bails
-        // and the line then fails for want of a value separator.
+        // NOTE: `abc=` ends with `=` but has no colon, so the QP soft-break
+        // check bails and the line then fails for want of a value separator.
         assert!(IcalLine::take(b"abc=\r\n").is_err());
     }
 
     #[test]
     fn quoted_printable_join_stops_at_an_empty_tail() {
-        // NOTE: The final continuation ends with `=` and nothing follows, so the join
-        // loop exits via the empty-tail guard rather than a non-`=` line.
+        // NOTE: The final continuation ends with `=` and nothing follows, so
+        // the join loop exits via the empty-tail guard rather than a non-`=`
+        // line.
         let (line, rest) = IcalLine::take(b"NOTE;ENCODING=QUOTED-PRINTABLE:a=\r\nb=\r\n").unwrap();
         assert_eq!(line.raw_value_str(), "ab");
         assert_eq!(rest, b"");

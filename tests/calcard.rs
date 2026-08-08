@@ -2,13 +2,14 @@
 //!
 //! Two independent parsers read the same corpus, and each states the *shape* it
 //! read: how many times every (component, property) pair occurs. Neither can
-//! fake that, and it exercises the whole path (parse, structure, decode) without
-//! pinning either crate's value modelling.
+//! fake that, and it exercises the whole path (parse, structure, decode)
+//! without pinning either crate's value modelling.
 //!
 //! Disagreement is expected and is not a failure by itself: calcard and ical-rs
 //! take different liberties with malformed input, which is exactly the axis the
-//! outcome counts measure. What the test pins is the counts, so a fixture moving
-//! from agreement to disagreement has to be read as the behaviour change it is.
+//! outcome counts measure. What the test pins is the counts, so a fixture
+//! moving from agreement to disagreement has to be read as the behaviour change
+//! it is.
 //!
 //! `VERSION` is dropped from both shapes: ical-rs lifts it out of the property
 //! list into a typed indicator on the calendar, calcard leaves it in place, and

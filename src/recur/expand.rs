@@ -436,8 +436,8 @@ impl IcalRecurExpand {
 
                 days.push(match rule.skip {
                     IcalRecurSkip::Backward => last,
-                    // NOTE: Forward from the last day of a month is the first of
-                    // the next one, which is where the RFC's Feb 29 lands.
+                    // NOTE: Forward from the last day of a month is the first
+                    // of the next one, which is where the RFC's Feb 29 lands.
                     _ => last + 1,
                 });
             }
@@ -542,9 +542,9 @@ impl IcalRecurExpand {
     /// supplies that, and a weekly one its weekday.
     fn default_day_matches(&self, day: i64, month: u8, date: u8) -> bool {
         let rule = &self.rule;
-        // NOTE: Only a part that is *in force* counts as selecting a day: one the
-        // frequency forbids is ignored whole, so it can neither select a day
-        // nor stop the start from supplying one.
+        // NOTE: Only a part that is *in force* counts as selecting a day: one
+        // the frequency forbids is ignored whole, so it can neither select a
+        // day nor stop the start from supplying one.
         if !rule.by_day.is_empty()
             || self.month_day_applies()
             || self.year_day_applies()
@@ -910,17 +910,17 @@ mod tests {
 
     #[test]
     fn counts_weekday_ordinals_even_where_byday_only_limits() {
-        // NOTE: RFC 5545 3.3.10 admits an ordinal at MONTHLY and YEARLY whatever the
-        // other BY parts hold, so the 15th qualifies only when it is also the
-        // second (or second to last) Monday of its month.
+        // NOTE: RFC 5545 3.3.10 admits an ordinal at MONTHLY and YEARLY
+        // whatever the other BY parts hold, so the 15th qualifies only when it
+        // is also the second (or second to last) Monday of its month.
         let start = IcalRecurDateTime::date(1997, 9, 2);
         assert_eq!(
             expand("FREQ=MONTHLY;BYMONTHDAY=15;BYDAY=2MO,-2MO", start, 3),
             dates(&[(1999, 2, 15), (2010, 2, 15), (2021, 2, 15)])
         );
 
-        // NOTE: At YEARLY the ordinal counts inside the year, so this is January 1
-        // in the years it opens on a Friday.
+        // NOTE: At YEARLY the ordinal counts inside the year, so this is
+        // January 1 in the years it opens on a Friday.
         assert_eq!(
             expand("FREQ=YEARLY;BYMONTHDAY=1;BYDAY=1FR", start, 3),
             dates(&[(1999, 1, 1), (2010, 1, 1), (2016, 1, 1)])
@@ -935,8 +935,8 @@ mod tests {
 
     #[test]
     fn gives_up_on_a_period_set_pos_can_never_fill() {
-        // NOTE: One candidate per period, and BYSETPOS asks for the second: without
-        // a bound on empty periods this walks a century of seconds.
+        // NOTE: One candidate per period, and BYSETPOS asks for the second:
+        // without a bound on empty periods this walks a century of seconds.
         let start = IcalRecurDateTime::date(2026, 1, 1);
         assert!(expand("FREQ=SECONDLY;BYSETPOS=2", start, 1).is_empty());
         assert!(expand("FREQ=MINUTELY;BYSECOND=0;BYSETPOS=3", start, 1).is_empty());

@@ -3,9 +3,11 @@
 
 #![cfg(feature = "parser")]
 
-use ical::tree::component::{valarm::VALARM, vevent::VEVENT};
-use ical::tree::cst::IcalCst;
-use ical::tree::prop::{description::DESCRIPTION, summary::SUMMARY};
+use ical::tree::{
+    component::{valarm::VALARM, vevent::VEVENT},
+    cst::IcalCst,
+    prop::{description::DESCRIPTION, summary::SUMMARY},
+};
 
 const CAL: &str = concat!(
     "BEGIN:VCALENDAR\r\n",

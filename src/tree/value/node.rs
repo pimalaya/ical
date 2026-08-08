@@ -69,8 +69,8 @@ impl<'a> IcalValueNode<'a> {
         }
     }
 
-    /// Build a value node from already-split components (the model encode path);
-    /// there is no `raw`, so the components are the source of truth.
+    /// Build a value node from already-split components (the model encode
+    /// path); there is no `raw`, so the components are the source of truth.
     pub(crate) fn from_components(
         components: Vec<Vec<IcalValueLeaf<'a>>>,
         escaper: Escaper,
@@ -143,8 +143,8 @@ impl<'a> IcalValueNode<'a> {
     /// value, not a list separator (so they must not be truncated).
     pub fn decode_joined_at(&self, i: usize) -> Cow<'_, str> {
         match self.component_at(i) {
-            // NOTE: The whole component slice already has the commas in place, so
-            // unescaping it verbatim keeps them literal.
+            // NOTE: The whole component slice already has the commas in place,
+            // so unescaping it verbatim keeps them literal.
             Some(Component::Raw(bytes)) => unescape_with(bytes, self.escaper),
             Some(Component::Split(leaves)) => {
                 if leaves.len() <= 1 {
@@ -321,7 +321,8 @@ impl fmt::Display for IcalValueNode<'_> {
 /// One located component: a slice of the still-unsplit value, or its leaves
 /// once the value has been split for editing.
 enum Component<'s, 'a> {
-    /// The component's bytes, still `,`-joined, borrowed from the unsplit value.
+    /// The component's bytes, still `,`-joined, borrowed from the unsplit
+    /// value.
     Raw(&'s [u8]),
     /// The component's already-split leaves.
     Split(&'s [IcalValueLeaf<'a>]),

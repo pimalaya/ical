@@ -1,7 +1,7 @@
 //! # Escape (write codec)
 //!
-//! Apply the RFC 5545 3.3.11 value escapes when serializing. The write half of the
-//! escaping codec; its exact inverse is
+//! Apply the RFC 5545 3.3.11 value escapes when serializing. The write half of
+//! the escaping codec; its exact inverse is
 //! [`unescape`](crate::tree::codec::unescape), and the version-specific rules
 //! are selected by the [`Escaper`]. The structural encoders in
 //! [`encode`](crate::tree::codec::encode) run every value leaf through here.

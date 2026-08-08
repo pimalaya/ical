@@ -27,7 +27,8 @@
 //!
 //! Nothing in this module resolves a time zone. `DTSTART`, `RDATE`, `EXDATE`
 //! and `RECURRENCE-ID` are read as the civil times they spell, and a `TZID`
-//! parameter is ignored, exactly as [expansion](crate::recur::expand) ignores it.
+//! parameter is ignored, exactly as [expansion](crate::recur::expand) ignores
+//! it.
 
 use alloc::{vec, vec::Vec};
 
@@ -69,8 +70,9 @@ pub struct IcalRecurOverride {
 /// The recurrence set of one component: what adds to it, what takes away from
 /// it, and what replaces an instance of it.
 ///
-/// Build one from a decoded component with [`of_component`](Self::of_component),
-/// or by hand, and walk it with [`expand`](Self::expand).
+/// Build one from a decoded component with
+/// [`of_component`](Self::of_component), or by hand, and walk it with
+/// [`expand`](Self::expand).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct IcalRecurSet {
     /// The `DTSTART`, always the first instance of the set (RFC 5545 3.8.2.4).
@@ -200,8 +202,8 @@ impl IcalRecurSet {
                 .collect(),
             heads: vec![None; self.rules.len()],
             primed: false,
-            // NOTE: The literal sources: DTSTART, the RDATEs, and the identity of
-            // every override, which is an instance whether or not a rule
+            // NOTE: The literal sources: DTSTART, the RDATEs, and the identity
+            // of every override, which is an instance whether or not a rule
             // generates it.
             literals: {
                 let mut literals: Vec<IcalRecurDateTime> = start.into_iter().collect();
@@ -285,8 +287,8 @@ impl IcalRecurSetExpand<'_> {
                 (None, None) => return None,
             };
 
-            // NOTE: Consume every source sitting on it, so an instance a rule and an
-            // RDATE both name is yielded once.
+            // NOTE: Consume every source sitting on it, so an instance a rule
+            // and an RDATE both name is yielded once.
             for (index, head) in self.heads.iter_mut().enumerate() {
                 if *head == Some(next) {
                     *head = self.streams[index].next();
@@ -296,9 +298,9 @@ impl IcalRecurSetExpand<'_> {
                 self.literal += 1;
             }
 
-            // NOTE: A rule and a literal can still collide across iterations when a
-            // stream repeats a value; the last-yielded guard makes the walk
-            // strictly increasing whatever the sources do.
+            // NOTE: A rule and a literal can still collide across iterations
+            // when a stream repeats a value; the last-yielded guard makes the
+            // walk strictly increasing whatever the sources do.
             if self.last == Some(next) {
                 continue;
             }
@@ -315,8 +317,8 @@ impl IcalRecurSetExpand<'_> {
         }
 
         for (index, stream) in self.exrules.iter_mut().enumerate() {
-            // NOTE: Advance this exception stream up to the candidate: it is sorted,
-            // so anything it has already passed can never match again.
+            // NOTE: Advance this exception stream up to the candidate: it is
+            // sorted, so anything it has already passed can never match again.
             while self.exheads[index].is_none_or(|head| head < id) {
                 match stream.next() {
                     Some(next) => self.exheads[index] = Some(next),
@@ -332,9 +334,9 @@ impl IcalRecurSetExpand<'_> {
         false
     }
 
-    /// The offset every `RANGE=THISANDFUTURE` override in force at `id` applies,
-    /// in seconds. The latest one wins, as a later override restates the shift
-    /// rather than compounding it.
+    /// The offset every `RANGE=THISANDFUTURE` override in force at `id`
+    /// applies, in seconds. The latest one wins, as a later override restates
+    /// the shift rather than compounding it.
     fn shift(&self, id: IcalRecurDateTime) -> i64 {
         self.set
             .overrides

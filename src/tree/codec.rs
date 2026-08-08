@@ -5,8 +5,8 @@
 //!
 //! [`decode`] projects a raw syntax tree onto the decoded model and [`encode`]
 //! projects it back; that is the structural level. Underneath, the value-string
-//! level: [`escape`] and [`unescape`] apply and resolve the RFC 5545 3.3.11 value
-//! escapes (keyed by the [`mode`] `Escaper`). The structural encoders and
+//! level: [`escape`] and [`unescape`] apply and resolve the RFC 5545 3.3.11
+//! value escapes (keyed by the [`mode`] `Escaper`). The structural encoders and
 //! decoders run every value leaf through those. Content transfer encodings
 //! (`QUOTED-PRINTABLE`, `BASE64`) and `CHARSET` are never resolved here: the
 //! core transforms no content, leaving that to the opt-in feature helpers.

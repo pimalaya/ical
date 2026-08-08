@@ -8,15 +8,17 @@
 
 use std::borrow::Cow;
 
-use ical::component::{IcalComponent, IcalComponentKind};
-use ical::ical::Ical;
-use ical::tree::cst::IcalCst;
-use ical::tree::ical::builder::IcalPropBuilder;
-use ical::tree::prop::{dtstamp::DTSTAMP, prodid::PRODID, summary::SUMMARY, uid::UID};
-use ical::value::IcalValue;
-use ical::value::datetime::IcalDateTime;
-use ical::value::text::IcalText;
-use ical::version::IcalVersion;
+use ical::{
+    component::{IcalComponent, IcalComponentKind},
+    ical::Ical,
+    tree::{
+        cst::IcalCst,
+        ical::builder::IcalPropBuilder,
+        prop::{dtstamp::DTSTAMP, prodid::PRODID, summary::SUMMARY, uid::UID},
+    },
+    value::{IcalValue, datetime::IcalDateTime, text::IcalText},
+    version::IcalVersion,
+};
 
 fn main() {
     let version = IcalVersion::V2_0;

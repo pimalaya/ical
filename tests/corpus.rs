@@ -1,8 +1,8 @@
 //! Round-trip robustness sweep over the corpus.
 //!
-//! Every fixture must parse, serialize to a byte-stable fixpoint (its own output
-//! reparses identically), and decode without panicking. This is the crate's
-//! central guarantee: byte-faithful parsing of any real calendar.
+//! Every fixture must parse, serialize to a byte-stable fixpoint (its own
+//! output reparses identically), and decode without panicking. This is the
+//! crate's central guarantee: byte-faithful parsing of any real calendar.
 //!
 //! The hand-written corpora (rfc, vcalendar) assert byte-identity outright. The
 //! vendored real-world corpora (libical, ical4j, icaljs) are *classified*

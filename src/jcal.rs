@@ -136,8 +136,8 @@ impl<'a> Ical<'a> {
         for entry in props {
             let prop = prop_from_jcal(entry, version);
 
-            // NOTE: VERSION is the hoisted-out indicator, never a property of the
-            // model (see `Ical::props`).
+            // NOTE: VERSION is the hoisted-out indicator, never a property of
+            // the model (see `Ical::props`).
             if prop.name.eq_ignore_ascii_case("VERSION") {
                 if let IcalValue::Text(text) = &prop.value {
                     version = text.0.parse().unwrap_or(IcalVersion::V2_0);
@@ -244,8 +244,8 @@ pub(crate) fn type_slot(prop: &IcalProp<'_>) -> String {
     }
 
     match prop.value.kind() {
-        // NOTE: A list is several values of one kind, and that kind is what jCal
-        // names.
+        // NOTE: A list is several values of one kind, and that kind is what
+        // jCal names.
         Some(IcalValueKind::DateTimeList) => (*IcalValueKind::DateTime).to_ascii_lowercase(),
         Some(IcalValueKind::TextList) => (*IcalValueKind::Text).to_ascii_lowercase(),
         Some(kind) => (*kind).to_ascii_lowercase(),
@@ -357,9 +357,9 @@ pub(crate) fn prop_from_jcal<'a>(entry: &'a Value, version: IcalVersion) -> Ical
         None => declared,
     };
 
-    // NOTE: The slot survives as a VALUE parameter whenever it says more than the
-    // property's default would, so `VALUE=PERIOD` and `VALUE=BINARY` come back
-    // rather than dissolving into the type they named.
+    // NOTE: The slot survives as a VALUE parameter whenever it says more than
+    // the property's default would, so `VALUE=PERIOD` and `VALUE=BINARY` come
+    // back rather than dissolving into the type they named.
     let default = spec
         .as_ref()
         .and_then(|spec| (spec.allowed_values)(version).first().copied())
@@ -368,8 +368,8 @@ pub(crate) fn prop_from_jcal<'a>(entry: &'a Value, version: IcalVersion) -> Ical
     let names_something = !slot.is_empty() && !slot.eq_ignore_ascii_case("unknown");
 
     if names_something && declared != Some(default) {
-        // NOTE: Value kinds are case-insensitive tokens, and uppercase is how the
-        // wire spells them.
+        // NOTE: Value kinds are case-insensitive tokens, and uppercase is how
+        // the wire spells them.
         decoded.push(IcalParam::Value(Cow::Owned(slot.to_ascii_uppercase())));
     }
 
@@ -561,8 +561,8 @@ fn value_from_jcal<'a>(kind: Option<IcalValueKind>, values: &'a [Value]) -> Ical
     };
 
     match kind {
-        // NOTE: RFC 7265 3.5.1 spells a binary value as base64 text; the URI form of
-        // ATTACH arrives through the `uri` type slot instead.
+        // NOTE: RFC 7265 3.5.1 spells a binary value as base64 text; the URI
+        // form of ATTACH arrives through the `uri` type slot instead.
         IcalValueKind::Binary => IcalValue::Binary(IcalBinary::Base64(text())),
         IcalValueKind::Boolean => IcalValue::Boolean(IcalBoolean(match first {
             Some(Value::Bool(true)) => Cow::Borrowed("TRUE"),

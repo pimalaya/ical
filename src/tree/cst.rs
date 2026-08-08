@@ -7,15 +7,15 @@
 //! envelope wrapping an ordered body of [`items`](IcalCst::items): property
 //! lines and nested components, in source order, so anything round-trips byte
 //! for byte even when a producer interleaves them. It knows nothing about what
-//! a property or component *means*. It is filled from bytes ([`parse`](IcalCst::parse))
-//! or from typed items, exports its bytes byte-faithfully
-//! ([`to_bytes`](IcalCst::to_bytes), or the lossy-for-non-UTF-8
+//! a property or component *means*. It is filled from bytes
+//! ([`parse`](IcalCst::parse)) or from typed items, exports its bytes
+//! byte-faithfully ([`to_bytes`](IcalCst::to_bytes), or the lossy-for-non-UTF-8
 //! [`Display`](core::fmt::Display) / `to_string`), and offers typed access by
 //! lens ([`prop`](IcalCst::prop), [`prop_mut`](IcalCst::prop_mut),
 //! [`component`](IcalCst::component)). The semantic projection
 //! ([`decode`](IcalCst::decode)) and the codec live in the
-//! [`decode`](crate::tree::codec::decode) / [`encode`](crate::tree::codec::encode)
-//! siblings.
+//! [`decode`](crate::tree::codec::decode) /
+//! [`encode`](crate::tree::codec::encode) siblings.
 //!
 //! # Examples
 //!
@@ -198,8 +198,8 @@ impl<'a> IcalCst<'a> {
         let mut rest = input.as_ref();
         let mut recovery = IcalRecovery::default();
 
-        // NOTE: Items outside any BEGIN, which is where a bare record's properties
-        // and any stray line land.
+        // NOTE: Items outside any BEGIN, which is where a bare record's
+        // properties and any stray line land.
         let mut loose: Vec<IcalItem<'a>> = Vec::new();
 
         while !is_blank(rest) {
@@ -246,7 +246,8 @@ impl<'a> IcalCst<'a> {
         input: &'a [u8],
         recovery: &mut IcalRecovery<'a>,
     ) -> (Self, &'a [u8]) {
-        // NOTE: The caller only ever enters here on a line that tokenised as BEGIN.
+        // NOTE: The caller only ever enters here on a line that tokenised as
+        // BEGIN.
         let (begin, mut rest) = IcalLine::take(input).expect("a BEGIN line");
         let name = begin.raw_value_str().into_owned();
 
@@ -337,8 +338,8 @@ impl<'a> IcalCst<'a> {
 
         loop {
             if rest.is_empty() {
-                // NOTE: The component's name, not the whole input: an error that
-                // carries a megabyte of calendar is not a diagnostic.
+                // NOTE: The component's name, not the whole input: an error
+                // that carries a megabyte of calendar is not a diagnostic.
                 return Err(IcalParseError::MissingEnd(
                     begin.raw_value_str().into_owned(),
                 ));
@@ -360,8 +361,8 @@ impl<'a> IcalCst<'a> {
             }
 
             if name.eq_ignore_ascii_case("BEGIN") {
-                // NOTE: A nested component starts at `rest` (the BEGIN line just
-                // peeked); recurse from there and skip past its END.
+                // NOTE: A nested component starts at `rest` (the BEGIN line
+                // just peeked); recurse from there and skip past its END.
                 let (child, next) = Self::take_component(rest)?;
                 items.push(IcalItem::Component(Box::new(child)));
                 rest = next;
@@ -669,8 +670,8 @@ mod tests {
 
     #[test]
     fn round_trips_a_folded_calendar_byte_for_byte() {
-        // NOTE: What a real exporter emits: folded at a column, blank lines between
-        // components, and a blank line at the end of the file.
+        // NOTE: What a real exporter emits: folded at a column, blank lines
+        // between components, and a blank line at the end of the file.
         let raw = concat!(
             "BEGIN:VCALENDAR\r\n",
             "VERSION:2.0\r\n",
@@ -699,9 +700,9 @@ mod tests {
 
     #[test]
     fn round_trips_a_whole_multi_calendar_file() {
-        // NOTE: `parse` reads the first calendar and stops, so a file holding several
-        // round-trips through `parse_many`, whose output concatenates to the
-        // input, blank lines between calendars included.
+        // NOTE: `parse` reads the first calendar and stops, so a file holding
+        // several round-trips through `parse_many`, whose output concatenates
+        // to the input, blank lines between calendars included.
         let raw = concat!(
             "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR\r\n",
             "\r\n",
@@ -734,8 +735,8 @@ mod tests {
             [IcalParseError::MissingPropertyColon(_)]
         ));
 
-        // NOTE: The rest of the calendar survived: the property after the bad line is
-        // there to be read.
+        // NOTE: The rest of the calendar survived: the property after the bad
+        // line is there to be read.
         let cal = &recovery.calendars[0];
         assert_eq!(&*cal.prop::<PRODID>().unwrap().0, "-//Example//EN");
     }

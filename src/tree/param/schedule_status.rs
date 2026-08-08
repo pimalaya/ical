@@ -1,13 +1,17 @@
 //! # SCHEDULE-STATUS parameter lens
 //!
-//! The `SCHEDULE-STATUS` parameter lens: the status a server reports for a scheduling operation (RFC 6638 7.3).
+//! The `SCHEDULE-STATUS` parameter lens: the status a server reports for a
+//! scheduling operation (RFC 6638 7.3).
 
 use alloc::{borrow::Cow, string::ToString, vec};
 
-use crate::tree::leaf::IcalLeaf;
 use crate::{
     param::IcalParamKind,
-    tree::{codec::unescape::unescape, param::IcalParamLens, param::IcalParamNode},
+    tree::{
+        codec::unescape::unescape,
+        leaf::IcalLeaf,
+        param::{IcalParamLens, IcalParamNode},
+    },
 };
 
 /// The `SCHEDULE-STATUS` parameter lens.

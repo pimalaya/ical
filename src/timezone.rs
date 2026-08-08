@@ -192,8 +192,8 @@ impl IcalTimezone {
                         previous = Some(transition);
                     }
                 } else {
-                    // NOTE: Onsets come out in order, so the first one past the query
-                    // is this observance's only candidate for the next
+                    // NOTE: Onsets come out in order, so the first one past the
+                    // query is this observance's only candidate for the next
                     // transition, and there is no reason to walk an endless
                     // rule any further.
                     if next.is_none_or(|held| transition.before_local < held.before_local) {
@@ -215,7 +215,8 @@ impl IcalTimezone {
             };
         }
 
-        // NOTE: A local time the next transition is about to repeat happens twice.
+        // NOTE: A local time the next transition is about to repeat happens
+        // twice.
         if let Some(transition) = next
             && transition.to < transition.from
             && local >= transition.after_local()

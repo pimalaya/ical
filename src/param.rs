@@ -97,9 +97,11 @@ pub enum IcalParamKind {
     Schema,
     /// `DERIVED`: marks a derived property value (RFC 9073 5.3).
     Derived,
-    /// `SCHEDULE-AGENT`: who performs scheduling for an attendee (RFC 6638 7.1).
+    /// `SCHEDULE-AGENT`: who performs scheduling for an attendee (RFC 6638
+    /// 7.1).
     ScheduleAgent,
-    /// `SCHEDULE-FORCE-SEND`: a request to resend a scheduling message (RFC 6638 7.2).
+    /// `SCHEDULE-FORCE-SEND`: a request to resend a scheduling message (RFC
+    /// 6638 7.2).
     ScheduleForceSend,
     /// `SCHEDULE-STATUS`: the status of a scheduling operation (RFC 6638 7.3).
     ScheduleStatus,

@@ -125,8 +125,8 @@ fn freq_name(freq: IcalRecurFreq) -> &'static str {
 }
 
 impl IcalRecurRule {
-    /// Check the rule against RFC 5545 3.3.10, returning a [`IcalValid`] proof or
-    /// every problem found.
+    /// Check the rule against RFC 5545 3.3.10, returning a [`IcalValid`] proof
+    /// or every problem found.
     pub fn validate(self) -> Result<IcalValid<Self>, Vec<IcalRecurRuleProblem>> {
         let problems = self.problems();
 
@@ -146,8 +146,8 @@ impl IcalRecurRule {
         let mut problems = Vec::new();
         let freq = self.freq;
 
-        // NOTE: "The BYWEEKNO rule part MUST NOT be used when the FREQ rule part is
-        // set to anything other than YEARLY."
+        // NOTE: "The BYWEEKNO rule part MUST NOT be used when the FREQ rule
+        // part is set to anything other than YEARLY."
         if !self.by_week_no.is_empty() && freq != Yearly {
             problems.push(IcalRecurRuleProblem::PartFreq {
                 part: ByWeekNo,
@@ -155,8 +155,8 @@ impl IcalRecurRule {
             });
         }
 
-        // NOTE: "The BYYEARDAY rule part MUST NOT be specified when the FREQ rule
-        // part is set to DAILY, WEEKLY, or MONTHLY."
+        // NOTE: "The BYYEARDAY rule part MUST NOT be specified when the FREQ
+        // rule part is set to DAILY, WEEKLY, or MONTHLY."
         if !self.by_year_day.is_empty() && matches!(freq, Daily | Weekly | Monthly) {
             problems.push(IcalRecurRuleProblem::PartFreq {
                 part: ByYearDay,
@@ -164,8 +164,8 @@ impl IcalRecurRule {
             });
         }
 
-        // NOTE: "The BYMONTHDAY rule part MUST NOT be specified when the FREQ rule
-        // part is set to WEEKLY."
+        // NOTE: "The BYMONTHDAY rule part MUST NOT be specified when the FREQ
+        // rule part is set to WEEKLY."
         if !self.by_month_day.is_empty() && freq == Weekly {
             problems.push(IcalRecurRuleProblem::PartFreq {
                 part: ByMonthDay,
@@ -173,10 +173,10 @@ impl IcalRecurRule {
             });
         }
 
-        // NOTE: "The BYDAY rule part MUST NOT be specified with a numeric value when
-        // the FREQ rule part is not set to MONTHLY or YEARLY. Furthermore, the
-        // BYDAY rule part MUST NOT be specified with a numeric value with the
-        // FREQ rule part set to YEARLY when the BYWEEKNO rule part is
+        // NOTE: "The BYDAY rule part MUST NOT be specified with a numeric value
+        // when the FREQ rule part is not set to MONTHLY or YEARLY. Furthermore,
+        // the BYDAY rule part MUST NOT be specified with a numeric value with
+        // the FREQ rule part set to YEARLY when the BYWEEKNO rule part is
         // specified."
         let ordinal = self.by_day.iter().any(|day| day.ordinal.is_some());
         if ordinal {
@@ -187,22 +187,22 @@ impl IcalRecurRule {
             }
         }
 
-        // NOTE: "[BYSETPOS] MUST only be used in conjunction with another BYxxx rule
-        // part."
+        // NOTE: "[BYSETPOS] MUST only be used in conjunction with another BYxxx
+        // rule part."
         if !self.by_set_pos.is_empty() && !self.has_other_by_part() {
             problems.push(IcalRecurRuleProblem::SetPosAlone);
         }
 
-        // NOTE: "The UNTIL rule part and the COUNT rule part MUST NOT occur in the
-        // same 'recur'." Parsing accepts both, since a rule that says too much
-        // is still a rule; this is where it is said out loud.
+        // NOTE: "The UNTIL rule part and the COUNT rule part MUST NOT occur in
+        // the same 'recur'." Parsing accepts both, since a rule that says too
+        // much is still a rule; this is where it is said out loud.
         if self.until.is_some() && self.count.is_some() {
             problems.push(IcalRecurRuleProblem::UntilWithCount);
         }
 
-        // NOTE: RFC 7529 4: SKIP "MUST NOT be present unless RSCALE is present".
-        // `RSCALE=GREGORIAN` is the usual way to satisfy that, and the only one
-        // this crate expands.
+        // NOTE: RFC 7529 4: SKIP "MUST NOT be present unless RSCALE is
+        // present". `RSCALE=GREGORIAN` is the usual way to satisfy that, and
+        // the only one this crate expands.
         if self.skip != IcalRecurSkip::Omit && self.scale.is_none() {
             problems.push(IcalRecurRuleProblem::SkipWithoutScale);
         }
@@ -302,8 +302,8 @@ mod tests {
 
     #[test]
     fn reports_a_rule_bounded_twice() {
-        // NOTE: Parsing refuses this pair, so the case has to be built by hand, which
-        // is exactly the caller this check is for.
+        // NOTE: Parsing refuses this pair, so the case has to be built by hand,
+        // which is exactly the caller this check is for.
         let mut rule = IcalRecurRule::parse("FREQ=DAILY;COUNT=3").unwrap();
         rule.until = Some(crate::recur::IcalRecurDateTime::date(2026, 1, 1));
 

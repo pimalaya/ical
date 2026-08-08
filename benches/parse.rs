@@ -66,8 +66,8 @@ fn parse_to_content_lines(c: &mut Criterion) {
 }
 
 /// Decoded-model level: full parse into a typed model. Ours is parse + decode
-/// into `Ical` (not the validated `IcalValid<Ical>`), compared against the eager
-/// model parsers.
+/// into `Ical` (not the validated `IcalValid<Ical>`), compared against the
+/// eager model parsers.
 fn parse_to_model(c: &mut Criterion) {
     let mut group = c.benchmark_group("parse_to_model");
 

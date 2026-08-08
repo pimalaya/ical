@@ -2,9 +2,9 @@
 //!
 //! Each corpus is a directory under tests/corpus/ (provenance and licensing
 //! live in its ATTRIBUTION.md). It is a robustness harness, not a golden-output
-//! suite: the fixtures are real-world vCalendar 1.0 / iCalendar 2.0 objects plus
-//! the RFC 5545 examples. The one version-agnostic parser handles them all, so
-//! each test sweeps the whole corpus and asserts every fixture parses,
+//! suite: the fixtures are real-world vCalendar 1.0 / iCalendar 2.0 objects
+//! plus the RFC 5545 examples. The one version-agnostic parser handles them
+//! all, so each test sweeps the whole corpus and asserts every fixture parses,
 //! serializes to a fixpoint (stable under reparse) and decodes without
 //! panicking.
 //!

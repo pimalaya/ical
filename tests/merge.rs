@@ -167,9 +167,9 @@ fn matches_an_override_by_its_recurrence_id_rather_than_its_position() {
          END:VEVENT\r\n\
          END:VCALENDAR\r\n";
 
-    // NOTE: The right side rewrote the file with the override first. Matching by
-    // position would pair the override with the series and read the difference
-    // as an edit of both.
+    // NOTE: The right side rewrote the file with the override first. Matching
+    // by position would pair the override with the series and read the
+    // difference as an edit of both.
     let reordered = "BEGIN:VCALENDAR\r\n\
          VERSION:2.0\r\n\
          BEGIN:VEVENT\r\n\

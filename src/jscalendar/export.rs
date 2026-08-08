@@ -89,10 +89,11 @@ pub(crate) fn group(ical: &Ical<'_>) -> Value {
                 .cloned()
                 .unwrap_or_default();
 
-            // NOTE: An excluded occurrence does not happen, so an override of it
-            // describes nothing; RFC 8984 4.3.5 forbids the patch that would say
-            // both. A calendar carrying an EXDATE and an overriding component
-            // for one date is contradicting itself, and the exclusion wins.
+            // NOTE: An excluded occurrence does not happen, so an override of
+            // it describes nothing; RFC 8984 4.3.5 forbids the patch that would
+            // say both. A calendar carrying an EXDATE and an overriding
+            // component for one date is contradicting itself, and the exclusion
+            // wins.
             if merged.get("excluded") == Some(&Value::Bool(true)) {
                 continue;
             }
@@ -590,7 +591,8 @@ impl Builder {
         let mut converted = false;
 
         for item in list(prop) {
-            // NOTE: An RDATE may be a period; only its start names an occurrence.
+            // NOTE: An RDATE may be a period; only its start names an
+            // occurrence.
             let start = item.split('/').next().unwrap_or(&item);
 
             let Some(id) = local_text(start, matches!(prop.value, IcalValue::Date(_))) else {

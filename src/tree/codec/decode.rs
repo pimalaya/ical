@@ -2,9 +2,9 @@
 //!
 //! The read side of the structural bridge: project a raw syntax tree onto the
 //! decoded model. A [`IcalValueNode`] decodes its components, a
-//! [`IcalParamNode`] decodes into a [`IcalParam`], a [`IcalLine`] decodes into a
-//! [`IcalProp`], and a [`IcalCst`] decodes into a whole [`Ical`] (recursively,
-//! walking every nested component).
+//! [`IcalParamNode`] decodes into a [`IcalParam`], a [`IcalLine`] decodes into
+//! a [`IcalProp`], and a [`IcalCst`] decodes into a whole [`Ical`]
+//! (recursively, walking every nested component).
 //!
 //! A property's value kind is resolved through its spec, not a name match:
 //! [`IcalLine::decode`] maps the name to a [`IcalPropKind`], asks the spec for
@@ -96,8 +96,8 @@ impl IcalCst<'_> {
 
 impl IcalLine<'_> {
     /// Decode the line into a typed property. A known property dispatches its
-    /// value through the spec (see `decode_value`); an unknown one keeps its raw
-    /// components so it round-trips.
+    /// value through the spec (see `decode_value`); an unknown one keeps its
+    /// raw components so it round-trips.
     pub fn decode(&self, version: IcalVersion) -> IcalProp<'_> {
         let name = self.name.get();
         let params = self.params.iter().map(IcalParamNode::decode).collect();
@@ -281,7 +281,8 @@ mod tests {
         let cst = IcalCst::parse(input).unwrap();
         let cal = cst.decode();
 
-        // NOTE: VERSION is the indicator; PRODID is the only calendar-level prop.
+        // NOTE: VERSION is the indicator; PRODID is the only calendar-level
+        // prop.
         assert_eq!(cal.version, crate::version::IcalVersion::V2_0);
         assert_eq!(cal.props.len(), 1);
         assert_eq!(&*cal.props[0].name, "PRODID");

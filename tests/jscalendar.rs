@@ -374,7 +374,8 @@ fn tells_apart_the_two_properties_that_share_the_updated_member() {
 
     assert_eq!(entry(&dtstamp, "updated"), entry(&modified, "updated"));
 
-    // NOTE: DTSTAMP is what a reader assumes, so only LAST-MODIFIED is recorded.
+    // NOTE: DTSTAMP is what a reader assumes, so only LAST-MODIFIED is
+    // recorded.
     assert_eq!(
         entry(&dtstamp, "iCalendar")["convertedProperties"],
         Value::Null

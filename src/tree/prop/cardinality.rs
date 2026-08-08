@@ -1,9 +1,10 @@
 //! # Property cardinality
 //!
-//! How many times a property may appear in its component, per RFC 5545 section 3.6.
+//! How many times a property may appear in its component, per RFC 5545 section
+//! 3.6.
 
-/// The RFC 5545 property multiplicity: how many times a property may
-/// appear in its component. Prop multiplicity, not value structure, so it is not
+/// The RFC 5545 property multiplicity: how many times a property may appear in
+/// its component. Prop multiplicity, not value structure, so it is not
 /// derivable from the value kind (`FN` and `NOTE` are both text but differ).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IcalPropCardinality {

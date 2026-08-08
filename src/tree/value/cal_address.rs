@@ -1,6 +1,7 @@
 //! # calendar user address value codec (RFC 5545 3.3.3)
 //!
-//! [`Codec`] for the calendar user address value. A value whose comma is literal, not a list separator, so the whole component is kept.
+//! [`Codec`] for the calendar user address value. A value whose comma is
+//! literal, not a list separator, so the whole component is kept.
 
 use crate::{
     tree::{

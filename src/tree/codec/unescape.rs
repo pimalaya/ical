@@ -69,8 +69,8 @@ fn unescape_modern(bytes: &[u8]) -> Cow<'_, [u8]> {
     Cow::Owned(out)
 }
 
-/// Resolve the vCalendar 1.0 value escape `\;` only; a backslash before anything
-/// else stays literal.
+/// Resolve the vCalendar 1.0 value escape `\;` only; a backslash before
+/// anything else stays literal.
 fn unescape_v21(bytes: &[u8]) -> Cow<'_, [u8]> {
     if !bytes.contains(&b'\\') {
         return Cow::Borrowed(bytes);
@@ -122,8 +122,8 @@ mod tests {
     fn unescapes_only_the_semicolon_in_v2_1() {
         use crate::tree::codec::{mode::Escaper, unescape::unescape_with};
 
-        // NOTE: vCalendar 1.0 resolves `\;` only; `\n` keeps its literal backslash, and a
-        // trailing backslash stays.
+        // NOTE: vCalendar 1.0 resolves `\;` only; `\n` keeps its literal
+        // backslash, and a trailing backslash stays.
         assert_eq!(unescape_with(br"a\;b\nc\", Escaper::V1_0), "a;b\\nc\\");
     }
 }

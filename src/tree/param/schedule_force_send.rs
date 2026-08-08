@@ -1,13 +1,17 @@
 //! # SCHEDULE-FORCE-SEND parameter lens
 //!
-//! The `SCHEDULE-FORCE-SEND` parameter lens: a request to resend a scheduling message (RFC 6638 7.2).
+//! The `SCHEDULE-FORCE-SEND` parameter lens: a request to resend a scheduling
+//! message (RFC 6638 7.2).
 
 use alloc::{borrow::Cow, string::ToString, vec};
 
-use crate::tree::leaf::IcalLeaf;
 use crate::{
     param::IcalParamKind,
-    tree::{codec::unescape::unescape, param::IcalParamLens, param::IcalParamNode},
+    tree::{
+        codec::unescape::unescape,
+        leaf::IcalLeaf,
+        param::{IcalParamLens, IcalParamNode},
+    },
 };
 
 /// The `SCHEDULE-FORCE-SEND` parameter lens.

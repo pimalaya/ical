@@ -31,10 +31,10 @@
 //!
 //! ## The two layers
 //!
-//! The decoded model ([`ical`], [`component`], [`version`], [`prop`], [`param`],
-//! [`value`]) is pure data with no dependency on the syntax side, so it can be
-//! depended on alone. Component names, property names, parameter names and value
-//! types are closed identity enums
+//! The decoded model ([`ical`], [`component`], [`version`], [`prop`],
+//! [`param`], [`value`]) is pure data with no dependency on the syntax side, so
+//! it can be depended on alone. Component names, property names, parameter
+//! names and value types are closed identity enums
 //! ([`IcalComponentKind`](component::IcalComponentKind),
 //! [`IcalPropKind`](prop::IcalPropKind),
 //! [`IcalParamKind`](param::IcalParamKind),
@@ -53,9 +53,9 @@
 //! Exactly means exactly: the tokeniser resolves a line's wire layout (its RFC
 //! 5545 3.1 folds, the blank lines before it, its `QUOTED-PRINTABLE` soft
 //! breaks) so every layer above sees one logical line, and records it on
-//! [`IcalWire`](tree::wire::IcalWire) so serialization lays it back out. Only an
-//! edit that changes a line's length drops its layout, since the recorded fold
-//! points no longer index the bytes they were taken against.
+//! [`IcalWire`](tree::wire::IcalWire) so serialization lays it back out. Only
+//! an edit that changes a line's length drops its layout, since the recorded
+//! fold points no longer index the bytes they were taken against.
 //! [`parse`](tree::cst::IcalCst::parse) accepts bytes or a string and reads one
 //! calendar; [`parse_many`](tree::cst::IcalCst::parse_many) iterates a
 //! multi-calendar file, and is what round-trips a whole file rather than its
@@ -63,9 +63,9 @@
 //! structure; [`parse_recovering`](tree::cst::IcalCst::parse_recovering) keeps
 //! what it cannot structure as opaque bytes, carries on, and reports what it
 //! worked around, for the calendars in the wild that a strict reading throws
-//! away whole. [`decode`](tree::cst::IcalCst::decode) projects a CST
-//! onto the decoded [`Ical`](ical::Ical); `encode` (and `From<Ical>`) projects
-//! the model back to a canonical CST. Per-property lens markers
+//! away whole. [`decode`](tree::cst::IcalCst::decode) projects a CST onto the
+//! decoded [`Ical`](ical::Ical); `encode` (and `From<Ical>`) projects the model
+//! back to a canonical CST. Per-property lens markers
 //! ([`IcalPropLens`](tree::prop::IcalPropLens)) and per-component lens markers
 //! ([`IcalComponentLens`](tree::component::IcalComponentLens)) read or edit a
 //! single line or subtree through the byte-preserving

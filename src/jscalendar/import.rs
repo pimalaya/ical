@@ -690,9 +690,9 @@ fn participant(
         .and_then(Value::as_object)
         .is_some_and(|roles| roles.contains_key("owner"));
 
-    // NOTE: An owning participant is the ORGANIZER, and that is where the export
-    // recorded its leftovers: under the reply address it also wrote, not under
-    // the participant.
+    // NOTE: An owning participant is the ORGANIZER, and that is where the
+    // export recorded its leftovers: under the reply address it also wrote, not
+    // under the participant.
     let (pointer, fallback) = match owner {
         true => ("replyTo/imip".to_owned(), IcalPropKind::Organizer),
         false => (format!("participants/{key}"), IcalPropKind::Attendee),

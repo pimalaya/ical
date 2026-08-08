@@ -3,8 +3,8 @@
 //! The "strict out" conformance check over the decoded [`Ical`] model, and the
 //! [`IcalValid`] proof it mints.
 //!
-//! Validation walks the whole component tree and reports, against the calendar's
-//! version and the [property](crate::tree::prop::IcalPropSpec) and
+//! Validation walks the whole component tree and reports, against the
+//! calendar's version and the [property](crate::tree::prop::IcalPropSpec) and
 //! [component](crate::tree::component::IcalComponentSpec) specs:
 //!
 //! - a property the version does not define;
@@ -14,7 +14,8 @@
 //! - a property a component requires but does not carry (a `VEVENT` needs `UID`
 //!   and `DTSTAMP`, a `VALARM` needs `ACTION` and `TRIGGER`, ...);
 //! - a component nested where it may not be;
-//! - a recurrence rule that breaks RFC 5545 3.3.10, with the `recur` feature on.
+//! - a recurrence rule that breaks RFC 5545 3.3.10, with the `recur` feature
+//!   on.
 //!
 //! Extensions always pass: validity is a runtime predicate, not a second strict
 //! type, so a conformant calendar may still carry unknown components,
@@ -176,8 +177,8 @@ impl Ical<'_> {
         for prop in &self.props {
             validate_prop(prop, self.version, &mut errors);
         }
-        // NOTE: The calendar envelope requires PRODID (VERSION is the hoisted-out
-        // indicator, always present in the model).
+        // NOTE: The calendar envelope requires PRODID (VERSION is the
+        // hoisted-out indicator, always present in the model).
         check_required(
             IcalComponentKind::VCalendar,
             "VCALENDAR",
@@ -506,7 +507,8 @@ mod tests {
 
     #[test]
     fn passes_an_extension_value_kind() {
-        // NOTE: An unknown value has no kind to check, so it cannot be the wrong one.
+        // NOTE: An unknown value has no kind to check, so it cannot be the
+        // wrong one.
         let cal = around(vec![IcalProp {
             name: "X-THING".into(),
             params: vec![],

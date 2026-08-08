@@ -263,8 +263,8 @@ impl FromStr for IcalRecurWeekdayNum {
     type Err = IcalRecurRuleError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        // NOTE: The weekday is the last two characters, which is not the last two
-        // bytes: a rule is text off the wire, so splitting on a byte offset
+        // NOTE: The weekday is the last two characters, which is not the last
+        // two bytes: a rule is text off the wire, so splitting on a byte offset
         // would cut a multi-byte character in half and panic.
         let split = s.char_indices().rev().nth(1).map_or(0, |(index, _)| index);
         let (ordinal, weekday) = s.split_at(split);
@@ -439,9 +439,9 @@ impl IcalRecurRule {
             }
         }
 
-        // NOTE: A rule carrying both UNTIL and COUNT breaks RFC 5545 3.3.10, but
-        // it is still a rule, and refusing it here would be strictness applied
-        // on the way in. `validate` is where that is reported, as
+        // NOTE: A rule carrying both UNTIL and COUNT breaks RFC 5545 3.3.10,
+        // but it is still a rule, and refusing it here would be strictness
+        // applied on the way in. `validate` is where that is reported, as
         // `UntilWithCount`; expansion honours whichever bound comes first.
         rule.freq = freq.ok_or(IcalRecurRuleError::FreqMissing)?;
 
@@ -626,8 +626,8 @@ mod tests {
 
     #[test]
     fn refuses_a_multi_byte_weekday_rather_than_splitting_it() {
-        // NOTE: A rule is text off the wire, so a BYDAY whose last characters are
-        // multi-byte must be refused, never split mid-character.
+        // NOTE: A rule is text off the wire, so a BYDAY whose last characters
+        // are multi-byte must be refused, never split mid-character.
         for value in ["€", "𝄞", "SU€", "-1€", "1FR€"] {
             assert!(IcalRecurRule::parse(&alloc::format!("FREQ=DAILY;BYDAY={value}")).is_err());
         }

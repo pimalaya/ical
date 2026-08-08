@@ -1,13 +1,17 @@
 //! # GAP parameter lens
 //!
-//! The `GAP` parameter lens: the lag or lead between two related components (RFC 9253 6.2).
+//! The `GAP` parameter lens: the lag or lead between two related components
+//! (RFC 9253 6.2).
 
 use alloc::{borrow::Cow, string::ToString, vec};
 
-use crate::tree::leaf::IcalLeaf;
 use crate::{
     param::IcalParamKind,
-    tree::{codec::unescape::unescape, param::IcalParamLens, param::IcalParamNode},
+    tree::{
+        codec::unescape::unescape,
+        leaf::IcalLeaf,
+        param::{IcalParamLens, IcalParamNode},
+    },
 };
 
 /// The `GAP` parameter lens.

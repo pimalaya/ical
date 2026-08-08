@@ -1,13 +1,17 @@
 //! # RELATED parameter lens
 //!
-//! The `RELATED` parameter lens: the alarm trigger relationship (RFC 5545 3.2.14).
+//! The `RELATED` parameter lens: the alarm trigger relationship (RFC 5545
+//! 3.2.14).
 
 use alloc::{borrow::Cow, string::ToString, vec};
 
-use crate::tree::leaf::IcalLeaf;
 use crate::{
     param::IcalParamKind,
-    tree::{codec::unescape::unescape, param::IcalParamLens, param::IcalParamNode},
+    tree::{
+        codec::unescape::unescape,
+        leaf::IcalLeaf,
+        param::{IcalParamLens, IcalParamNode},
+    },
 };
 
 /// The `RELATED` parameter lens.

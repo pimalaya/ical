@@ -4,10 +4,13 @@
 
 use alloc::{borrow::Cow, string::ToString, vec};
 
-use crate::tree::leaf::IcalLeaf;
 use crate::{
     param::IcalParamKind,
-    tree::{codec::unescape::unescape, param::IcalParamLens, param::IcalParamNode},
+    tree::{
+        codec::unescape::unescape,
+        leaf::IcalLeaf,
+        param::{IcalParamLens, IcalParamNode},
+    },
 };
 
 /// The `LINKREL` parameter lens.

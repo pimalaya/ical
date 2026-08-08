@@ -1,13 +1,17 @@
 //! # ALTREP parameter lens
 //!
-//! The `ALTREP` parameter lens: the alternate text representation URI (RFC 5545 3.2.1).
+//! The `ALTREP` parameter lens: the alternate text representation URI (RFC 5545
+//! 3.2.1).
 
 use alloc::{borrow::Cow, string::ToString, vec};
 
-use crate::tree::leaf::IcalLeaf;
 use crate::{
     param::IcalParamKind,
-    tree::{codec::unescape::unescape, param::IcalParamLens, param::IcalParamNode},
+    tree::{
+        codec::unescape::unescape,
+        leaf::IcalLeaf,
+        param::{IcalParamLens, IcalParamNode},
+    },
 };
 
 /// The `ALTREP` parameter lens.

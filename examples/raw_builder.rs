@@ -8,13 +8,13 @@
 
 use std::borrow::Cow;
 
-use ical::component::{IcalComponent, IcalComponentKind};
-use ical::ical::Ical;
-use ical::prop::IcalProp;
-use ical::value::IcalValue;
-use ical::value::datetime::IcalDateTime;
-use ical::value::text::IcalText;
-use ical::version::IcalVersion;
+use ical::{
+    component::{IcalComponent, IcalComponentKind},
+    ical::Ical,
+    prop::IcalProp,
+    value::{IcalValue, datetime::IcalDateTime, text::IcalText},
+    version::IcalVersion,
+};
 
 fn main() {
     let cal = Ical {

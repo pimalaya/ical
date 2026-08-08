@@ -1,13 +1,17 @@
 //! # SCHEDULE-AGENT parameter lens
 //!
-//! The `SCHEDULE-AGENT` parameter lens: who performs scheduling for an attendee (RFC 6638 7.1).
+//! The `SCHEDULE-AGENT` parameter lens: who performs scheduling for an attendee
+//! (RFC 6638 7.1).
 
 use alloc::{borrow::Cow, string::ToString, vec};
 
-use crate::tree::leaf::IcalLeaf;
 use crate::{
     param::IcalParamKind,
-    tree::{codec::unescape::unescape, param::IcalParamLens, param::IcalParamNode},
+    tree::{
+        codec::unescape::unescape,
+        leaf::IcalLeaf,
+        param::{IcalParamLens, IcalParamNode},
+    },
 };
 
 /// The `SCHEDULE-AGENT` parameter lens.
