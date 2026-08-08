@@ -1,3 +1,5 @@
+#![cfg(feature = "jscalendar")]
+
 //! The RFC 8984 JSCalendar conversion, both ways.
 //!
 //! Two questions are asked of every case. Does the conversion say what the RFC

@@ -15,7 +15,7 @@
 //! ## Offsets are logical, and checked
 //!
 //! An offset indexes the line's logical bytes: its name, its parameters and its
-//! value, exactly as [`write_bytes`](crate::tree::line::IcalLine::write_bytes)
+//! value, exactly as `IcalLine::write_bytes`
 //! lays them out, with the line ending excluded (which is why a blank line
 //! before the line is an insertion at offset 0). The logical length is recorded
 //! with them, and a shape whose length no longer matches is dropped rather than

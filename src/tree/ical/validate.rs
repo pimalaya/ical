@@ -20,7 +20,7 @@
 //! type, so a conformant calendar may still carry unknown components,
 //! properties, parameters and value kinds.
 //!
-//! [`validate_prop`] is the per-property check, shared with the
+//! `validate_prop` is the per-property check, shared with the
 //! [`builder`](crate::tree::ical::builder). A calendar that passes earns a
 //! [`IcalValid<Ical>`], which only this module (or `TryFrom`) can mint.
 

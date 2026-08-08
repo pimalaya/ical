@@ -10,7 +10,9 @@
 //! calendar-level [`props`](Ical::props) (`PRODID`, `CALSCALE`, `METHOD`, ...),
 //! and its nested [`components`](Ical::components) (`VEVENT`, `VTODO`,
 //! `VTIMEZONE`, ...). Each nested component is a recursive
-//! [`IcalComponent`](crate::component::IcalComponent).
+//! [`IcalComponent`].
+//!
+//! [`IcalComponent`]: crate::component::IcalComponent
 //!
 //! Build a calendar directly from its public fields; strict, spec-checked
 //! construction and conformance checking live in the syntax layer

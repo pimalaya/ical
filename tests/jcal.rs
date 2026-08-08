@@ -1,3 +1,5 @@
+#![cfg(feature = "jcal")]
+
 //! The RFC 7265 jCal codec, over the examples the RFC prints and the shapes it
 //! defines.
 //!

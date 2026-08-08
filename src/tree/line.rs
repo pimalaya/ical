@@ -302,7 +302,7 @@ impl<'a> IcalLine<'a> {
 
 impl fmt::Display for IcalLine<'_> {
     /// The line as text, wire shape included, lossily for a non-UTF-8 value.
-    /// [`write_bytes`](IcalLine::write_bytes) is the byte-faithful path.
+    /// `IcalLine::write_bytes` is the byte-faithful path.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.wire.is_empty() {
             f.write_str(self.name.get())?;

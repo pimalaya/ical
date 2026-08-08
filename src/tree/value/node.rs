@@ -37,10 +37,10 @@ use crate::tree::{
 /// A raw value: `;`-separated components, each a list of `,`-separated raw
 /// value leaves.
 ///
-/// From parse the value is held as one unsplit [`raw`](Self::raw) slice and
+/// From parse the value is held as one unsplit `raw` slice and
 /// walked lazily, so a parse that never decodes and a byte-faithful reserialize
 /// do no splitting at all. The first edit (or a model encode) splits it into
-/// owned [`components`](Self::components), which then take over as the source of
+/// owned `components`, which then take over as the source of
 /// truth. The `escaper` records which version's escaping rules the codec must
 /// apply; it is stamped from the card version after parsing (see
 /// `IcalCst::parse`).
