@@ -51,10 +51,12 @@ required-features = ["parser"]
 
 [dev-dependencies]
 calcard = { version = "0.3", default-features = false }
-criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
+criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
+ical_crate = { package = "ical", version = "0.11", default-features = false, features = ["ical"] }
+icalendar = { version = "0.17", default-features = false, features = ["parser"] }
 
 [dependencies]
-base64 = { version = "0.22", default-features = false, features = ["alloc"], optional = true }
+base64 = { version = "0.23", default-features = false, features = ["alloc"], optional = true }
 encoding_rs = { version = "0.8", default-features = false, features = ["alloc"], optional = true }
 memchr = { version = "2", default-features = false, optional = true }
 quoted_printable = { version = "0.5", default-features = false, optional = true }
