@@ -1,16 +1,12 @@
 //! # Text values
 //!
-//! The decoded text value kinds: a single text, and a comma-separated text
-//! list.
+//! The decoded text value kinds: a single text, and a comma-separated text list.
 //!
 //! These back the bulk of RFC 5545 properties whose value is plain text (the
 //! TEXT value type, RFC 5545 3.3.11): `SUMMARY`, `DESCRIPTION`, `LOCATION`,
 //! `COMMENT`, `PRODID`, `UID`, `TZID`, ... for [`IcalText`], and `CATEGORIES` /
-//! `RESOURCES` for [`IcalTextList`]. They are pure, always-unescaped data; the
-//! escaping and the wire framing live entirely on the syntax side
-//! ([`crate::tree`]), so the same value type round-trips through any property
-//! that shares the kind. The wire name that distinguishes those properties is
-//! carried by [`crate::prop::IcalProp::name`], not here.
+//! `RESOURCES` for [`IcalTextList`]. Carrying no wire name, the same value type
+//! round-trips through any property that shares the kind.
 
 use alloc::{borrow::Cow, string::String, vec::Vec};
 

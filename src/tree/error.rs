@@ -2,12 +2,11 @@
 //!
 //! The parsing errors.
 //!
-//! [`IcalParseError`] is the single error type returned by `IcalCst::parse`
-//! and the line tokeniser it drives. Each variant pinpoints one structural
-//! failure (a missing CRLF, a missing colon, an absent or malformed envelope)
-//! and carries the offending text for context. Parsing is the only fallible
-//! bridge in the crate; decoding, encoding and serializing never fail, so this
-//! is the whole error surface.
+//! [`IcalParseError`] is the single error type returned by `IcalCst::parse` and
+//! the line tokeniser it drives, each variant pinpointing one structural failure
+//! and carrying the offending text. Parsing is the only fallible bridge in the
+//! crate: decoding, encoding and serializing never fail, so this is the whole
+//! error surface.
 
 use core::{error, fmt};
 
@@ -23,9 +22,9 @@ pub enum IcalParseError {
     /// A content line's name or parameters were not valid UTF-8; only a value
     /// may carry a foreign charset.
     NonUtf8Header(String),
-    /// A card did not open with a BEGIN:VCALENDAR line.
+    /// A calendar did not open with a BEGIN:VCALENDAR line.
     ExpectedBegin(String),
-    /// A card was left open by a missing END:VCALENDAR line.
+    /// A calendar was left open by a missing END:VCALENDAR line.
     MissingEnd(String),
 }
 

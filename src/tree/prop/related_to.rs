@@ -1,20 +1,20 @@
-//! # RELATED_TO lens
+//! # RELATED-TO lens
 //!
-//! The `RELATED_TO` property lens.
+//! The `RELATED-TO` property lens.
 
 use crate::{
     param::IcalParamKind,
     prop::IcalPropKind,
     tree::{
         line::IcalLine,
-        prop::{IcalPropLens, IcalPropSpec},
-        value::IcalValueCursor,
+        prop::{lens::IcalPropLens, spec::IcalPropSpec},
+        value::cursor::IcalValueCursor,
     },
     value::text::IcalText,
     version::IcalVersion,
 };
 
-/// The `RELATED_TO` property lens.
+/// The `RELATED-TO` property lens.
 #[allow(non_camel_case_types)]
 pub struct RELATED_TO;
 

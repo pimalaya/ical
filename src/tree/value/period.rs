@@ -1,4 +1,4 @@
-//! # period value codec (RFC 5545 3.3.9)
+//! # Period value codec (RFC 5545 3.3.9)
 //!
 //! [`Codec`] for the period value. A value whose comma is literal, not a list
 //! separator, so the whole component is kept.
@@ -6,7 +6,7 @@
 use crate::{
     tree::{
         codec::{Codec, encode::scalar_node, mode::Escaper},
-        value::IcalValueNode,
+        value::node::IcalValueNode,
     },
     value::period::IcalPeriod,
 };

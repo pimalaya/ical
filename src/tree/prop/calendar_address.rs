@@ -1,20 +1,20 @@
-//! # CALENDAR_ADDRESS lens
+//! # CALENDAR-ADDRESS lens
 //!
-//! The `CALENDAR_ADDRESS` property lens.
+//! The `CALENDAR-ADDRESS` property lens.
 
 use crate::{
     prop::IcalPropKind,
     tree::{
         line::IcalLine,
-        prop::{IcalPropLens, IcalPropSpec},
-        value::IcalValueCursor,
+        prop::{lens::IcalPropLens, spec::IcalPropSpec},
+        value::cursor::IcalValueCursor,
     },
     value::IcalValueKind,
     value::cal_address::IcalCalAddress,
     version::IcalVersion,
 };
 
-/// The `CALENDAR_ADDRESS` property lens.
+/// The `CALENDAR-ADDRESS` property lens.
 #[allow(non_camel_case_types)]
 pub struct CALENDAR_ADDRESS;
 

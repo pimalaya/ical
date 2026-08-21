@@ -9,7 +9,7 @@
 //! malformed, which is what this is for. The two never disagree: validation
 //! reports the part, expansion still ignores it.
 //!
-//! A rule that passes earns a [`IcalValid`], the same proof
+//! A rule that passes earns an [`IcalValid`], the same proof
 //! [`Ical::validate`](crate::ical::Ical::validate) mints for a whole calendar.
 
 use core::fmt;
@@ -125,7 +125,7 @@ fn freq_name(freq: IcalRecurFreq) -> &'static str {
 }
 
 impl IcalRecurRule {
-    /// Check the rule against RFC 5545 3.3.10, returning a [`IcalValid`] proof
+    /// Check the rule against RFC 5545 3.3.10, returning an [`IcalValid`] proof
     /// or every problem found.
     pub fn validate(self) -> Result<IcalValid<Self>, Vec<IcalRecurRuleProblem>> {
         let problems = self.problems();

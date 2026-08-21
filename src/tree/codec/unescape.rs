@@ -10,14 +10,14 @@ use alloc::{borrow::Cow, string::String, vec::Vec};
 
 use crate::tree::codec::mode::Escaper;
 
-/// Resolve value escapes by the card's escaping mode, reading raw value bytes
+/// Resolve value escapes by the calendar's escaping mode, reading raw value bytes
 /// and yielding the decoded text (lossily when the bytes are not UTF-8; the
 /// caller keeps the raw bytes on the syntax leaf for fidelity).
 pub(crate) fn unescape_with(bytes: &[u8], escaper: Escaper) -> Cow<'_, str> {
     lossy(unescape_bytes(bytes, escaper))
 }
 
-/// Resolve value escapes by the card's escaping mode at the byte level,
+/// Resolve value escapes by the calendar's escaping mode at the byte level,
 /// preserving any non-UTF-8 content verbatim.
 pub(crate) fn unescape_bytes(bytes: &[u8], escaper: Escaper) -> Cow<'_, [u8]> {
     match escaper {

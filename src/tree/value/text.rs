@@ -11,7 +11,7 @@ use crate::{
             encode::{encode_component, scalar_node},
             mode::Escaper,
         },
-        value::IcalValueNode,
+        value::node::IcalValueNode,
     },
     value::text::{IcalText, IcalTextList},
 };

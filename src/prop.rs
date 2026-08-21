@@ -2,21 +2,17 @@
 //!
 //! A decoded property and the iCalendar property-name vocabulary.
 //!
-//! A [`IcalProp`] is a [`IcalPropName`], a list of parameters, and a decoded
+//! An [`IcalProp`] is an [`IcalPropName`], a list of parameters, and a decoded
 //! value. The name is stored explicitly because many properties share one
 //! [`IcalValue`] kind: `SUMMARY` and `LOCATION` both decode to text, so the
 //! value alone cannot say which property it is. A known name is held as the
 //! closed [`IcalPropKind`] identity (its wire spelling reached through `Deref`
-//! and `FromStr`); an unknown one keeps its verbatim bytes. The lens markers in
-//! [`crate::tree::prop`] carry the kind to match and build lines, and the
-//! decode registry parses a line name onto its value kind.
+//! and `FromStr`); an unknown one keeps its verbatim bytes.
 //!
 //! Build a property directly from its public fields; strict, spec-checked
 //! construction lives in the syntax layer
-//! ([`IcalPropBuilder`](crate::tree::ical::builder::IcalPropBuilder)).
-//!
-//! This module is pure model: it has no dependency on [`crate::tree`], so the
-//! decoded form can be used without the syntax layer.
+//! ([`IcalPropBuilder`](crate::tree::ical::builder::IcalPropBuilder)), which
+//! this module does not depend on: pure model, no [`crate::tree`].
 
 use core::{error, fmt, ops, str};
 

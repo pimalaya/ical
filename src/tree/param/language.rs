@@ -9,7 +9,7 @@ use crate::{
     tree::{
         codec::unescape::unescape,
         leaf::IcalLeaf,
-        param::{IcalParamLens, IcalParamNode},
+        param::{lens::IcalParamLens, node::IcalParamNode},
     },
 };
 

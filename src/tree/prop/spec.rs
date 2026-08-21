@@ -9,10 +9,10 @@ use crate::{
     tree::{
         param::COMMON_PARAMS,
         prop::{
-            IcalPropCardinality, aalarm, acknowledged, action, attach, attendee, busytype,
-            calendar_address, calscale, categories, class, color, comment, completed, concept,
-            conference, contact, created, dalarm, description, dtend, dtstamp, dtstart, due,
-            duration, exdate, exrule, freebusy, geo, image, last_modified, link, location,
+            aalarm, acknowledged, action, attach, attendee, busytype, calendar_address, calscale,
+            cardinality::IcalPropCardinality, categories, class, color, comment, completed,
+            concept, conference, contact, created, dalarm, description, dtend, dtstamp, dtstart,
+            due, duration, exdate, exrule, freebusy, geo, image, last_modified, link, location,
             location_type, malarm, method, name, organizer, palarm, participant_type,
             percent_complete, priority, prodid, proximity, rdate, recurrence_id, refid,
             refresh_interval, related_to, repeat, request_status, resource_type, resources, rnum,

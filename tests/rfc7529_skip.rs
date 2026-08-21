@@ -8,7 +8,7 @@
 //! and `RSCALE=CHINESE` is not.
 
 use ical::recur::{
-    IcalRecurDateTime, IcalRecurRule, IcalRecurRuleProblem, expand::IcalRecurExpand,
+    IcalRecurDateTime, IcalRecurRule, expand::IcalRecurExpand, validate::IcalRecurRuleProblem,
 };
 
 /// The first occurrences of a rule from a start.

@@ -1,11 +1,11 @@
-//! # boolean value codec (RFC 5545 3.3.2)
+//! # Boolean value codec (RFC 5545 3.3.2)
 //!
 //! [`Codec`] for the boolean value. A single scalar value.
 
 use crate::{
     tree::{
         codec::{Codec, encode::scalar_node, mode::Escaper},
-        value::IcalValueNode,
+        value::node::IcalValueNode,
     },
     value::boolean::IcalBoolean,
 };

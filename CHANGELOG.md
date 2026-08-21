@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- Moved the flattened re-exports onto their real module paths.
+
+  `tree::param::lens`, `tree::param::node`, `tree::prop::cardinality`, `tree::prop::lens`, `tree::prop::spec`, `tree::value::cursor`, `tree::value::node`, `tree::component::lens` and `tree::component::spec` are public modules, and the module name is now part of the public path (`tree::prop::lens::IcalPropLens`, `tree::value::cursor::IcalValueCursor`). The `#[doc(inline)] pub use` re-exports that hid them are gone, as is the `recur` re-export of `IcalRecurPart` and `IcalRecurRuleProblem`, both now reached through `recur::validate`.
+
 ## [0.1.0] - 2026-08-08
 
 ### Added

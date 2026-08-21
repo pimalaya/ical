@@ -1,19 +1,19 @@
-//! # LOCATION_TYPE lens
+//! # LOCATION-TYPE lens
 //!
-//! The `LOCATION_TYPE` property lens.
+//! The `LOCATION-TYPE` property lens.
 
 use crate::{
     prop::IcalPropKind,
     tree::{
         line::IcalLine,
-        prop::{IcalPropLens, IcalPropSpec},
-        value::IcalValueCursor,
+        prop::{lens::IcalPropLens, spec::IcalPropSpec},
+        value::cursor::IcalValueCursor,
     },
     value::text::IcalText,
     version::IcalVersion,
 };
 
-/// The `LOCATION_TYPE` property lens.
+/// The `LOCATION-TYPE` property lens.
 #[allow(non_camel_case_types)]
 pub struct LOCATION_TYPE;
 

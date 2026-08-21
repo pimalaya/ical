@@ -4,10 +4,8 @@
 //!
 //! Backs `FREEBUSY` and the period form of `RDATE` (RFC 5545 3.3.9): a start
 //! date-time and either an end date-time (`start/end`) or a duration
-//! (`start/duration`), the two components separated by a solidus. The value is
-//! kept as its raw text; the crate does not split or decode the two
-//! components. Pure data, no escaping; the owning property's wire name lives on
-//! [`crate::prop::IcalProp::name`].
+//! (`start/duration`), the two separated by a solidus. The value is kept as its
+//! raw text; the crate does not split or decode the two components.
 
 use alloc::{borrow::Cow, string::String};
 

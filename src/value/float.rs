@@ -4,9 +4,8 @@
 //!
 //! Backs the float-valued properties and parameters (RFC 5545 3.3.7): a signed
 //! real number such as `1000000.0000001` or `-3.14`. The value is kept as its
-//! raw text so the original lexical form round-trips; use [`IcalFloat::get`] to
-//! parse it into an [`f64`]. Pure data, no escaping; the owning property's wire
-//! name lives on [`crate::prop::IcalProp::name`].
+//! raw text so the original lexical form round-trips; [`IcalFloat::get`] parses
+//! it into an [`f64`].
 
 use alloc::{borrow::Cow, string::String};
 

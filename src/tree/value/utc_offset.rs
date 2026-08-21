@@ -5,7 +5,7 @@
 use crate::{
     tree::{
         codec::{Codec, encode::scalar_node, mode::Escaper},
-        value::IcalValueNode,
+        value::node::IcalValueNode,
     },
     value::utc_offset::IcalUtcOffset,
 };

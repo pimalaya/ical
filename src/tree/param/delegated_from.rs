@@ -1,6 +1,6 @@
-//! # DELEGATED_FROM parameter lens
+//! # DELEGATED-FROM parameter lens
 //!
-//! The `DELEGATED_FROM` parameter lens: the delegators (RFC 5545 3.2.4).
+//! The `DELEGATED-FROM` parameter lens: the delegators (RFC 5545 3.2.4).
 
 use alloc::{borrow::Cow, string::ToString, vec::Vec};
 
@@ -9,11 +9,11 @@ use crate::{
     tree::{
         codec::unescape::unescape,
         leaf::IcalLeaf,
-        param::{IcalParamLens, IcalParamNode},
+        param::{lens::IcalParamLens, node::IcalParamNode},
     },
 };
 
-/// The `DELEGATED_FROM` parameter lens.
+/// The `DELEGATED-FROM` parameter lens.
 #[allow(non_camel_case_types)]
 pub struct DELEGATED_FROM;
 

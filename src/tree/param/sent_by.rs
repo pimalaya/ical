@@ -1,6 +1,6 @@
-//! # SENT_BY parameter lens
+//! # SENT-BY parameter lens
 //!
-//! The `SENT_BY` parameter lens: the sent-by calendar user (RFC 5545 3.2.18).
+//! The `SENT-BY` parameter lens: the sent-by calendar user (RFC 5545 3.2.18).
 
 use alloc::{borrow::Cow, string::ToString, vec};
 
@@ -9,11 +9,11 @@ use crate::{
     tree::{
         codec::unescape::unescape,
         leaf::IcalLeaf,
-        param::{IcalParamLens, IcalParamNode},
+        param::{lens::IcalParamLens, node::IcalParamNode},
     },
 };
 
-/// The `SENT_BY` parameter lens.
+/// The `SENT-BY` parameter lens.
 #[allow(non_camel_case_types)]
 pub struct SENT_BY;
 

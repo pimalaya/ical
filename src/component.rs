@@ -3,17 +3,16 @@
 //! A decoded component and the iCalendar component-name vocabulary.
 //!
 //! iCalendar is a tree of components: a `VCALENDAR` holds `VEVENT`, `VTODO`,
-//! `VJOURNAL`, `VFREEBUSY` and `VTIMEZONE` components; an event or to-do holds
-//! `VALARM` components; a time zone holds `STANDARD` and `DAYLIGHT`
-//! subcomponents; and (RFC 9073) a component may hold `PARTICIPANT`,
+//! `VJOURNAL`, `VFREEBUSY` and `VTIMEZONE` components, an event or to-do holds
+//! `VALARM` components, a time zone holds `STANDARD` and `DAYLIGHT`
+//! subcomponents, and (RFC 9073) a component may hold `PARTICIPANT`,
 //! `VLOCATION` and `VRESOURCE` subcomponents. [`IcalComponent`] is that decoded
 //! node: a name, its properties, and its nested components. The whole calendar
 //! is the [`Ical`](crate::ical::Ical) aggregate, whose root is the `VCALENDAR`.
 //!
-//! A known name is held as the closed [`IcalComponentKind`] identity (its wire
-//! spelling reached through `Deref` and `FromStr`); an unknown one keeps its
-//! verbatim bytes. This module is pure model: no dependency on
-//! [`crate::tree`].
+//! A known name is the closed [`IcalComponentKind`] identity (its wire spelling
+//! reached through `Deref` and `FromStr`); an unknown one keeps its verbatim
+//! bytes. Pure model, no [`crate::tree`] dependency.
 
 use core::{error, fmt, ops, str};
 

@@ -2,11 +2,9 @@
 //!
 //! The decoded calendar-address value kind.
 //!
-//! Backs `ORGANIZER`, `ATTENDEE`, and `CALENDAR-ADDRESS` (RFC 5545 3.3.3): a
-//! URI identifying a calendar user, most commonly a `mailto:` address. The
-//! reference is kept verbatim as a string; the crate does not parse or validate
-//! it. Pure data, no escaping; the owning property's wire name lives on
-//! [`crate::prop::IcalProp::name`].
+//! Backs `ORGANIZER`, `ATTENDEE` and `CALENDAR-ADDRESS` (RFC 5545 3.3.3): a URI
+//! identifying a calendar user, most commonly a `mailto:` address. The reference
+//! is kept verbatim as a string; the crate does not parse or validate it.
 
 use alloc::{borrow::Cow, string::String};
 

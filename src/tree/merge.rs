@@ -2,55 +2,50 @@
 //!
 //! Reconcile two divergent edits of a calendar against their common base.
 //!
-//! [`IcalMerge::merge`] is the unit a synchronisation engine needs: given a
-//! base calendar and two calendars derived from it, it reports what each side
-//! changed relative to the base, and builds one merged calendar. Never
+//! [`IcalMerge::merge`] is the unit a synchronisation engine needs: given a base
+//! calendar and two calendars derived from it, it reports what each side changed
+//! relative to the base and builds one merged calendar. Never
 //! last-writer-wins: a field only one side touched is taken from that side, and
-//! a field both sides touched is a conflict, reported so a caller can resolve
-//! it differently.
-//!
-//! The merged calendar starts as a clone of the left one, so the left side's
-//! bytes are there exactly as they were, folds included. The right side's
-//! actions are then replayed onto it line by line, so every line the right side
+//! a field both sides touched is a conflict, reported so a caller can resolve it
+//! differently. The merged calendar starts as a clone of the left one, so the
+//! left side's bytes are there exactly as they were, folds included; the right
+//! side's actions are then replayed line by line, so every line the right side
 //! did not touch keeps its bytes too.
 //!
 //! ## What is matched with what
 //!
 //! A component is matched across the three calendars by its `UID` and its
-//! `RECURRENCE-ID`, which is the identity iCalendar itself uses (RFC 5545
-//! 3.8.4.7, 3.8.4.4): an override of one instance is never confused with the
-//! series it belongs to, however the two are ordered in the file. A component
-//! carrying no `UID` (a `VALARM`, a `STANDARD`, a `VTIMEZONE` observance) is
-//! matched by its position among its same-named siblings.
-//!
-//! Inside a matched component, properties are matched by name, then by
-//! equality, then by position. iCalendar has no `PID`, so there is nothing
-//! finer to go on.
+//! `RECURRENCE-ID`, the identity iCalendar itself uses (RFC 5545 3.8.4.7,
+//! 3.8.4.4): an override of one instance is never confused with the series it
+//! belongs to, however the two are ordered in the file. A component carrying no
+//! `UID` (a `VALARM`, a `STANDARD`, a `VTIMEZONE` observance) is matched by its
+//! position among its same-named siblings. Inside a matched component,
+//! properties are matched by name, then by equality, then by position;
+//! iCalendar has no `PID`, so there is nothing finer to go on.
 //!
 //! ## What counts as a change
 //!
-//! A whole property added or removed, a value changed, one item of a list
-//! value added or removed, a parameter added, removed or changed. List items
-//! merge as a set, both sides' additions and removals applying, so they never
-//! collide.
+//! A whole property added or removed, a value changed, one item of a list value
+//! added or removed, a parameter added, removed or changed. List items merge as
+//! a set, both sides' additions and removals applying, so they never collide.
 //!
 //! ## The three ways a merge can conflict
 //!
-//! **Divergence.** Both sides changed the same field. The left side's outcome
-//! is kept, except where a removal meets an update: there the update wins,
-//! because keeping data beats losing it silently.
+//! **Divergence.** Both sides changed the same field. The left side's outcome is
+//! kept, except where a removal meets an update: there the update wins, because
+//! keeping data beats losing it silently.
 //!
 //! **Recurrence.** One side changed the series (its `RRULE`, `RDATE`, `EXDATE`
 //! or start) while the other changed one instance of it. Neither is wrong and
 //! both survive, but a rule that moved may have moved the ground the override
 //! stood on, so it is reported.
 //!
-//! **Authority.** An attendee may not rewrite what the organiser owns (RFC
-//! 5546 3.2). Set [`right_speaks_for`](IcalMerge::right_speaks_for) to the
-//! calendar address the right side edits as, and a right-side change to an
-//! organiser-owned property of a component someone else organises is refused
-//! and reported. Left unset, no such claim is made and nothing is refused on
-//! this ground.
+//! **Authority.** An attendee may not rewrite what the organiser owns (RFC 5546
+//! 3.2). Set [`right_speaks_for`](IcalMerge::right_speaks_for) to the calendar
+//! address the right side edits as, and a right-side change to an
+//! organiser-owned property of a component someone else organises is refused and
+//! reported. Left unset, no such claim is made and nothing is refused on this
+//! ground.
 
 use alloc::{
     borrow::{Cow, ToOwned},
@@ -66,7 +61,7 @@ use crate::{
     tree::{
         cst::{IcalCst, IcalItem},
         line::IcalLine,
-        value::IcalValueCursor,
+        value::cursor::IcalValueCursor,
     },
     value::IcalValue,
     version::IcalVersion,

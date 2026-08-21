@@ -1,27 +1,25 @@
 //! # Value cursor
 //!
-//! The generic in-place edit cursor used by every property lens but `N`.
+//! The in-place edit cursor every property lens uses.
 //!
-//! A cursor borrows a content line mutably and lets you read and write its
-//! value through the codec: getters decode (unescape), setters encode (escape)
-//! and write through to the syntax node. Crucially, a setter only rewrites the
-//! component it touches, so every other leaf (and every parameter) of a parsed
-//! line stays byte for byte intact. [`IcalValueCursor`] exposes both
-//! convenience accessors for the common single-value and list shapes and raw
-//! component-level access for the structured kinds (`ADR`, `GENDER`, `ORG`,
-//! `CLIENTPIDMAP`); the bespoke
-//! [`IcalNCursor`](crate::tree::prop::n::IcalNCursor) names `N`'s components.
+//! A cursor borrows a content line mutably and reads and writes its value
+//! through the codec: getters decode (unescape), setters encode (escape) and
+//! write through to the syntax node. A setter only rewrites the component it
+//! touches, so every other leaf (and every parameter) of a parsed line stays
+//! byte for byte intact. [`IcalValueCursor`] offers convenience accessors for
+//! the common single-value and list shapes, plus component-level access for the
+//! structured values (`GEO`, `REQUEST-STATUS`).
 //!
 //! Beside the UTF-8 text accessors it offers a raw byte hatch
 //! ([`bytes`](IcalValueCursor::bytes) /
-//! [`set_bytes`](IcalValueCursor::set_bytes)) for a value in a foreign
-//! charset, and, behind the content-encoding features, the
+//! [`set_bytes`](IcalValueCursor::set_bytes)) for a value in a foreign charset,
+//! and, behind the content-encoding features, the
 //! [`quoted_printable`](IcalValueCursor::quoted_printable) and
 //! [`charset`](IcalValueCursor::charset) decoders.
 
 use alloc::{borrow::Cow, vec::Vec};
 
-use crate::tree::{line::IcalLine, param::IcalParamLens};
+use crate::tree::{line::IcalLine, param::lens::IcalParamLens};
 
 /// A typed cursor over a content line's value, editing in place and byte
 /// preserving for the components it does not touch.
@@ -54,7 +52,7 @@ impl IcalValueCursor<'_, '_> {
 
     /// Set the value to raw bytes (the foreign-charset escape hatch), escaping
     /// structural separators but writing the bytes verbatim and preserving any
-    /// other components. The card's `CHARSET` parameter is left untouched: it
+    /// other components. The calendar's `CHARSET` parameter is left untouched: it
     /// is the caller's to keep consistent.
     pub fn set_bytes(&mut self, value: impl AsRef<[u8]>) {
         self.line.value.set_bytes_at(0, &[value]);

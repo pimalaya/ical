@@ -8,22 +8,21 @@
 //! ever wants. This module is the opt-in layer above it:
 //! [`IcalRecurRule::parse`] decodes that text into typed parts, and
 //! [`expand::IcalRecurExpand`] turns a rule plus a start into the dates it
-//! actually denotes.
-//!
-//! A rule is only ever part of the answer. What a component actually happens on
-//! is its whole *recurrence set*: `DTSTART` plus every `RRULE` and `RDATE`,
-//! minus every `EXDATE` and `EXRULE`, with the `RECURRENCE-ID` overrides
-//! applied. That is [`set::IcalRecurSet`], and it is what a client wants.
+//! actually denotes. A rule is only ever part of the answer: what a component
+//! happens on is its whole *recurrence set*, `DTSTART` plus every `RRULE` and
+//! `RDATE`, minus every `EXDATE` and `EXRULE`, with the `RECURRENCE-ID`
+//! overrides applied. That is [`set::IcalRecurSet`], and it is what a client
+//! wants.
 //!
 //! ## Civil times, no time zones
 //!
-//! RFC 5545 defines expansion on the local wall-clock time of `DTSTART`: a
-//! daily rule on a zoned start recurs at the same local time every day, and a
-//! UTC start is simply the case where local is UTC. Expansion therefore never
-//! needs a UTC offset, and this module never resolves one. Occurrences are
-//! civil [`IcalRecurDateTime`]s, and turning one into an instant, along with
-//! the time-zone database, the invalid local times of a spring-forward and the
-//! ambiguous ones of a fall-back, belongs to the caller at that boundary.
+//! RFC 5545 defines expansion on the local wall-clock time of `DTSTART`: a daily
+//! rule on a zoned start recurs at the same local time every day, and a UTC start
+//! is simply the case where local is UTC. Expansion therefore never needs a UTC
+//! offset, and this module never resolves one. Occurrences are civil
+//! [`IcalRecurDateTime`]s; turning one into an instant, with the time-zone
+//! database, the invalid local times of a spring-forward and the ambiguous ones
+//! of a fall-back, belongs to the caller at that boundary.
 //!
 //! ## Liberal in, strict out
 //!
@@ -40,8 +39,6 @@ mod civil;
 pub mod expand;
 pub mod set;
 pub mod validate;
-
-pub use self::validate::{IcalRecurPart, IcalRecurRuleProblem};
 
 /// A civil date and time, with no time zone and no offset.
 ///

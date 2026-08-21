@@ -8,7 +8,7 @@
 use crate::{
     tree::{
         codec::{Codec, mode::Escaper},
-        value::IcalValueNode,
+        value::node::IcalValueNode,
     },
     value::recur::IcalRecur,
 };

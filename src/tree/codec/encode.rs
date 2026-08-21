@@ -2,9 +2,9 @@
 //!
 //! The write side of the structural bridge: project the decoded model onto a
 //! raw syntax tree. A value's [`Codec`] impl encodes it into a
-//! [`IcalValueNode`], a [`IcalParam`] encodes into a [`IcalParamNode`], a
-//! [`IcalProp`] encodes into a [`IcalLine`], a [`IcalComponent`] encodes into a
-//! nested [`IcalCst`], and a [`Ical`] encodes into the whole `VCALENDAR`
+//! [`IcalValueNode`], an [`IcalParam`] encodes into an [`IcalParamNode`], a
+//! [`IcalProp`] encodes into an [`IcalLine`], an [`IcalComponent`] encodes into a
+//! nested [`IcalCst`], and an [`Ical`] encodes into the whole `VCALENDAR`
 //! [`IcalCst`] (recursively). The whole calendar is encoded for its version's
 //! [`Escaper`], which the value codecs use to escape every leaf.
 //! [`Display`](core::fmt::Display) for [`Ical`] renders a decoded calendar
@@ -24,8 +24,8 @@ use crate::{
         cst::{IcalCst, IcalItem},
         leaf::{IcalLeaf, IcalValueLeaf},
         line::IcalLine,
-        param::IcalParamNode,
-        value::IcalValueNode,
+        param::node::IcalParamNode,
+        value::node::IcalValueNode,
         wire::IcalWire,
     },
 };

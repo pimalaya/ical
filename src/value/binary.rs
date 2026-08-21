@@ -4,11 +4,11 @@
 //!
 //! Backs the binary-bearing properties (`ATTACH`, `IMAGE`, `STRUCTURED-DATA`)
 //! where the value is inline base64 rather than an external URI reference (the
-//! BINARY value, RFC 5545 3.3.1, carried with `ENCODING=BASE64`). When the same
-//! property instead references an external URI it is decoded to
-//! [`IcalUri`](crate::value::uri::IcalUri). The form is told by the line's
-//! `VALUE` / `ENCODING` parameters; the payload is kept verbatim (base64 is not
-//! decoded to bytes). Pure data; escaping lives entirely on the syntax side.
+//! BINARY value, RFC 5545 3.3.1, carried with `ENCODING=BASE64`); a property
+//! referencing an external URI decodes to
+//! [`IcalUri`](crate::value::uri::IcalUri) instead. The form is told by the
+//! line's `VALUE` / `ENCODING` parameters, and the payload is kept verbatim
+//! (base64 is not decoded to bytes).
 
 use alloc::borrow::Cow;
 

@@ -2,15 +2,14 @@
 //!
 //! Strict, version-aware construction of a single property.
 //!
-//! [`IcalPropBuilder`] is the write-side counterpart of the lenses: keyed by
-//! the same zero-sized markers, it carries the calendar version and accumulates
-//! parameters, then emits an open [`IcalProp`]. Construction is the strict
-//! half of "liberal in, strict out": the name is pinned by the marker's
-//! [`IcalPropSpec`], and [`build`](IcalPropBuilder::build) runs the shared
-//! per-property check ([`validate_prop`](crate::tree::ical::validate)) so a
-//! known property must be defined in the calendar's version (extensions pass).
-//! To emit something the spec forbids, construct the open [`IcalProp`] by hand.
-//! The version is a value the builder carries, never a type parameter.
+//! [`IcalPropBuilder`] is the write-side counterpart of the lenses: keyed by the
+//! same zero-sized markers, it carries the calendar version, accumulates
+//! parameters, and emits an open [`IcalProp`]. Its name is pinned by the
+//! marker's [`IcalPropSpec`], and [`build`](IcalPropBuilder::build) runs the
+//! shared per-property check ([`validate_prop`](crate::tree::ical::validate)),
+//! so a known property must be defined in the calendar's version (extensions
+//! pass). To emit something the spec forbids, construct the open [`IcalProp`] by
+//! hand. The version is a value the builder carries, never a type parameter.
 //!
 //! # Example
 //!
@@ -40,7 +39,7 @@ use crate::{
     prop::{IcalProp, IcalPropName},
     tree::{
         ical::validate::{IcalValidateError, validate_prop},
-        prop::IcalPropSpec,
+        prop::spec::IcalPropSpec,
     },
     value::IcalValue,
     version::IcalVersion,
@@ -48,7 +47,7 @@ use crate::{
 
 /// A version-aware builder for one property, keyed by its lens marker.
 pub struct IcalPropBuilder<'a, L: IcalPropSpec> {
-    /// The card version the property is built for.
+    /// The calendar version the property is built for.
     pub version: IcalVersion,
     /// The parameters accumulated so far.
     pub params: Vec<IcalParam<'a>>,
@@ -56,7 +55,7 @@ pub struct IcalPropBuilder<'a, L: IcalPropSpec> {
 }
 
 impl<'a, L: IcalPropSpec> IcalPropBuilder<'a, L> {
-    /// Start a builder for the given card version.
+    /// Start a builder for the given calendar version.
     pub fn new(version: IcalVersion) -> Self {
         Self {
             version,

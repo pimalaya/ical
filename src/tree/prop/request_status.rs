@@ -1,20 +1,20 @@
-//! # REQUEST_STATUS lens
+//! # REQUEST-STATUS lens
 //!
-//! The `REQUEST_STATUS` property lens.
+//! The `REQUEST-STATUS` property lens.
 
 use crate::{
     prop::IcalPropKind,
     tree::{
         line::IcalLine,
-        prop::{IcalPropLens, IcalPropSpec},
-        value::IcalValueCursor,
+        prop::{lens::IcalPropLens, spec::IcalPropSpec},
+        value::cursor::IcalValueCursor,
     },
     value::IcalValueKind,
     value::request_status::IcalRequestStatus,
     version::IcalVersion,
 };
 
-/// The `REQUEST_STATUS` property lens.
+/// The `REQUEST-STATUS` property lens.
 #[allow(non_camel_case_types)]
 pub struct REQUEST_STATUS;
 

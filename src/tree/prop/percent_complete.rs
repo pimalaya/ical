@@ -1,20 +1,20 @@
-//! # PERCENT_COMPLETE lens
+//! # PERCENT-COMPLETE lens
 //!
-//! The `PERCENT_COMPLETE` property lens.
+//! The `PERCENT-COMPLETE` property lens.
 
 use crate::{
     prop::IcalPropKind,
     tree::{
         line::IcalLine,
-        prop::{IcalPropCardinality, IcalPropLens, IcalPropSpec},
-        value::IcalValueCursor,
+        prop::{cardinality::IcalPropCardinality, lens::IcalPropLens, spec::IcalPropSpec},
+        value::cursor::IcalValueCursor,
     },
     value::IcalValueKind,
     value::integer::IcalInteger,
     version::IcalVersion,
 };
 
-/// The `PERCENT_COMPLETE` property lens.
+/// The `PERCENT-COMPLETE` property lens.
 #[allow(non_camel_case_types)]
 pub struct PERCENT_COMPLETE;
 

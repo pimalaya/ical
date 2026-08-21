@@ -1,19 +1,19 @@
-//! # STRUCTURED_DATA lens
+//! # STRUCTURED-DATA lens
 //!
-//! The `STRUCTURED_DATA` property lens.
+//! The `STRUCTURED-DATA` property lens.
 
 use crate::{
     prop::IcalPropKind,
     tree::{
         line::IcalLine,
-        prop::{IcalPropLens, IcalPropSpec},
-        value::IcalValueCursor,
+        prop::{lens::IcalPropLens, spec::IcalPropSpec},
+        value::cursor::IcalValueCursor,
     },
     value::text::IcalText,
     version::IcalVersion,
 };
 
-/// The `STRUCTURED_DATA` property lens.
+/// The `STRUCTURED-DATA` property lens.
 #[allow(non_camel_case_types)]
 pub struct STRUCTURED_DATA;
 

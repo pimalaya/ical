@@ -4,8 +4,8 @@
 //! [`IcalValid`] proof it mints.
 //!
 //! Validation walks the whole component tree and reports, against the
-//! calendar's version and the [property](crate::tree::prop::IcalPropSpec) and
-//! [component](crate::tree::component::IcalComponentSpec) specs:
+//! calendar's version and the [property](crate::tree::prop::spec::IcalPropSpec) and
+//! [component](crate::tree::component::spec::IcalComponentSpec) specs:
 //!
 //! - a property the version does not define;
 //! - a value of a kind the property does not take;
@@ -14,8 +14,7 @@
 //! - a property a component requires but does not carry (a `VEVENT` needs `UID`
 //!   and `DTSTAMP`, a `VALARM` needs `ACTION` and `TRIGGER`, ...);
 //! - a component nested where it may not be;
-//! - a recurrence rule that breaks RFC 5545 3.3.10, with the `recur` feature
-//!   on.
+//! - a recurrence rule that breaks RFC 5545 3.3.10.
 //!
 //! Extensions always pass: validity is a runtime predicate, not a second strict
 //! type, so a conformant calendar may still carry unknown components,
@@ -102,7 +101,7 @@ pub enum IcalValidateError {
         /// The property carrying the rule (`RRULE` or `EXRULE`).
         prop: IcalPropKind,
         /// What is wrong with it.
-        problem: crate::recur::IcalRecurRuleProblem,
+        problem: crate::recur::validate::IcalRecurRuleProblem,
     },
 }
 
@@ -169,7 +168,7 @@ impl fmt::Display for IcalValidateError {
 impl error::Error for IcalValidateError {}
 
 impl Ical<'_> {
-    /// Validate the whole calendar, returning a [`IcalValid`] proof or every
+    /// Validate the whole calendar, returning an [`IcalValid`] proof or every
     /// conformance failure found.
     pub fn validate(self) -> Result<IcalValid<Self>, Vec<IcalValidateError>> {
         let mut errors = Vec::new();
@@ -251,7 +250,7 @@ fn check_required(
 /// extension is outside it by definition. A known property must exist in the
 /// calendar's version, take a value of a kind its spec allows there, and carry
 /// only parameters that spec allows there. A recurrence value is checked
-/// against RFC 5545 3.3.10 as well, when the `recur` feature is on.
+/// against RFC 5545 3.3.10 as well.
 pub(crate) fn validate_prop(
     prop: &IcalProp<'_>,
     version: IcalVersion,
@@ -332,7 +331,7 @@ fn check_cardinality(
     version: IcalVersion,
     errors: &mut Vec<IcalValidateError>,
 ) {
-    use crate::tree::prop::IcalPropCardinality::{AtMostOne, ExactlyOne};
+    use crate::tree::prop::cardinality::IcalPropCardinality::{AtMostOne, ExactlyOne};
 
     let mut seen: Vec<(IcalPropKind, usize)> = Vec::new();
 
@@ -622,7 +621,7 @@ mod tests {
     #[test]
     fn flags_a_rule_the_rfc_forbids() {
         use crate::{
-            recur::{IcalRecurFreq, IcalRecurPart, IcalRecurRuleProblem},
+            recur::{IcalRecurFreq, validate::IcalRecurPart, validate::IcalRecurRuleProblem},
             value::recur::IcalRecur,
         };
 

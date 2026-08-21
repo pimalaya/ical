@@ -5,7 +5,7 @@
 //! and it is the type-level key for
 //! [`IcalLine::param`](crate::tree::line::IcalLine::param).
 
-use crate::{param::IcalParamKind, tree::param::IcalParamNode};
+use crate::{param::IcalParamKind, tree::param::node::IcalParamNode};
 
 /// A parameter identified by type, projecting a generic syntax parameter onto a
 /// decoded value type and back.
@@ -27,7 +27,9 @@ pub trait IcalParamLens {
 mod tests {
     use alloc::{borrow::Cow, string::ToString, vec};
 
-    use crate::tree::param::{IcalParamLens, IcalParamNode, language::LANGUAGE, member::MEMBER};
+    use crate::tree::param::{
+        language::LANGUAGE, lens::IcalParamLens, member::MEMBER, node::IcalParamNode,
+    };
 
     #[test]
     fn decodes_a_list_parameter_through_its_lens() {

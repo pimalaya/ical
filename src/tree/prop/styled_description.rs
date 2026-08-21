@@ -1,19 +1,19 @@
-//! # STYLED_DESCRIPTION lens
+//! # STYLED-DESCRIPTION lens
 //!
-//! The `STYLED_DESCRIPTION` property lens.
+//! The `STYLED-DESCRIPTION` property lens.
 
 use crate::{
     prop::IcalPropKind,
     tree::{
         line::IcalLine,
-        prop::{IcalPropLens, IcalPropSpec},
-        value::IcalValueCursor,
+        prop::{lens::IcalPropLens, spec::IcalPropSpec},
+        value::cursor::IcalValueCursor,
     },
     value::text::IcalText,
     version::IcalVersion,
 };
 
-/// The `STYLED_DESCRIPTION` property lens.
+/// The `STYLED-DESCRIPTION` property lens.
 #[allow(non_camel_case_types)]
 pub struct STYLED_DESCRIPTION;
 

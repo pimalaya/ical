@@ -7,7 +7,7 @@
 //! own module.
 
 use crate::{
-    tree::{codec::Codec, line::IcalLine, prop::IcalPropSpec},
+    tree::{codec::Codec, line::IcalLine, prop::spec::IcalPropSpec},
     version::IcalVersion,
 };
 
@@ -25,7 +25,7 @@ pub trait IcalPropLens: IcalPropSpec {
     where
         'a: 'c;
 
-    /// Project a content line onto the decoded type, consulting the card
+    /// Project a content line onto the decoded type, consulting the calendar
     /// version where the value's shape is version-specific (`GEO`, the binary
     /// props). The default ignores the version and decodes the value node
     /// through the target's [`Codec`]; the version-specific lenses override it.

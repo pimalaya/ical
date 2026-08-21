@@ -1,20 +1,20 @@
-//! # REFRESH_INTERVAL lens
+//! # REFRESH-INTERVAL lens
 //!
-//! The `REFRESH_INTERVAL` property lens.
+//! The `REFRESH-INTERVAL` property lens.
 
 use crate::{
     prop::IcalPropKind,
     tree::{
         line::IcalLine,
-        prop::{IcalPropCardinality, IcalPropLens, IcalPropSpec},
-        value::IcalValueCursor,
+        prop::{cardinality::IcalPropCardinality, lens::IcalPropLens, spec::IcalPropSpec},
+        value::cursor::IcalValueCursor,
     },
     value::IcalValueKind,
     value::duration::IcalDuration,
     version::IcalVersion,
 };
 
-/// The `REFRESH_INTERVAL` property lens.
+/// The `REFRESH-INTERVAL` property lens.
 #[allow(non_camel_case_types)]
 pub struct REFRESH_INTERVAL;
 

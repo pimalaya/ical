@@ -1,19 +1,19 @@
-//! # RESOURCE_TYPE lens
+//! # RESOURCE-TYPE lens
 //!
-//! The `RESOURCE_TYPE` property lens.
+//! The `RESOURCE-TYPE` property lens.
 
 use crate::{
     prop::IcalPropKind,
     tree::{
         line::IcalLine,
-        prop::{IcalPropLens, IcalPropSpec},
-        value::IcalValueCursor,
+        prop::{lens::IcalPropLens, spec::IcalPropSpec},
+        value::cursor::IcalValueCursor,
     },
     value::text::IcalText,
     version::IcalVersion,
 };
 
-/// The `RESOURCE_TYPE` property lens.
+/// The `RESOURCE-TYPE` property lens.
 #[allow(non_camel_case_types)]
 pub struct RESOURCE_TYPE;
 

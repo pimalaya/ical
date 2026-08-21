@@ -6,12 +6,12 @@
 //! and every nested `VEVENT`, `VALARM`, `VTIMEZONE`, ...) as a `BEGIN` / `END`
 //! envelope wrapping an ordered body of [`items`](IcalCst::items): property
 //! lines and nested components, in source order, so anything round-trips byte
-//! for byte even when a producer interleaves them. It knows nothing about what
-//! a property or component *means*. It is filled from bytes
+//! for byte even when a producer interleaves them. It knows nothing about what a
+//! property or component *means*. It is filled from bytes
 //! ([`parse`](IcalCst::parse)) or from typed items, exports its bytes
 //! byte-faithfully ([`to_bytes`](IcalCst::to_bytes), or the lossy-for-non-UTF-8
-//! [`Display`](core::fmt::Display) / `to_string`), and offers typed access by
-//! lens ([`prop`](IcalCst::prop), [`prop_mut`](IcalCst::prop_mut),
+//! [`Display`](core::fmt::Display)), and offers typed access by lens
+//! ([`prop`](IcalCst::prop), [`prop_mut`](IcalCst::prop_mut),
 //! [`component`](IcalCst::component)). The semantic projection
 //! ([`decode`](IcalCst::decode)) and the codec live in the
 //! [`decode`](crate::tree::codec::decode) /
@@ -49,8 +49,8 @@ use alloc::{
 use crate::{
     prop::IcalProp,
     tree::{
-        codec::mode::Escaper, component::IcalComponentLens, error::IcalParseError, line::IcalLine,
-        prop::IcalPropLens,
+        codec::mode::Escaper, component::lens::IcalComponentLens, error::IcalParseError,
+        line::IcalLine, prop::lens::IcalPropLens,
     },
     version::IcalVersion,
 };

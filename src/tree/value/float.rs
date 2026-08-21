@@ -1,11 +1,11 @@
-//! # float value codec (RFC 5545 3.3.7)
+//! # Float value codec (RFC 5545 3.3.7)
 //!
 //! [`Codec`] for the float value. A single scalar value.
 
 use crate::{
     tree::{
         codec::{Codec, encode::scalar_node, mode::Escaper},
-        value::IcalValueNode,
+        value::node::IcalValueNode,
     },
     value::float::IcalFloat,
 };

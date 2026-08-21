@@ -10,9 +10,10 @@ use alloc::{borrow::Cow, vec::Vec};
 
 use crate::tree::codec::mode::Escaper;
 
-/// Apply the value escapes by the card's escaping mode (RFC 5545 3.3.11 for the
-/// modern rules; vCalendar 1.0 escapes only `;`), over raw value bytes. Borrows
-/// when nothing needs escaping; non-UTF-8 content passes through verbatim.
+/// Apply the value escapes by the calendar's escaping mode (RFC 5545 3.3.11 for
+/// the modern rules; vCalendar 1.0 escapes only `;`), over raw value bytes.
+/// Borrows when nothing needs escaping; non-UTF-8 content passes through
+/// verbatim.
 pub(crate) fn escape_with(bytes: &[u8], escaper: Escaper) -> Cow<'_, [u8]> {
     match escaper {
         Escaper::Modern => escape_modern(bytes),

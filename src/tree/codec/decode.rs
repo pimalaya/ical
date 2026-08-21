@@ -2,12 +2,12 @@
 //!
 //! The read side of the structural bridge: project a raw syntax tree onto the
 //! decoded model. A [`IcalValueNode`] decodes its components, a
-//! [`IcalParamNode`] decodes into a [`IcalParam`], a [`IcalLine`] decodes into
-//! a [`IcalProp`], and a [`IcalCst`] decodes into a whole [`Ical`]
+//! [`IcalParamNode`] decodes into an [`IcalParam`], an [`IcalLine`] decodes into
+//! an [`IcalProp`], and an [`IcalCst`] decodes into a whole [`Ical`]
 //! (recursively, walking every nested component).
 //!
 //! A property's value kind is resolved through its spec, not a name match:
-//! [`IcalLine::decode`] maps the name to a [`IcalPropKind`], asks the spec for
+//! [`IcalLine::decode`] maps the name to an [`IcalPropKind`], asks the spec for
 //! the in-force value kind (version plus any declared `VALUE`), then routes to
 //! that kind's decoder. The parameter name dispatch is the match in
 //! [`IcalParamNode::decode`].
@@ -23,9 +23,9 @@ use crate::{
         codec::{Codec, unescape::unescape},
         cst::{IcalCst, IcalItem},
         line::IcalLine,
-        param::IcalParamNode,
+        param::node::IcalParamNode,
         prop::prop_spec,
-        value::IcalValueNode,
+        value::node::IcalValueNode,
     },
     value::{
         IcalUnknownValue, IcalValue, IcalValueKind,

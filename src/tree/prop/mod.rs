@@ -3,13 +3,12 @@
 //! The property lens contract, the per-property spec, and one module per
 //! iCalendar property.
 //!
-//! [`IcalPropLens`] ties a wire name to a decoded value type plus the `decode`
-//! projection and an edit cursor; each property implements it on the marker in
-//! its own module, the type-level key for
-//! [`IcalCst::prop`](crate::tree::cst::IcalCst::prop). The per-property
-//! contract is [`IcalPropSpec`], with the [`IcalPropCardinality`] multiplicity
-//! axis; the name dispatch for whole-calendar decoding lives in
-//! [`crate::tree::codec::decode`].
+//! [`IcalPropLens`](lens::IcalPropLens) ties a wire name to a decoded value type
+//! plus the `decode` projection and an edit cursor; each property implements it
+//! on the marker in its own module, the type-level key for
+//! [`IcalCst::prop`](crate::tree::cst::IcalCst::prop). The per-property contract
+//! is [`IcalPropSpec`](spec::IcalPropSpec), with the
+//! [`IcalPropCardinality`](cardinality::IcalPropCardinality) multiplicity axis.
 
 pub mod aalarm;
 pub mod acknowledged;
@@ -82,15 +81,8 @@ pub mod tzurl;
 pub mod uid;
 pub mod url;
 
-mod cardinality;
-mod lens;
-mod spec;
-
-#[doc(inline)]
-pub use cardinality::*;
-#[doc(inline)]
-pub use lens::*;
-#[doc(inline)]
-pub use spec::IcalPropSpec;
+pub mod cardinality;
+pub mod lens;
+pub mod spec;
 
 pub(crate) use spec::prop_spec;

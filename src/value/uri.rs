@@ -2,12 +2,10 @@
 //!
 //! The decoded URI value kind.
 //!
-//! Backs every RFC 5545 property whose value is a URI (RFC 5545 3.3.13):
-//! `URL`, `TZURL`, `SOURCE`, `CONFERENCE`, `ATTACH` (when a URI), `IMAGE` (when
-//! a URI), and `STYLED-DESCRIPTION`. The reference is kept verbatim as a
-//! string; the crate does not parse or validate it. Pure data with no escaping
-//! knowledge, like every other type in [`crate::value`]; the owning property's
-//! wire name lives on [`crate::prop::IcalProp::name`].
+//! Backs every RFC 5545 property whose value is a URI (RFC 5545 3.3.13): `URL`,
+//! `TZURL`, `SOURCE`, `CONFERENCE`, `ATTACH` and `IMAGE` (when a URI), and
+//! `STYLED-DESCRIPTION`. The reference is kept verbatim as a string; the crate
+//! does not parse or validate it.
 
 use alloc::{borrow::Cow, string::String};
 

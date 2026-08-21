@@ -5,7 +5,7 @@
 //! comes from its [`IcalComponentSpec::KIND`] supertrait, so the two stay in
 //! sync.
 
-use crate::tree::component::IcalComponentSpec;
+use crate::tree::component::spec::IcalComponentSpec;
 
 /// A component identified by type. The wire name and nesting rules come from
 /// its [`IcalComponentSpec`] supertrait.

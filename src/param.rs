@@ -2,16 +2,13 @@
 //!
 //! A decoded parameter and the iCalendar parameter-name vocabulary.
 //!
-//! [`IcalParam`] is a closed set of the parameters defined by RFC 5545 (and its
-//! extensions), one variant each, plus an [`Unknown`](IcalParam::Unknown) arm
-//! so anything else round-trips. Parameters are few and simple (a text or a
-//! small list), so unlike properties each variant carries its value directly
-//! rather than through a shared value type; the variant itself names the
-//! parameter. A known name is the closed [`IcalParamKind`], reached through
-//! `FromStr` and `Deref`; the lens markers in [`crate::tree::param`] carry the
-//! kind to match, and the decode registry parses a raw name onto its variant.
-//!
-//! This module is pure model: no dependency on [`crate::tree`].
+//! [`IcalParam`] is a closed set of the parameters RFC 5545 and its extensions
+//! define, one variant each, plus an [`Unknown`](IcalParam::Unknown) arm so
+//! anything else round-trips. Parameters are few and simple (a text or a small
+//! list), so unlike properties each variant carries its value directly rather
+//! than through a shared value type; the variant itself names the parameter. A
+//! known name is the closed [`IcalParamKind`], reached through `FromStr` and
+//! `Deref`. Pure model, no [`crate::tree`] dependency.
 
 use core::{error, fmt, ops, str};
 

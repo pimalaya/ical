@@ -4,25 +4,24 @@
 //! parsed into.
 //!
 //! A real calendar folds at 75 octets, blank-lines its components apart and,
-//! under vCalendar 1.0, breaks a `QUOTED-PRINTABLE` value across physical
-//! lines. Every layer above the parser wants the *logical* line, so
+//! under vCalendar 1.0, breaks a `QUOTED-PRINTABLE` value across physical lines.
+//! Every layer above the parser wants the *logical* line, so
 //! [`IcalLine::take`](crate::tree::line::IcalLine::take) resolves all three
 //! away. [`IcalWire`] is what makes that resolution reversible: a list of byte
-//! offsets into the logical line, each holding the bytes the wire carried
-//! there, so serialization reproduces the input exactly rather than a
-//! normalised paraphrase of it.
+//! offsets into the logical line, each holding the bytes the wire carried there,
+//! so serialization reproduces the input exactly rather than a normalised
+//! paraphrase of it.
 //!
 //! ## Offsets are logical, and checked
 //!
-//! An offset indexes the line's logical bytes: its name, its parameters and its
-//! value, exactly as `IcalLine::write_bytes`
-//! lays them out, with the line ending excluded (which is why a blank line
-//! before the line is an insertion at offset 0). The logical length is recorded
-//! with them, and a shape whose length no longer matches is dropped rather than
-//! applied: an edit that changes a value's length moves every byte after it, so
-//! the old fold points would land in the wrong places. An edited line is
-//! written unfolded, which RFC 5545 3.1 permits (it recommends 75 octets, it
-//! does not require them).
+//! An offset indexes the line's logical bytes (its name, its parameters and its
+//! value, exactly as `IcalLine::write_bytes` lays them out, line ending
+//! excluded, which is why a blank line before the line is an insertion at offset
+//! 0). The logical length is recorded with them, and a shape whose length no
+//! longer matches is dropped rather than applied: an edit that changes a value's
+//! length moves every byte after it, so the old fold points would land in the
+//! wrong places. An edited line is written unfolded, which RFC 5545 3.1 permits
+//! (it recommends 75 octets, it does not require them).
 
 use alloc::{borrow::Cow, vec::Vec};
 

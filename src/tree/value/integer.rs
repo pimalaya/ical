@@ -1,11 +1,11 @@
-//! # integer value codec (RFC 5545 3.3.8)
+//! # Integer value codec (RFC 5545 3.3.8)
 //!
 //! [`Codec`] for the integer value. A single scalar value.
 
 use crate::{
     tree::{
         codec::{Codec, encode::scalar_node, mode::Escaper},
-        value::IcalValueNode,
+        value::node::IcalValueNode,
     },
     value::integer::IcalInteger,
 };

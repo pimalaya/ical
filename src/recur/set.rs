@@ -2,12 +2,12 @@
 //!
 //! The occurrences a *component* denotes, not the ones a single rule does.
 //!
-//! A rule is only ever part of the answer. RFC 5545 3.8.5 builds the set a
-//! `VEVENT` or `VTODO` actually happens on out of five properties, plus the
-//! overrides that sit in sibling components: `DTSTART` and every `RRULE` and
-//! `RDATE` add instances, every `EXDATE` and `EXRULE` take them away, and a
-//! component carrying a `RECURRENCE-ID` replaces one. [`IcalRecurSet`] holds
-//! those pieces and [`IcalRecurSetExpand`] walks them.
+//! RFC 5545 3.8.5 builds the set a `VEVENT` or `VTODO` actually happens on out
+//! of five properties, plus the overrides that sit in sibling components:
+//! `DTSTART` and every `RRULE` and `RDATE` add instances, every `EXDATE` and
+//! `EXRULE` take them away, and a component carrying a `RECURRENCE-ID` replaces
+//! one. [`IcalRecurSet`] holds those pieces and [`IcalRecurSetExpand`] walks
+//! them.
 //!
 //! ## Identity, and the order it comes in
 //!
@@ -16,19 +16,18 @@
 //! Its **start** is when it actually happens, which is the identity unless an
 //! override moved it.
 //!
-//! Occurrences come out in the chronological order of their *identity*, which
-//! is what keeps the walk lazy: nothing is buffered, so an endless rule can be
-//! taken from without running it to its end. An override that moves an instance
-//! is emitted in the place of the instance it replaces, so its start can fall
-//! out of order. A caller that needs starts in order sorts a window of them,
-//! which is a decision about a window, not about the walk.
+//! Occurrences come out in the chronological order of their *identity*, which is
+//! what keeps the walk lazy: nothing is buffered, so an endless rule can be taken
+//! from without running it to its end. An override that moves an instance is
+//! emitted in the place of the instance it replaces, so its start can fall out of
+//! order. A caller that needs starts in order sorts a window of them, which is a
+//! decision about a window, not about the walk.
 //!
 //! ## Civil, like everything else here
 //!
-//! Nothing in this module resolves a time zone. `DTSTART`, `RDATE`, `EXDATE`
-//! and `RECURRENCE-ID` are read as the civil times they spell, and a `TZID`
-//! parameter is ignored, exactly as [expansion](crate::recur::expand) ignores
-//! it.
+//! Nothing here resolves a time zone. `DTSTART`, `RDATE`, `EXDATE` and
+//! `RECURRENCE-ID` are read as the civil times they spell, and a `TZID`
+//! parameter is ignored, exactly as [expansion](crate::recur::expand) ignores it.
 
 use alloc::{vec, vec::Vec};
 
@@ -225,7 +224,7 @@ impl IcalRecurSet {
     }
 }
 
-/// The lazy walk of a [`IcalRecurSet`], in identity order.
+/// The lazy walk of an [`IcalRecurSet`], in identity order.
 ///
 /// A k-way merge over the rule expansions and the literal dates, with the
 /// exclusions applied as it goes: an `EXDATE` is a membership test on a sorted

@@ -3,22 +3,18 @@
 //! The raw value of a content line, on the syntax side.
 //!
 //! [`IcalValueNode`] is the syntactic peer of the decoded
-//! [`IcalValue`](crate::value::IcalValue): the bytes after a line's colon,
-//! understood as `;`-separated components of `,`-separated
-//! [`IcalValueLeaf`](crate::tree::leaf::IcalValueLeaf) values (raw bytes, so
-//! a foreign charset survives). Straight from parse the value is kept as one
-//! unsplit `raw` slice and only walked on demand; an edit or a model encode
-//! splits it into owned `components`, which then become the source of truth.
-//! Either way the splitting is generic (it counts and preserves separators so
-//! the value round-trips); what those components *mean* is the lens's business.
-//! The codec that unescapes components into decoded values ([`decode_at`],
-//! [`decode_scalar_at`]) and re-escapes edits back ([`set_at`]) lives on this
-//! type; the escaping rules it applies come from the sibling
-//! [`mode`](crate::tree::codec::mode) codec.
+//! [`IcalValue`](crate::value::IcalValue): the bytes after a line's colon, read
+//! as `;`-separated components of `,`-separated
+//! [`IcalValueLeaf`](crate::tree::leaf) values (raw bytes, so a foreign charset
+//! survives). Straight from parse the value stays one unsplit slice walked on
+//! demand; an edit or a model encode splits it into owned components, which then
+//! become the source of truth. The splitting is generic, counting and preserving
+//! separators so the value round-trips; what the components *mean* is the lens's
+//! business.
 //!
-//! [`decode_at`]: IcalValueNode::decode_at
-//! [`decode_scalar_at`]: IcalValueNode::decode_scalar_at
-//! [`set_at`]: IcalValueNode::set_at
+//! The codec that unescapes components into decoded values and re-escapes edits
+//! back lives on this type, applying the rules of the sibling
+//! [`mode`](crate::tree::codec::mode) codec.
 
 use core::fmt;
 
@@ -42,7 +38,7 @@ use crate::tree::{
 /// do no splitting at all. The first edit (or a model encode) splits it into
 /// owned `components`, which then take over as the source of
 /// truth. The `escaper` records which version's escaping rules the codec must
-/// apply; it is stamped from the card version after parsing (see
+/// apply; it is stamped from the calendar version after parsing (see
 /// `IcalCst::parse`).
 #[derive(Clone, Debug, Default)]
 pub struct IcalValueNode<'a> {
@@ -181,7 +177,7 @@ impl<'a> IcalValueNode<'a> {
     }
 
     /// Set the `i`th component, escaping each value. Pads with empty components
-    /// when needed; every other component is left untouched, so a parsed card
+    /// when needed; every other component is left untouched, so a parsed calendar
     /// keeps its bytes.
     pub fn set_at<S: AsRef<str>>(&mut self, i: usize, values: &[S]) {
         self.materialize();
@@ -393,7 +389,7 @@ fn split_on<'b>(bytes: &'b [u8], sep: u8, mut piece: impl FnMut(&'b [u8])) {
 mod tests {
     use alloc::{borrow::Cow, string::ToString, vec};
 
-    use crate::tree::value::IcalValueNode;
+    use crate::tree::value::node::IcalValueNode;
 
     #[test]
     fn splits_components_and_values_then_round_trips() {

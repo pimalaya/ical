@@ -108,7 +108,7 @@ fn split_param_values(values: &str) -> Vec<&str> {
 mod tests {
     use alloc::string::ToString;
 
-    use crate::tree::param::IcalParamNode;
+    use crate::tree::param::node::IcalParamNode;
 
     #[test]
     fn parses_quoted_values_then_round_trips() {

@@ -4,10 +4,8 @@
 //!
 //! Backs the `REQUEST-STATUS` property (RFC 5545 3.8.8.3): a status code, a
 //! human-readable description, and optional extra data, the three components
-//! separated on the wire by semicolons. Each component is kept as its raw text;
-//! the optional extra data is an empty [`Cow`] when absent. Pure data, no
-//! escaping; the owning property's wire name lives on
-//! [`crate::prop::IcalProp::name`].
+//! separated on the wire by semicolons. Each is kept as its raw text, the
+//! optional extra data being an empty [`Cow`] when absent.
 
 use alloc::borrow::Cow;
 

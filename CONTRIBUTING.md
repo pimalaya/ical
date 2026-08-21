@@ -17,7 +17,7 @@ This repository follows [Cairn](https://github.com/pimalaya/cairn): a living spe
 
 ## Build
 
-ical-rs is not an I/O library, so it has no coroutine, client or TLS layers. It is a no_std library (with alloc) whose core is dependency-free; every dependency sits behind an opt-in feature: parser (the byte-faithful syntax tree), quoted-printable, base64 and encoding (content decoders for encoded text, inline binary and foreign character sets), and recur (the typed recurrence rule and its occurrence iterator). Everything under the tree module is gated on parser, while the decoded model is always available.
+ical-rs is not an I/O library, so it has no coroutine, client or TLS layers. It is a no_std library (with alloc) whose core is dependency-free; every dependency sits behind a feature: parser (the byte-faithful syntax tree), quoted-printable, base64 and encoding (content decoders for encoded text, inline binary and foreign character sets), and jcal and jscalendar (the JSON representations). Everything under the tree module is gated on parser, while the decoded model, the recurrence layer and the time zones are always available.
 
 Check both the full build and the bare core, so gated code never leaks into the always-on core:
 

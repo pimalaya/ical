@@ -1,11 +1,11 @@
 //! # Parameters (syntax side)
 //!
-//! The per-parameter lens contract ([`IcalParamLens`]) and one module per
-//! iCalendar parameter, tying a wire name to its decoded shape; the markers are
-//! the type-level keys for
+//! The per-parameter lens contract ([`IcalParamLens`](lens::IcalParamLens)) and
+//! one module per iCalendar parameter, tying a wire name to its decoded shape;
+//! the markers are the type-level keys for
 //! [`IcalLine::param`](crate::tree::line::IcalLine::param). The raw
-//! [`IcalParamNode`] they read and write is defined alongside. The name
-//! dispatch for whole-line decoding lives in [`crate::tree::codec::decode`].
+//! [`IcalParamNode`](node::IcalParamNode) they read and write is defined
+//! alongside.
 
 pub mod altrep;
 pub mod charset;
@@ -41,13 +41,8 @@ pub mod sent_by;
 pub mod tzid;
 pub mod value;
 
-mod lens;
-mod node;
-
-#[doc(inline)]
-pub use lens::*;
-#[doc(inline)]
-pub use node::*;
+pub mod lens;
+pub mod node;
 
 use crate::param::IcalParamKind;
 

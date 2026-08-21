@@ -2,11 +2,10 @@
 //!
 //! The decoded geographic-position value kind.
 //!
-//! Backs the `GEO` property (RFC 5545 3.8.1.6): a latitude and a longitude,
-//! each a FLOAT (RFC 5545 3.3.7), separated on the wire by a semicolon. Both
+//! Backs the `GEO` property (RFC 5545 3.8.1.6): a latitude and a longitude, each
+//! a FLOAT (RFC 5545 3.3.7), separated on the wire by a semicolon. Both
 //! components are kept as their raw text; the crate does not parse them into
-//! numbers. Pure data, no escaping; the owning property's wire name lives on
-//! [`crate::prop::IcalProp::name`].
+//! numbers.
 
 use alloc::borrow::Cow;
 

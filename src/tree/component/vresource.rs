@@ -4,7 +4,7 @@
 
 use crate::{
     component::IcalComponentKind,
-    tree::component::{IcalComponentLens, IcalComponentSpec},
+    tree::component::{lens::IcalComponentLens, spec::IcalComponentSpec},
 };
 
 /// The `VRESOURCE` component lens.

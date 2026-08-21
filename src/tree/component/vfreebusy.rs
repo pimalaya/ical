@@ -5,7 +5,7 @@
 use crate::{
     component::IcalComponentKind,
     prop::IcalPropKind,
-    tree::component::{IcalComponentLens, IcalComponentSpec},
+    tree::component::{lens::IcalComponentLens, spec::IcalComponentSpec},
 };
 
 /// The `VFREEBUSY` component lens.

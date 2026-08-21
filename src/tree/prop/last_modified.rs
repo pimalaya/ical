@@ -1,20 +1,20 @@
-//! # LAST_MODIFIED lens
+//! # LAST-MODIFIED lens
 //!
-//! The `LAST_MODIFIED` property lens.
+//! The `LAST-MODIFIED` property lens.
 
 use crate::{
     prop::IcalPropKind,
     tree::{
         line::IcalLine,
-        prop::{IcalPropCardinality, IcalPropLens, IcalPropSpec},
-        value::IcalValueCursor,
+        prop::{cardinality::IcalPropCardinality, lens::IcalPropLens, spec::IcalPropSpec},
+        value::cursor::IcalValueCursor,
     },
     value::IcalValueKind,
     value::datetime::IcalDateTime,
     version::IcalVersion,
 };
 
-/// The `LAST_MODIFIED` property lens.
+/// The `LAST-MODIFIED` property lens.
 #[allow(non_camel_case_types)]
 pub struct LAST_MODIFIED;
 

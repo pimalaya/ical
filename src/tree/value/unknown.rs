@@ -6,7 +6,7 @@
 use crate::{
     tree::{
         codec::{Codec, encode::encode_component, mode::Escaper},
-        value::IcalValueNode,
+        value::node::IcalValueNode,
     },
     value::IcalUnknownValue,
 };

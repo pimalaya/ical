@@ -15,7 +15,9 @@ use ical::{
     component::IcalComponentKind,
     ical::Ical,
     prop::IcalPropKind,
-    recur::{IcalRecurFreq, IcalRecurPart, IcalRecurRule, IcalRecurRuleProblem},
+    recur::{
+        IcalRecurFreq, IcalRecurRule, validate::IcalRecurPart, validate::IcalRecurRuleProblem,
+    },
     tree::{cst::IcalCst, ical::validate::IcalValidateError},
     valid::IcalValid,
     value::IcalValueKind,

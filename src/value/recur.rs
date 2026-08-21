@@ -5,9 +5,9 @@
 //! Backs `RRULE` and the rule form of `EXRULE` (RFC 5545 3.3.10), including the
 //! `RSCALE` and `SKIP` extensions (RFC 7529): a semicolon-separated list of
 //! `part=value` rule components such as `FREQ=YEARLY;BYMONTH=1`. The value is
-//! kept as its raw text; structured decoding into typed rule parts is deferred
-//! to a future addition. Pure data, no escaping; the owning property's wire
-//! name lives on [`crate::prop::IcalProp::name`].
+//! kept as its raw text, which is what round-tripping needs;
+//! [`IcalRecurRule::parse`](crate::recur::IcalRecurRule::parse) decodes it into
+//! typed parts, and [`crate::recur`] expands what it denotes.
 
 use alloc::{borrow::Cow, string::String};
 

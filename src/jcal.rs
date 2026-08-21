@@ -12,10 +12,10 @@
 //! the same model.
 //!
 //! The boundary is a raw `Value`, not a serde implementation on any calendar
-//! type. One type has two JSON spellings here, jCal and (next in the backlog)
-//! JSCalendar, and serde keys one representation per type, so it is the wrong
-//! tool; a raw-value boundary also keeps the public API free of a serialization
-//! commitment.
+//! type. One model has two JSON spellings here, jCal and JSCalendar (behind the
+//! `jscalendar` feature), and serde keys one representation per type, so it is
+//! the wrong tool; a raw-value boundary also keeps the public API free of a
+//! serialization commitment.
 //!
 //! ## Postel, again
 //!

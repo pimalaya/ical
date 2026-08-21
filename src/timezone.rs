@@ -5,32 +5,31 @@
 //!
 //! Expansion is civil by design ([`recur`](crate::recur)) and that boundary
 //! stays: nothing here changes what a rule denotes. What it adds is the step
-//! after it, the one nobody could take before. A caller holding an occurrence
-//! and the calendar it came from can now ask what offset was in force, with no
-//! time-zone database and no new dependency, because RFC 5545 3.6.5 makes a
-//! calendar carry its own rules: a `VTIMEZONE` is a list of observances, each
-//! with the offset before it, the offset after it, and a recurrence rule saying
-//! when it takes effect.
+//! after, the one nobody could take before. A caller holding an occurrence and
+//! the calendar it came from can ask what offset was in force, with no time-zone
+//! database and no new dependency, because RFC 5545 3.6.5 makes a calendar carry
+//! its own rules: a `VTIMEZONE` is a list of observances, each with the offset
+//! before it, the offset after it, and a recurrence rule saying when it takes
+//! effect.
 //!
 //! ## The two hard cases are answered, not guessed
 //!
-//! A local clock is not a bijection. When it springs forward, the times it
-//! jumps over never happen; when it falls back, the times it repeats happen
-//! twice. [`resolve`](IcalTimezone::resolve) reports both as what they are,
-//! with the offsets either side, rather than picking one and calling it the
-//! answer. Choosing belongs to the caller, who knows whether a skipped alarm
-//! should fire early, late or not at all.
+//! A local clock is not a bijection. When it springs forward, the times it jumps
+//! over never happen; when it falls back, the times it repeats happen twice.
+//! [`resolve`](IcalTimezone::resolve) reports both as what they are, with the
+//! offsets either side, rather than picking one and calling it the answer.
+//! Choosing belongs to the caller, who knows whether a skipped alarm should fire
+//! early, late or not at all.
 //!
 //! ## What is read, and what is not
 //!
 //! An observance contributes its `DTSTART`, its `RRULE`s and its `RDATE`s
 //! through the same [`IcalRecurSet`] every other component uses, so the
 //! transitions of a zone are just another recurrence set. `TZNAME`, `TZURL` and
-//! `LAST-MODIFIED` are not read: they name a zone, they do not place it.
-//!
-//! Every `DTSTART` inside an observance is local to the offset *before* the
-//! transition (RFC 5545 3.6.5), which is what makes a transition expressible in
-//! two local times at once, and what the gap and the fold are made of.
+//! `LAST-MODIFIED` are not read: they name a zone, they do not place it. Every
+//! `DTSTART` inside an observance is local to the offset *before* the transition
+//! (RFC 5545 3.6.5), which is what makes a transition expressible in two local
+//! times at once, and what the gap and the fold are made of.
 
 use alloc::{
     string::{String, ToString},

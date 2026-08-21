@@ -1,22 +1,18 @@
 //! # Content line
 //!
-//! One raw content line of a card: name, parameters, value, line ending.
+//! One raw content line of a calendar: name, parameters, value, line ending.
 //!
 //! [`IcalLine`] is the syntactic unit a property occupies. It owns the line
 //! tokeniser ([`take`](IcalLine::take), which splits one logical line off the
-//! remaining input for [`IcalCst::parse`](crate::tree::cst::IcalCst::parse),
-//! unfolding any RFC 5545 3.1 folded continuation lines) and the head splitter
-//! that separates the name from its parameters. It exposes its raw value and
-//! typed parameter access by lens, but stays generic: the meaning of the name
-//! and the decoding of the value belong to the lens markers and the
-//! [`decode`](crate::tree::codec::decode) /
-//! [`encode`](crate::tree::codec::encode) bridges.
+//! remaining input) and the head splitter separating the name from its
+//! parameters, but stays generic: what the name means and how the value decodes
+//! belong to the lens markers and the [`codec`](crate::tree::codec).
 //!
 //! Folding, stray blank lines and QUOTED-PRINTABLE soft breaks are resolved on
-//! parse, so every layer above sees one logical line, and recorded on the
-//! line's [`wire`](IcalLine::wire) shape, so serialization puts them back. A
-//! calendar therefore round-trips byte for byte however it was laid out. The
-//! final line needs no trailing break.
+//! parse, so every layer above sees one logical line, and recorded on the line's
+//! [`wire`](IcalLine::wire) shape, so serialization puts them back. A calendar
+//! therefore round-trips byte for byte however it was laid out. The final line
+//! needs no trailing break.
 
 use core::{fmt, str};
 
@@ -26,8 +22,8 @@ use crate::tree::{
     codec::mode::Escaper,
     error::IcalParseError,
     leaf::{IcalLeaf, IcalValueLeaf},
-    param::{IcalParamLens, IcalParamNode},
-    value::IcalValueNode,
+    param::{lens::IcalParamLens, node::IcalParamNode},
+    value::node::IcalValueNode,
     wire::IcalWire,
 };
 
@@ -114,7 +110,7 @@ impl<'a> IcalLine<'a> {
         // NOTE: QUOTED-PRINTABLE soft line breaks: a line whose head declares
         // ENCODING=QUOTED-PRINTABLE and whose value ends with `=` continues on
         // the next physical line. Param-driven, so it applies to any version's
-        // card that uses the encoding, not just 2.1.
+        // calendar that uses the encoding, not just 2.1.
         if first.ends_with(b"=") && head_is_quoted_printable(first) {
             let mut logical = Vec::from(&first[..first.len() - 1]);
             wire.soft(logical.len(), is_crlf(eol));
@@ -417,7 +413,7 @@ fn lossy(bytes: &[u8]) -> String {
 mod tests {
     use alloc::string::ToString;
 
-    use crate::tree::{line::IcalLine, value::IcalValueNode};
+    use crate::tree::{line::IcalLine, value::node::IcalValueNode};
 
     #[test]
     fn takes_one_line_and_leaves_the_rest() {
