@@ -16,16 +16,16 @@ iCalendar parser, validator, editor and builder library for Rust
 
 ## Features
 
-- **Both iCalendar flavours**: read and write vCalendar 1.0 and iCalendar 2.0 through a single, version-agnostic model, with no dialect to pick up front.
-- **Nested structure, preserved**: a calendar is a tree of events, to-dos, journals, free/busy blocks, time zones and alarms, parsed and round-tripped whole.
+- **Both iCalendar flavours**: read and write vCalendar 1.0 and iCalendar 2.0 through one version-agnostic model.
+- **Nested structure, preserved**: events, to-dos, journals, free/busy blocks, time zones and alarms, parsed and round-tripped whole.
 - **Byte-faithful editing**: change one field and every other byte comes back unchanged, line endings and fold points included.
-- **Forgiving parser**: accept any real calendar, and a recovering mode that keeps going through the lines a strict reading throws the whole file away for.
-- **Strict building and validation**: construct calendars checked against the standard, with an escape hatch when you need to step outside it.
-- **Recurrence and time zones**: expand a rule, or the whole set of occurrences an event denotes, and resolve a time zone from the calendar's own rules.
+- **Forgiving parser**: accept any real calendar, with a recovering mode for the ones a strict reading would throw away whole.
+- **Strict building and validation**: construct calendars checked against the standard, with an escape hatch to step outside it.
+- **Recurrence and time zones**: expand a rule or a whole recurrence set, and resolve an offset from the calendar's own rules.
 - **Small and portable**: no_std compatible, with an allocation-only core that pulls in no dependencies.
 - **Optional content decoding**: quoted-printable text, inline base64 binary and foreign character sets, each behind its own feature.
-- **Three-way merge**: reconcile two divergent edits of a calendar against their common base, matched by UID and RECURRENCE-ID, with every action and every conflict reported and the untouched bytes kept.
-- **Optional JSON**: read and write a calendar as jCal, or convert it to and from the JSCalendar data model a JMAP server exchanges.
+- **Three-way merge**: reconcile two divergent edits against their common base, every action and conflict reported.
+- **Optional JSON**: read and write a calendar as jCal, or convert it to and from the JSCalendar model a JMAP server exchanges.
 
 > [!TIP]
 > ical-rs uses [cargo features](https://doc.rust-lang.org/cargo/reference/features.html) to gate optional support. The default feature set is declared in [Cargo.toml](./Cargo.toml) or on [docs.rs](https://docs.rs/crate/ical-rs/latest/features).
