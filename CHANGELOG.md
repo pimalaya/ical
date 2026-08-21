@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-22
+
 ### Changed
 
 - Moved the flattened re-exports onto their real module paths.
@@ -86,5 +88,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Added 190 real-world fixtures from the libical, ical4j and ical.js suites, swept for round-trip fidelity and cross-checked against calcard.
 
-[unreleased]: https://github.com/pimalaya/ical/compare/v0.1.0..HEAD
+[unreleased]: https://github.com/pimalaya/ical/compare/v0.2.0..HEAD
+[0.2.0]: https://github.com/pimalaya/ical/compare/v0.1.0..v0.2.0
 [0.1.0]: https://github.com/pimalaya/ical/compare/root..v0.1.0
