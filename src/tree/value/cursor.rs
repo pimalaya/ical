@@ -144,6 +144,18 @@ mod tests {
     }
 
     #[test]
+    fn keeps_a_newline_written_into_a_vcalendar_1_0_value_on_its_line() {
+        // NOTE: Versit has no newline escape, and the raw byte would end the
+        // line, leaving a calendar the parser refuses.
+        let raw = "BEGIN:VCALENDAR\r\nVERSION:1.0\r\nSUMMARY:x\r\nEND:VCALENDAR\r\n";
+        let mut c = IcalCst::parse(raw.as_bytes()).unwrap();
+        c.prop_mut::<SUMMARY>().unwrap().set_text("a\nb");
+
+        assert!(c.to_string().contains("SUMMARY:a\\nb\r\n"));
+        assert!(IcalCst::parse(&c.to_bytes()).is_ok());
+    }
+
+    #[test]
     fn writes_and_reads_a_foreign_charset_value_as_raw_bytes() {
         use crate::tree::prop::description::DESCRIPTION;
 

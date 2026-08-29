@@ -242,11 +242,19 @@ Whatever the three calendars hold, the merged calendar SHALL parse, and SHALL re
 
 A line copied out of one side SHALL carry a line ending. The last line of a truncated download has none, and copied into the middle of a calendar it would swallow the line after it. The untouched bytes of the baseline side are not affected: only what the replay copies is terminated.
 
+What the replay writes into a line SHALL be the bytes the side that wrote them wrote, never a re-encoding of their decoded form. The two are not the same string: decoding a parameter resolves the value escapes and encoding one does not put them back, so a re-encoded parameter can carry a line break into a head. The decoded form is what the sides are compared on, and what is reported; it is not what is written.
+
 #### Scenario: A bare record as one side
 
 - GIVEN a well-formed base and left side, and a right side that is an envelope-less fragment holding a `BEGIN` line
 - WHEN they are merged
 - THEN the merged calendar parses and reparses to itself
+
+#### Scenario: A parameter holding an escape
+
+- GIVEN a right side that changed a parameter whose value holds a `\n`
+- WHEN they are merged
+- THEN the merged line carries the parameter as the right side wrote it and the calendar parses
 
 ### Requirement: Two components at one path
 

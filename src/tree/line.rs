@@ -256,7 +256,7 @@ impl<'a> IcalLine<'a> {
     /// be valid UTF-8, as every version's grammar guarantees; only the value
     /// may carry a foreign charset, so it is kept as raw bytes.
     fn parse<'b>(content: &'b [u8], eol: &'b [u8]) -> Result<IcalLine<'b>, IcalParseError> {
-        let Some(colon) = memchr::memchr(b':', content) else {
+        let Some(colon) = value_colon(content) else {
             return Err(IcalParseError::MissingPropertyColon(lossy(content)));
         };
 
@@ -319,7 +319,7 @@ impl fmt::Display for IcalLine<'_> {
 
 /// Split a head into its name and its `;`-separated parameters.
 fn split_head(head: &str) -> (&str, Vec<IcalParamNode<'_>>) {
-    let (name, mut rest) = match head.find(';') {
+    let (name, mut rest) = match param_semicolon(head) {
         Some(semi) => (&head[..semi], &head[semi..]),
         None => return (head, Vec::new()),
     };
@@ -327,7 +327,7 @@ fn split_head(head: &str) -> (&str, Vec<IcalParamNode<'_>>) {
     let mut params = Vec::new();
 
     while let Some(after) = rest.strip_prefix(';') {
-        let (param, tail) = match after.find(';') {
+        let (param, tail) = match param_semicolon(after) {
             Some(semi) => (&after[..semi], &after[semi..]),
             None => (after, ""),
         };
@@ -337,6 +337,43 @@ fn split_head(head: &str) -> (&str, Vec<IcalParamNode<'_>>) {
     }
 
     (name, params)
+}
+
+/// The index of the `:` separating a line's head from its value: the first one
+/// outside a double-quoted parameter value, which RFC 5545 section 3.2 lets
+/// carry both a colon and a semicolon.
+///
+/// A head with an unbalanced quote would swallow the rest of the line, so with
+/// no colon outside quotes the scan falls back to the first colon anywhere and
+/// the line still parses.
+fn value_colon(content: &[u8]) -> Option<usize> {
+    let mut quoted = false;
+
+    for (i, &byte) in content.iter().enumerate() {
+        match byte {
+            b'"' => quoted = !quoted,
+            b':' if !quoted => return Some(i),
+            _ => {}
+        }
+    }
+
+    memchr::memchr(b':', content)
+}
+
+/// The byte index of the first `;` of a head that sits outside a double-quoted
+/// parameter value, the one separating one parameter from the next.
+fn param_semicolon(head: &str) -> Option<usize> {
+    let mut quoted = false;
+
+    for (i, byte) in head.bytes().enumerate() {
+        match byte {
+            b'"' => quoted = !quoted,
+            b';' if !quoted => return Some(i),
+            _ => {}
+        }
+    }
+
+    None
 }
 
 /// Split the first physical line off `rest`: its content (without the line
@@ -376,7 +413,7 @@ fn strip_leading_wsp(mut bytes: &[u8]) -> &[u8] {
 /// Whether a line's head (its name and parameters, before the `:`) declares the
 /// `QUOTED-PRINTABLE` encoding, as an `ENCODING=` parameter or a bare token.
 fn head_is_quoted_printable(line: &[u8]) -> bool {
-    let head = match memchr::memchr(b':', line) {
+    let head = match value_colon(line) {
         Some(colon) => &line[..colon],
         None => return false,
     };
@@ -428,6 +465,47 @@ mod tests {
         let (line, _) = IcalLine::take(b"TEL;TYPE=work,home:123\r\n").unwrap();
         assert_eq!(line.params.len(), 1);
         assert_eq!(line.to_string(), "TEL;TYPE=work,home:123\r\n");
+    }
+
+    #[test]
+    fn keeps_a_quoted_parameter_value_whole() {
+        // NOTE: RFC 5545 section 3.2 lets a quoted parameter value carry a
+        // colon; section 3.2.1 uses one in its ALTREP example.
+        let raw = "DESCRIPTION;ALTREP=\"cid:part1.0001@example.org\";LANGUAGE=en:Meeting notes\r\n";
+        let (line, _) = IcalLine::take(raw.as_bytes()).unwrap();
+
+        assert_eq!(line.name.get(), "DESCRIPTION");
+        assert_eq!(line.params.len(), 2);
+        assert_eq!(line.params[0].name.get(), "ALTREP");
+        assert_eq!(
+            line.params[0].values[0].get(),
+            "\"cid:part1.0001@example.org\""
+        );
+        assert_eq!(line.params[1].name.get(), "LANGUAGE");
+        assert_eq!(line.raw_value_str(), "Meeting notes");
+        assert_eq!(line.to_string(), raw);
+    }
+
+    #[test]
+    fn keeps_a_quoted_semicolon_out_of_the_parameter_split() {
+        let raw = "ATTENDEE;DIR=\"ldap://host:389/cn=Ada;o=Example\":mailto:ada@example.com\r\n";
+        let (line, _) = IcalLine::take(raw.as_bytes()).unwrap();
+
+        assert_eq!(line.params.len(), 1);
+        assert_eq!(line.params[0].name.get(), "DIR");
+        assert_eq!(line.raw_value_str(), "mailto:ada@example.com");
+        assert_eq!(line.to_string(), raw);
+    }
+
+    #[test]
+    fn an_unbalanced_quote_still_parses() {
+        // NOTE: quote tracking alone would swallow the rest of the line, so
+        // with no colon outside quotes the scan falls back to the first one.
+        let raw = "ATTENDEE;CN=\"Ada:mailto:ada@example.com\r\n";
+        let (line, _) = IcalLine::take(raw.as_bytes()).unwrap();
+
+        assert_eq!(line.name.get(), "ATTENDEE");
+        assert_eq!(line.to_string(), raw);
     }
 
     #[test]

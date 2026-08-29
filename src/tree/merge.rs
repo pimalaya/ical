@@ -1525,17 +1525,24 @@ fn apply_to_line<'a>(
                 line.params.remove(held);
             }
         }
-        IcalMergeAction::ParamAdded { param, .. }
-        | IcalMergeAction::ParamChanged { new: param, .. } => {
+        // NOTE: The parameter is copied off the source line rather than
+        // re-encoded from the decoded action: decoding resolves the value
+        // escapes and encoding does not put them back, so a re-encoding can
+        // write a line break into the head.
+        IcalMergeAction::ParamAdded { .. } | IcalMergeAction::ParamChanged { .. } => {
             let Slot::Param { name, at } = &op.slot else {
                 return;
             };
 
-            let encoded = param.encode();
+            let Some(found) = param_position(&source, name, *at) else {
+                return;
+            };
+
+            let written = source.params[found].clone();
 
             match param_position(line, name, *at) {
-                Some(held) => line.params[held] = encoded,
-                None => line.params.push(encoded),
+                Some(held) => line.params[held] = written,
+                None => line.params.push(written),
             }
         }
         _ => {}

@@ -108,3 +108,30 @@ Every committed real-world fixture SHALL parse, serialize to a fixpoint, decode 
 - GIVEN a fixture the strict parser refuses
 - WHEN the sweep runs
 - THEN the fixture is classified as refused, not silently skipped
+
+### Requirement: A quoted parameter value is opaque
+
+The line splitter SHALL treat a double-quoted parameter value as opaque, per RFC 5545 section 3.2: neither the `:` separating the head from the value nor the `;` separating one parameter from the next is recognised inside one.
+
+A head carrying an unbalanced quote SHALL still parse: with no `:` outside quotes the splitter falls back to the first `:` anywhere, so a malformed line yields a line rather than an error.
+
+#### Scenario: The RFC 5545 section 3.2.1 alternate representation
+- GIVEN a line reading `DESCRIPTION;ALTREP="cid:part1.0001@example.org":Meeting notes`
+- WHEN it is parsed
+- THEN it carries one parameter, `ALTREP` holding the whole quoted URI, and the value reads `Meeting notes`
+
+#### Scenario: An unbalanced quote
+- GIVEN a line reading `ATTENDEE;CN="Ada:mailto:ada@example.com`
+- WHEN it is parsed
+- THEN it parses at the first colon anywhere and round-trips unchanged
+
+### Requirement: A written value never breaks its line
+
+Serializing a value SHALL NOT emit a byte that ends the line it sits on, whatever the caller wrote into it. A newline is the one such byte the escapes exist for, and every version SHALL write it escaped.
+
+vCalendar 1.0 has no newline escape, so a newline written into a 1.0 value SHALL go out as `\n` and read back as those two characters. That is the closest versit can carry, and the alternative is a calendar its own parser refuses.
+
+#### Scenario: A newline set on a vCalendar 1.0 property
+- GIVEN a 1.0 calendar and a caller setting a value holding a newline
+- WHEN the calendar is serialized
+- THEN the property is still one line and the calendar parses

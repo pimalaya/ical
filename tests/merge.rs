@@ -63,6 +63,13 @@ fn bytes(report: &IcalMergeReport<'_>) -> String {
     String::from_utf8(report.merged.to_bytes()).expect("valid UTF-8")
 }
 
+/// The merged calendar read back, the law that a merge never emits bytes its
+/// own parser refuses.
+fn reparsed(merged: &str) -> String {
+    let held = IcalCst::parse(merged.as_bytes()).expect("a readable merge");
+    String::from_utf8(held.to_bytes()).expect("valid UTF-8")
+}
+
 /// The base with one line replaced.
 fn edited(from: &str, to: &str) -> String {
     assert!(BASE.contains(from), "the base does not hold `{from}`");
@@ -226,6 +233,42 @@ fn merges_a_parameter_one_side_changed() {
 
     assert!(bytes(&report).contains("PARTSTAT=ACCEPTED"));
     assert_eq!(report.left, []);
+    assert_eq!(report.right.len(), 1);
+    assert!(matches!(
+        report.right[0],
+        IcalMergeAction::ParamChanged { .. }
+    ));
+}
+
+/// A base carrying the RFC 5545 section 3.2.1 alternate representation, whose
+/// quoted parameter value holds a colon.
+const ALTREP: &str = "BEGIN:VCALENDAR\r\n\
+     VERSION:2.0\r\n\
+     BEGIN:VEVENT\r\n\
+     UID:event-1@example.com\r\n\
+     DTSTART:20260105T090000Z\r\n\
+     DESCRIPTION;ALTREP=\"cid:part1.0001@example.org\":Meeting notes\r\n\
+     END:VEVENT\r\n\
+     END:VCALENDAR\r\n";
+
+#[test]
+fn tells_a_quoted_parameter_apart_from_the_value_behind_it() {
+    let left = ALTREP.replace(":Meeting notes", ":Meeting minutes");
+    let right = ALTREP.replace("part1.0001", "part2.0002");
+
+    let report = merge(ALTREP, &left, &right);
+
+    // NOTE: The head ends at the colon outside the quotes, so one side wrote
+    // the value and the other the parameter: two fields, nothing contested. A
+    // head cut inside the quotes folds both edits into one value and invents a
+    // collision.
+    assert!(bytes(&report).contains("ALTREP=\"cid:part2.0002@example.org\":Meeting minutes"));
+    assert!(report.conflicts.is_empty());
+    assert_eq!(report.left.len(), 1);
+    assert!(matches!(
+        report.left[0],
+        IcalMergeAction::ValueChanged { .. }
+    ));
     assert_eq!(report.right.len(), 1);
     assert!(matches!(
         report.right[0],
@@ -568,4 +611,47 @@ fn applies_every_removal_from_one_group_of_components() {
     assert_eq!(report.right.len(), 3);
     assert!(report.conflicts.is_empty());
     assert!(!bytes(&report).contains("VALARM"));
+}
+
+/// An event whose `CATEGORIES` carries a language and a transfer encoding, the
+/// shape the merge fuzzer reduced to: the parameter action lands in the head,
+/// where a stray byte ends the line.
+const ENCODED_CATEGORIES: &str = "BEGIN:VCALENDAR\r\n\
+     VERSION:2.0\r\n\
+     BEGIN:VEVENT\r\n\
+     UID:event-1@example.com\r\n\
+     CATEGORIES;LANGUAGE=en;ENCODING=QUOTED-PRINTABLE:TMS Dates\r\n\
+     END:VEVENT\r\n\
+     END:VCALENDAR\r\n";
+
+#[test]
+fn writes_a_replayed_parameter_as_the_side_that_wrote_it_spelt_it() {
+    // NOTE: The parameter value holds a `\n`, which decoding resolves to a
+    // newline and encoding does not put back, so a re-encoded parameter used to
+    // end the line in the middle of its own head.
+    let right = ENCODED_CATEGORIES.replace(
+        "CATEGORIES;LANGUAGE=en;ENCODING=QUOTED-PRINTABLE:TMS Dates",
+        r"CATEGORIES;LANGUAGE=en\n2:Reviews",
+    );
+
+    let report = merge(ENCODED_CATEGORIES, ENCODED_CATEGORIES, &right);
+    let merged = bytes(&report);
+
+    assert!(merged.contains(concat!(r"CATEGORIES;LANGUAGE=en\n2:Reviews", "\r\n")));
+    assert_eq!(reparsed(&merged), merged);
+}
+
+#[test]
+fn keeps_a_replayed_list_item_on_its_line_across_escaping_rules() {
+    // NOTE: The item decodes to a newline under the right side's rules, and
+    // vCalendar 1.0, which the baseline side is written in, has no escape for
+    // one: written raw it would end the line.
+    let base = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nCATEGORIES:work\r\nEND:VCALENDAR\r\n";
+    let left = base.replace("VERSION:2.0", "VERSION:1.0");
+    let right = base.replace("CATEGORIES:work", r"CATEGORIES:work,two\nlines");
+
+    let merged = bytes(&merge(base, &left, &right));
+
+    assert!(merged.contains(concat!(r"CATEGORIES:work,two\nlines", "\r\n")));
+    assert_eq!(reparsed(&merged), merged);
 }

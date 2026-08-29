@@ -60,6 +60,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
   Any change to a series paired with any change to one of its overrides, so a room change on the series was reported against a summary change on the override. Only a change to the `DTSTART`, `DTEND`, `DURATION`, `RRULE`, `RDATE` or `EXDATE` of a series, or to the series component itself, is reported against an instance now.
 
+- Fixed a line being split inside a double-quoted parameter value.
+
+  RFC 5545 section 3.2 lets a quoted parameter value carry a colon and a semicolon, and its own `DESCRIPTION;ALTREP="cid:part1.0001@example.org":Meeting notes` example does, but the head ended at the first colon anywhere and split on every semicolon. The parameter was cut in two and the rest of it read as the value, so a merge saw a parameter edit as an edit of the value and reported a collision that was not one. The bytes round-tripped throughout, which is why nothing showed. A head carrying an unbalanced quote still parses, at the first colon anywhere.
+
+- Fixed a merge writing a line break into the head of a line it replayed a parameter onto.
+
+  The parameter was re-encoded from its decoded form, and the pair is not a round trip: decoding resolves the value escapes, encoding puts none back, so a `LANGUAGE` holding a `\n` came out holding a real newline and the merged line lost its colon along with everything after the break. The replay now copies the parameter off the line the side that wrote it wrote, as it already copies a whole property, a value and a component.
+
+- Fixed a value written into a vCalendar 1.0 calendar breaking the line it sits on.
+
+  Versit escapes `;` alone, so a newline went out raw and the calendar no longer parsed. It reached anyone calling `set_text` on a 1.0 calendar, and the merge whenever a list item decoded from a 2.0 side was replayed onto a 1.0 one. A newline is now written as `\n`, the closest 1.0 can carry it, and reads back as those two characters.
+
 ## [0.2.0] - 2026-08-22
 
 ### Changed

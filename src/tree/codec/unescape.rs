@@ -1,7 +1,7 @@
 //! # Unescape (read codec)
 //!
 //! Resolve the RFC 5545 3.3.11 value escapes when parsing. The read half of the
-//! escaping codec; its exact inverse is
+//! escaping codec; its inverse is
 //! [`escape`](crate::tree::codec::escape), and the version-specific rules are
 //! selected by the [`Escaper`]. The structural decoders in
 //! [`decode`](crate::tree::codec::decode) run every value leaf through here.

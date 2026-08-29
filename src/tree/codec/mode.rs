@@ -11,8 +11,9 @@ use crate::version::IcalVersion;
 /// The value-escaping rules to apply, selected by the calendar version.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Escaper {
-    /// vCalendar 1.0 (versit): only `;` is escaped (`\;`); a backslash before
-    /// anything else is literal.
+    /// vCalendar 1.0 (versit): `\;` is resolved on read and a backslash before
+    /// anything else is literal; writing also escapes a newline, which versit
+    /// has none of its own for and which raw would end the line.
     V1_0,
     /// iCalendar 2.0 (RFC 5545 3.3.11): `\\`, `\,`, `\;` and `\n`.
     #[default]
