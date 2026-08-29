@@ -450,3 +450,122 @@ fn changes_nothing_when_neither_side_changed_anything() {
     assert!(report.conflicts.is_empty());
     assert_eq!(bytes(&report), BASE);
 }
+
+/// A `VTIMEZONE` whose `STANDARD` is written before its `DAYLIGHT`, so the
+/// second observance is not the first child of its parent.
+const ZONED: &str = "BEGIN:VCALENDAR\r\n\
+     VERSION:2.0\r\n\
+     BEGIN:VTIMEZONE\r\n\
+     TZID:Europe/Paris\r\n\
+     BEGIN:STANDARD\r\n\
+     DTSTART:19701025T030000\r\n\
+     TZOFFSETFROM:+0200\r\n\
+     TZOFFSETTO:+0100\r\n\
+     END:STANDARD\r\n\
+     BEGIN:DAYLIGHT\r\n\
+     DTSTART:19700329T020000\r\n\
+     TZOFFSETFROM:+0100\r\n\
+     TZOFFSETTO:+0200\r\n\
+     END:DAYLIGHT\r\n\
+     END:VTIMEZONE\r\n\
+     END:VCALENDAR\r\n";
+
+#[test]
+fn applies_a_change_to_a_component_that_is_not_the_first_child() {
+    let right = ZONED.replace(
+        "BEGIN:DAYLIGHT\r\nDTSTART:19700329T020000",
+        "BEGIN:DAYLIGHT\r\nDTSTART:19700330T020000",
+    );
+
+    let report = merge(ZONED, ZONED, &right);
+
+    // NOTE: A component's position is counted among its same-named siblings,
+    // so the `STANDARD` written before the `DAYLIGHT` does not shift it. The
+    // left side changed nothing, so the right side's one change has to land,
+    // and land unreported.
+    assert_eq!(report.right.len(), 1);
+    assert!(report.conflicts.is_empty());
+    assert!(bytes(&report).contains("DTSTART:19700330T020000"));
+
+    // NOTE: The observance the right side did not touch is untouched, which is
+    // what tells a change that landed from a change that landed anywhere.
+    assert!(bytes(&report).contains("BEGIN:STANDARD\r\nDTSTART:19701025T030000"));
+}
+
+/// An event with three attendees, so a removal has same-named siblings after
+/// it to renumber.
+const THREE_ATTENDEES: &str = "BEGIN:VCALENDAR\r\n\
+     VERSION:2.0\r\n\
+     BEGIN:VEVENT\r\n\
+     UID:event-1@example.com\r\n\
+     ATTENDEE;CN=Ada:mailto:ada@example.com\r\n\
+     ATTENDEE;CN=Bob:mailto:bob@example.com\r\n\
+     ATTENDEE;CN=Cyd:mailto:cyd@example.com\r\n\
+     END:VEVENT\r\n\
+     END:VCALENDAR\r\n";
+
+#[test]
+fn applies_every_removal_from_one_group() {
+    let none = THREE_ATTENDEES
+        .replace("ATTENDEE;CN=Ada:mailto:ada@example.com\r\n", "")
+        .replace("ATTENDEE;CN=Bob:mailto:bob@example.com\r\n", "")
+        .replace("ATTENDEE;CN=Cyd:mailto:cyd@example.com\r\n", "");
+
+    let report = merge(THREE_ATTENDEES, THREE_ATTENDEES, &none);
+
+    assert_eq!(report.right.len(), 3);
+    assert!(report.conflicts.is_empty());
+    assert!(!bytes(&report).contains("ATTENDEE"));
+}
+
+#[test]
+fn removes_the_members_the_side_removed_rather_than_the_ones_after_them() {
+    let last = THREE_ATTENDEES
+        .replace("ATTENDEE;CN=Ada:mailto:ada@example.com\r\n", "")
+        .replace("ATTENDEE;CN=Bob:mailto:bob@example.com\r\n", "");
+
+    let report = merge(THREE_ATTENDEES, THREE_ATTENDEES, &last);
+    let merged = bytes(&report);
+
+    // NOTE: Asserting the count alone would pass a merge that kept Bob and
+    // dropped Cyd, which is what a replay in diff order does: the first
+    // removal renumbers the two after it.
+    assert!(merged.contains("ATTENDEE;CN=Cyd:mailto:cyd@example.com"));
+    assert!(!merged.contains("CN=Ada"));
+    assert!(!merged.contains("CN=Bob"));
+}
+
+/// An event with three alarms, the component peer of the case above: a
+/// `VALARM` has no `UID`, so it is addressed by its position too.
+const THREE_ALARMS: &str = "BEGIN:VCALENDAR\r\n\
+     VERSION:2.0\r\n\
+     BEGIN:VEVENT\r\n\
+     UID:event-1@example.com\r\n\
+     BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER:-PT10M\r\nEND:VALARM\r\n\
+     BEGIN:VALARM\r\nACTION:AUDIO\r\nTRIGGER:-PT20M\r\nEND:VALARM\r\n\
+     BEGIN:VALARM\r\nACTION:EMAIL\r\nTRIGGER:-PT30M\r\nEND:VALARM\r\n\
+     END:VEVENT\r\n\
+     END:VCALENDAR\r\n";
+
+#[test]
+fn applies_every_removal_from_one_group_of_components() {
+    let none = THREE_ALARMS
+        .replace(
+            "BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER:-PT10M\r\nEND:VALARM\r\n",
+            "",
+        )
+        .replace(
+            "BEGIN:VALARM\r\nACTION:AUDIO\r\nTRIGGER:-PT20M\r\nEND:VALARM\r\n",
+            "",
+        )
+        .replace(
+            "BEGIN:VALARM\r\nACTION:EMAIL\r\nTRIGGER:-PT30M\r\nEND:VALARM\r\n",
+            "",
+        );
+
+    let report = merge(THREE_ALARMS, THREE_ALARMS, &none);
+
+    assert_eq!(report.right.len(), 3);
+    assert!(report.conflicts.is_empty());
+    assert!(!bytes(&report).contains("VALARM"));
+}

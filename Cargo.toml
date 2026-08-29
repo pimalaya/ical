@@ -54,6 +54,7 @@ calcard = { version = "0.3", default-features = false }
 criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
 ical_crate = { package = "ical", version = "0.11", default-features = false, features = ["ical"] }
 icalendar = { version = "0.17", default-features = false, features = ["parser"] }
+proptest = { version = "1", default-features = false, features = ["std"] }
 
 [dependencies]
 base64 = { version = "0.23", default-features = false, features = ["alloc"], optional = true }

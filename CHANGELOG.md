@@ -8,11 +8,57 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- Added a property identity to the three-way merge, as a new `identity` field on `IcalPropPath`.
+
+  A property that may occur more than once and whose value names a thing outside the calendar is now addressed by that whole value rather than by its position: `ATTENDEE` by its calendar user address, `ATTACH` by its URI or inline binary, `RELATED-TO` by the `UID` it points at, `CONFERENCE` and `IMAGE` by their URI. Two properties carrying different identities are never matched with each other, so changing an attendee address reads as a person leaving and another arriving rather than as a rename. Every other property keeps a position, and the field is `None` for those, as it is for a value two same-named siblings share, which tells neither of them apart.
+
 - Added a collision preference to the three-way merge, as a breaking new field on `IcalMerge`.
 
   `prefer: IcalMergeSide` says which side's value the merged calendar carries where both sides changed one property to different things, apart from `left`, which now answers only whose untouched bytes survive. `IcalMergeSide::Left` is the default and the behaviour every merge had before. Every field of `IcalMerge` is public and callers build it as a struct literal, so the field has to be written out.
 
   The preference decides that case and no other: an update still beats a removal whichever side it came from, a property one side alone touched is still taken from that side, an untouched line still comes out byte for byte, and organiser authority is still judged on the right side alone, so a refusal does not depend on the preference.
+
+### Fixed
+
+- Fixed a three-way merge dropping, in silence, a change to a component that is not the first child of its parent.
+
+  The lookup that read the replayed side numbered a component over all its parent's children rather than over its same-named ones, so a `DAYLIGHT` written after a `STANDARD` could not be found and the change was neither applied nor reported. A `VTIMEZONE` defining both observances was therefore unmergeable.
+
+- Fixed a three-way merge dropping all but one of several removals from one group of same-named properties or components.
+
+  Each removal named the position its target held in the base, and they were replayed in that order, so the first one renumbered the ones after it. Removing three attendees left one standing, and removing the first two kept the second and dropped the third. Removals now replay last and highest position first.
+
+- Fixed a three-way merge writing one attendee's answer onto another, and inventing people who exist in no version of the calendar.
+
+  A property was addressed by the position it held in the base, and that position was resolved against the merged calendar and against the replayed side, which are free to number the same group differently. Properties iCalendar identifies by what they name are now matched by that identity, and a position that remains is translated through the baseline side's own removals before it is used. Merging an untouched side with an edited one now returns the edited one exactly.
+
+- Fixed a removal passing silently by the other side's work on what it removed.
+
+  A whole-property removal met neither a parameter change nor a list-item change on that property, and a component removal met nothing nested inside it, so an attendee's reply or a reminder added to a deleted event disappeared with no collision reported. A removal now meets every action on what it takes away, at any depth, and the update wins as it always did, with granularity settling which side removes: dropping one parameter keeps the property.
+
+- Fixed two sides that made the same change being reported as diverging.
+
+  Collisions compared the field two actions occupied and never the values they carried, so `merge(base, x, x)` reported a conflict for every change `x` made, naming the same action on both sides. Two identical actions are now no collision, and merging two identical sides returns them unchanged and reports nothing under either preference.
+
+- Fixed a calendar holding one `UID` twice, or one calendar address on two attendees, colliding with itself.
+
+  Both components were matched against the same one on the other side, so the difference between the two duplicates was reported as a change each side made. Each component of one side is now matched with at most one component of the other, a value two same-named properties share no longer identifies either of them, and an addition, numbered in the side that added it, is no longer matched with an action naming a property the base held.
+
+- Fixed both sides adding one property or component leaving two of them in the merged calendar.
+
+  Under the right preference the winner was appended beside the loser rather than replacing it, so a `VEVENT` could come out with two `LOCATION` lines, which RFC 5545 forbids and this crate's own `validate` refuses. The winner now replaces the addition it beat, where it stood.
+
+- Fixed a property carrying one parameter name twice being reported as changed when nothing had changed.
+
+  Parameters were matched by name with a first-match lookup, so a line's second `RSVP` compared against its first, and a change to the second was written onto the first while a removal dropped every parameter of that name. Parameters are now matched, addressed and removed by name plus their position among the same-named ones.
+
+- Fixed a merge emitting a calendar its own parser refuses.
+
+  A bare, envelope-less record holds `BEGIN` and `END` lines as properties, and copying one into a well-formed calendar spliced a structural keyword into the middle of it; a line copied from a truncated side carried no line ending and swallowed the line after it. The merge now treats `BEGIN` and `END` as the envelope on every side, and terminates what it copies.
+
+- Fixed a recurrence conflict being reported for a change that cannot have moved an occurrence.
+
+  Any change to a series paired with any change to one of its overrides, so a room change on the series was reported against a summary change on the override. Only a change to the `DTSTART`, `DTEND`, `DURATION`, `RRULE`, `RDATE` or `EXDATE` of a series, or to the series component itself, is reported against an instance now.
 
 ## [0.2.0] - 2026-08-22
 
