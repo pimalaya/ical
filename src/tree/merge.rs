@@ -12,6 +12,24 @@
 //! side's actions are then replayed line by line, so every line the right side
 //! did not touch keeps its bytes too.
 //!
+//! ## The baseline side and the winning side
+//!
+//! Which side supplies the baseline and which side wins a collision are two
+//! questions, and they are answered separately. The baseline is a question
+//! about bytes: it decides whose folding, whose parameter casing and whose
+//! property order come out untouched, so a caller answers it with the version
+//! it would rather not churn. The winner is a question about policy: it decides
+//! whose value survives where two people wrote different things into one field,
+//! so a caller answers it with what it knows about those two people.
+//! [`prefer`](IcalMerge::prefer) states the second, and left alone it keeps the
+//! left side winning, as a merge has always done.
+//!
+//! The two have to be separable because authority sits on the replayed side. A
+//! caller that wants its own edit refused where it exceeds an attendee's
+//! authority has to put that edit on the right, and were the winner implied by
+//! the baseline, that caller would lose every collision as the price of being
+//! judged.
+//!
 //! ## What is matched with what
 //!
 //! A component is matched across the three calendars by its `UID` and its
@@ -31,9 +49,11 @@
 //!
 //! ## The three ways a merge can conflict
 //!
-//! **Divergence.** Both sides changed the same field. The left side's outcome is
-//! kept, except where a removal meets an update: there the update wins, because
-//! keeping data beats losing it silently.
+//! **Divergence.** Both sides changed the same field. The preferred side's
+//! outcome is kept, the left side's unless the caller says otherwise, except
+//! where a removal meets an update: there the update wins whichever side it
+//! came from and whatever the preference, because keeping data beats losing it
+//! silently.
 //!
 //! **Recurrence.** One side changed the series (its `RRULE`, `RDATE`, `EXDATE`
 //! or start) while the other changed one instance of it. Neither is wrong and
@@ -69,19 +89,41 @@ use crate::{
 
 /// A three-way merge waiting to run.
 ///
-/// The three calendars, plus who the right side speaks for. See the module
-/// documentation for the matching, granularity and conflict rules.
+/// The three calendars, plus who the right side speaks for and which side wins
+/// a collision. See the module documentation for the matching, granularity and
+/// conflict rules.
 pub struct IcalMerge<'m, 'a> {
     /// The common ancestor both sides were derived from.
     pub base: &'m IcalCst<'a>,
-    /// One side. Its bytes are the ones the merged calendar keeps.
+    /// One side. Its bytes are the ones the merged calendar is built from,
+    /// which is a statement about bytes alone: which side wins a collision is
+    /// [`prefer`](Self::prefer).
     pub left: &'m IcalCst<'a>,
-    /// The other side. Its changes are replayed onto the left's bytes.
+    /// The other side. Its changes are replayed onto the left's bytes, and it
+    /// is the only side judged for authority, whichever side is preferred.
     pub right: &'m IcalCst<'a>,
     /// The calendar address the right side edits on behalf of, when it is an
     /// attendee rather than the organiser of what it changed. Unset means no
     /// claim, and no change is refused for want of authority.
     pub right_speaks_for: Option<Cow<'a, str>>,
+    /// Whose value the merged calendar carries where both sides changed one
+    /// property to different things. The left side by default, which is what a
+    /// merge has always done. It decides that case and no other: a property one
+    /// side alone touched is still taken from that side, and an update still
+    /// beats a removal whichever side it came from.
+    pub prefer: IcalMergeSide,
+}
+
+/// One of the two sides of a merge.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum IcalMergeSide {
+    /// The side the merged calendar is built from, whose untouched bytes it
+    /// keeps.
+    #[default]
+    Left,
+    /// The side whose actions are replayed onto the merged calendar, and the
+    /// only side organiser authority is judged against.
+    Right,
 }
 
 impl<'a> IcalMerge<'_, 'a> {
@@ -141,12 +183,19 @@ impl<'a> IcalMerge<'_, 'a> {
         }
 
         if let Some(collision) = left_ops.iter().find(|left| collides(left, op)) {
+            let left_removal = collision.action.is_removal();
+            let right_removal = op.action.is_removal();
+
             // NOTE: A removal against an update is not a stand-off: one side
             // says the data is gone and the other says what it now is. The
             // update survives whichever side it came from, since keeping data
-            // beats losing it silently, and the collision is reported either
-            // way.
-            let applies = collision.action.is_removal() && !op.action.is_removal();
+            // beats losing it silently, which is not the caller's to invert.
+            // The preference decides the rest, where both sides wrote a value.
+            let applies = if left_removal || right_removal {
+                left_removal && !right_removal
+            } else {
+                self.prefer == IcalMergeSide::Right
+            };
 
             return Verdict {
                 applies,
@@ -201,9 +250,11 @@ pub struct IcalMergeConflict<'a> {
 /// Why a right-side action did not simply apply.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum IcalMergeReason<'a> {
-    /// Both sides changed the same field. The merged calendar holds the left
-    /// side's outcome, except where a removal met an update, in which case the
-    /// update was kept whichever side it came from.
+    /// Both sides changed the same field. The merged calendar holds the
+    /// preferred side's outcome, the left side's unless the caller said
+    /// otherwise, except where a removal met an update, in which case the
+    /// update was kept whichever side it came from. The action carried here is
+    /// the left side's, beside the right side's on the conflict itself.
     Divergent(IcalMergeAction<'a>),
     /// One side changed a series and the other changed one of its instances.
     /// Both survive in the merged calendar; a rule that moved may have moved

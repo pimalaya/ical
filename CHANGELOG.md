@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Added a collision preference to the three-way merge, as a breaking new field on `IcalMerge`.
+
+  `prefer: IcalMergeSide` says which side's value the merged calendar carries where both sides changed one property to different things, apart from `left`, which now answers only whose untouched bytes survive. `IcalMergeSide::Left` is the default and the behaviour every merge had before. Every field of `IcalMerge` is public and callers build it as a struct literal, so the field has to be written out.
+
+  The preference decides that case and no other: an update still beats a removal whichever side it came from, a property one side alone touched is still taken from that side, an untouched line still comes out byte for byte, and organiser authority is still judged on the right side alone, so a refusal does not depend on the preference.
+
 ## [0.2.0] - 2026-08-22
 
 ### Changed

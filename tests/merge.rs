@@ -10,7 +10,7 @@
 
 use ical::tree::{
     cst::IcalCst,
-    merge::{IcalMerge, IcalMergeAction, IcalMergeReason, IcalMergeReport},
+    merge::{IcalMerge, IcalMergeAction, IcalMergeReason, IcalMergeReport, IcalMergeSide},
 };
 
 /// The base calendar every case starts from: one organised event, folded on a
@@ -32,8 +32,18 @@ const BASE: &str = "BEGIN:VCALENDAR\r\n\
      END:VEVENT\r\n\
      END:VCALENDAR\r\n";
 
-/// Merge three calendars given as wire bytes.
+/// Merge three calendars given as wire bytes, stating no preference.
 fn merge<'a>(base: &'a str, left: &'a str, right: &'a str) -> IcalMergeReport<'a> {
+    merge_preferring(base, left, right, IcalMergeSide::default())
+}
+
+/// The same, stating which side wins a field both sides wrote a value into.
+fn merge_preferring<'a>(
+    base: &'a str,
+    left: &'a str,
+    right: &'a str,
+    prefer: IcalMergeSide,
+) -> IcalMergeReport<'a> {
     let base = Box::leak(Box::new(IcalCst::parse(base).expect("a readable base")));
     let left = Box::leak(Box::new(IcalCst::parse(left).expect("a readable left")));
     let right = Box::leak(Box::new(IcalCst::parse(right).expect("a readable right")));
@@ -43,6 +53,7 @@ fn merge<'a>(base: &'a str, left: &'a str, right: &'a str) -> IcalMergeReport<'a
         left,
         right,
         right_speaks_for: None,
+        prefer,
     }
     .merge()
 }
@@ -106,17 +117,90 @@ fn new_text<'v>(value: &'v ical::value::IcalValue<'_>) -> &'v str {
 }
 
 #[test]
+fn carries_the_right_sides_value_when_the_right_side_is_preferred() {
+    let left = edited("SUMMARY:Weekly sync", "SUMMARY:Sprint sync");
+    let right = edited("SUMMARY:Weekly sync", "SUMMARY:Weekly standup");
+
+    let report = merge_preferring(BASE, &left, &right, IcalMergeSide::Right);
+
+    assert!(bytes(&report).contains("SUMMARY:Weekly standup"));
+
+    // NOTE: The winner changed, not the report: both actions are still named,
+    // the right side's on the conflict and the left side's on its reason.
+    assert_eq!(report.conflicts.len(), 1);
+    assert!(matches!(
+        &report.conflicts[0].right,
+        IcalMergeAction::ValueChanged { new, .. } if new_text(new) == "Weekly standup"
+    ));
+    assert!(matches!(
+        &report.conflicts[0].reason,
+        IcalMergeReason::Divergent(IcalMergeAction::ValueChanged { new, .. })
+            if new_text(new) == "Sprint sync"
+    ));
+}
+
+#[test]
+fn keeps_the_left_sides_value_when_the_left_side_is_preferred() {
+    let left = edited("SUMMARY:Weekly sync", "SUMMARY:Sprint sync");
+    let right = edited("SUMMARY:Weekly sync", "SUMMARY:Weekly standup");
+
+    let stated = merge_preferring(BASE, &left, &right, IcalMergeSide::Left);
+    let silent = merge(BASE, &left, &right);
+
+    // NOTE: Preferring the left side is what a merge has always done, so
+    // saying it out loud has to give what saying nothing gives.
+    assert!(bytes(&stated).contains("SUMMARY:Sprint sync"));
+    assert_eq!(bytes(&stated), bytes(&silent));
+    assert_eq!(stated.conflicts, silent.conflicts);
+}
+
+#[test]
 fn keeps_the_data_when_a_removal_meets_an_update() {
-    let left = BASE.replace("LOCATION:Room A\r\n", "");
+    let removed = BASE.replace("LOCATION:Room A\r\n", "");
+    let updated = edited("LOCATION:Room A", "LOCATION:Room B");
+
+    for prefer in [IcalMergeSide::Left, IcalMergeSide::Right] {
+        // NOTE: One side says the location is gone and the other says what it
+        // now is. Keeping both is impossible; keeping the data is the lesser
+        // loss, and that is not the preference's to invert, whichever side
+        // removed and whichever side updated.
+        let right_updated = merge_preferring(BASE, &removed, &updated, prefer);
+        assert!(bytes(&right_updated).contains("LOCATION:Room B"));
+        assert_eq!(right_updated.conflicts.len(), 1);
+
+        let left_updated = merge_preferring(BASE, &updated, &removed, prefer);
+        assert!(bytes(&left_updated).contains("LOCATION:Room B"));
+        assert_eq!(left_updated.conflicts.len(), 1);
+    }
+}
+
+#[test]
+fn leaves_a_property_only_one_side_touched_to_that_side() {
+    let left = edited("SUMMARY:Weekly sync", "SUMMARY:Weekly sync (moved)");
     let right = edited("LOCATION:Room A", "LOCATION:Room B");
 
-    let report = merge(BASE, &left, &right);
+    for prefer in [IcalMergeSide::Left, IcalMergeSide::Right] {
+        let merged = bytes(&merge_preferring(BASE, &left, &right, prefer));
 
-    // NOTE: One side says the location is gone and the other says what it now
-    // is. Keeping both is impossible; keeping the data is the lesser loss, and
-    // the collision is still reported.
-    assert!(bytes(&report).contains("LOCATION:Room B"));
-    assert_eq!(report.conflicts.len(), 1);
+        // NOTE: Nobody is contesting either property, so there is nothing for
+        // a preference to decide.
+        assert!(merged.contains("SUMMARY:Weekly sync (moved)"));
+        assert!(merged.contains("LOCATION:Room B"));
+    }
+}
+
+#[test]
+fn keeps_an_untouched_fold_under_either_preference() {
+    let left = edited("SUMMARY:Weekly sync", "SUMMARY:Sprint sync");
+    let right = edited("SUMMARY:Weekly sync", "SUMMARY:Weekly standup");
+
+    for prefer in [IcalMergeSide::Left, IcalMergeSide::Right] {
+        let merged = bytes(&merge_preferring(BASE, &left, &right, prefer));
+
+        // NOTE: The preference moves a value, never the bytes of a line
+        // neither side wrote to.
+        assert!(merged.contains("fold it acro\r\n ss two physical lines"));
+    }
 }
 
 #[test]
@@ -258,45 +342,103 @@ fn adds_and_removes_whole_components() {
 
 #[test]
 fn refuses_a_change_the_right_side_has_no_authority_over() {
-    let base = Box::leak(Box::new(IcalCst::parse(BASE).expect("a readable base")));
-    let left = Box::leak(Box::new(IcalCst::parse(BASE).expect("a readable left")));
-
     let edit = edited("DTSTART:20260105T090000Z", "DTSTART:20260105T100000Z");
-    let right = Box::leak(Box::new(IcalCst::parse(&edit).expect("a readable right")));
 
-    let report = IcalMerge {
-        base,
-        left,
-        right,
-        right_speaks_for: Some("mailto:ada@example.com".into()),
+    for prefer in [IcalMergeSide::Left, IcalMergeSide::Right] {
+        let report = speaking_for(BASE, BASE, &edit, "mailto:ada@example.com", prefer);
+
+        // NOTE: Ada is an attendee, and the start of a meeting is the
+        // organiser's to set (RFC 5546 3.2). Preferring the side a change came
+        // from does not grant it the authority to make that change.
+        assert_eq!(report.conflicts.len(), 1);
+        assert_eq!(report.conflicts[0].reason, IcalMergeReason::Authority);
+        assert!(bytes(&report).contains("DTSTART:20260105T090000Z"));
     }
-    .merge();
-
-    // NOTE: Ada is an attendee, and the start of a meeting is the organiser's
-    // to set (RFC 5546 3.2).
-    assert_eq!(report.conflicts.len(), 1);
-    assert_eq!(report.conflicts[0].reason, IcalMergeReason::Authority);
-    assert!(bytes(&report).contains("DTSTART:20260105T090000Z"));
 }
 
 #[test]
 fn lets_an_attendee_set_what_is_theirs() {
-    let base = Box::leak(Box::new(IcalCst::parse(BASE).expect("a readable base")));
-    let left = Box::leak(Box::new(IcalCst::parse(BASE).expect("a readable left")));
-
     let edit = edited("PARTSTAT=NEEDS-ACTION", "PARTSTAT=ACCEPTED");
-    let right = Box::leak(Box::new(IcalCst::parse(&edit).expect("a readable right")));
-
-    let report = IcalMerge {
-        base,
-        left,
-        right,
-        right_speaks_for: Some("mailto:ada@example.com".into()),
-    }
-    .merge();
+    let report = speaking_for(
+        BASE,
+        BASE,
+        &edit,
+        "mailto:ada@example.com",
+        IcalMergeSide::Left,
+    );
 
     assert!(report.conflicts.is_empty());
     assert!(bytes(&report).contains("PARTSTAT=ACCEPTED"));
+}
+
+/// A base holding a meeting Ada was invited to and a task nobody organises.
+const INVITED_AND_OWN: &str = "BEGIN:VCALENDAR\r\n\
+     VERSION:2.0\r\n\
+     BEGIN:VEVENT\r\n\
+     UID:event-1@example.com\r\n\
+     DTSTART:20260105T090000Z\r\n\
+     SUMMARY:Weekly sync\r\n\
+     ORGANIZER:mailto:chair@example.com\r\n\
+     ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:ada@example.com\r\n\
+     END:VEVENT\r\n\
+     BEGIN:VEVENT\r\n\
+     UID:event-2@example.com\r\n\
+     DTSTART:20260106T090000Z\r\n\
+     SUMMARY:Write the report\r\n\
+     END:VEVENT\r\n\
+     END:VCALENDAR\r\n";
+
+#[test]
+fn lets_a_judged_side_win_a_collision_it_is_allowed_to_make() {
+    let left = INVITED_AND_OWN.replace("SUMMARY:Write the report", "SUMMARY:Draft the report");
+    let right = INVITED_AND_OWN
+        .replace(
+            "SUMMARY:Write the report",
+            "SUMMARY:Write the quarterly report",
+        )
+        .replace("PARTSTAT=NEEDS-ACTION", "PARTSTAT=ACCEPTED");
+
+    let report = speaking_for(
+        INVITED_AND_OWN,
+        &left,
+        &right,
+        "mailto:ada@example.com",
+        IcalMergeSide::Right,
+    );
+    let merged = bytes(&report);
+
+    // NOTE: Ada is judged, so she answers the invitation rather than moving the
+    // meeting, and being judged no longer costs her the summary of her own
+    // task. Only the summary is contested, and only the summary is reported.
+    assert!(merged.contains("PARTSTAT=ACCEPTED"));
+    assert!(merged.contains("SUMMARY:Write the quarterly report"));
+    assert_eq!(report.conflicts.len(), 1);
+    assert!(matches!(
+        report.conflicts[0].reason,
+        IcalMergeReason::Divergent(_)
+    ));
+}
+
+/// Merge three calendars with the right side edited on someone's behalf.
+fn speaking_for<'a>(
+    base: &'a str,
+    left: &'a str,
+    right: &'a str,
+    speaker: &'a str,
+    prefer: IcalMergeSide,
+) -> IcalMergeReport<'a> {
+    let base = Box::leak(Box::new(IcalCst::parse(base).expect("a readable base")));
+    let left = Box::leak(Box::new(IcalCst::parse(left).expect("a readable left")));
+    let right = Box::leak(Box::new(IcalCst::parse(right).expect("a readable right")));
+
+    IcalMerge {
+        base,
+        left,
+        right,
+        right_speaks_for: Some(speaker.into()),
+        prefer,
+    }
+    .merge()
 }
 
 #[test]
