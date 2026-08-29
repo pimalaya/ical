@@ -3373,6 +3373,32 @@ fn a_reply_never_lands_on_another_attendee() {
     }
 }
 
+/// Matching normalises and writing is exact, so a calendar address written in
+/// another case is the same person and is still written back as it arrived.
+#[test]
+fn an_identity_meets_the_other_case_it_was_written_in() {
+    let base = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:e1\r\n\
+                ATTENDEE;PARTSTAT=NEEDS-ACTION:MAILTO:Ada@Example.com\r\n\
+                END:VEVENT\r\nEND:VCALENDAR\r\n";
+    let left = base.replace("PARTSTAT=NEEDS-ACTION", "PARTSTAT=NEEDS-ACTION;CN=Ada");
+    let right = base
+        .replace("MAILTO:Ada@Example.com", "mailto:ada@example.com")
+        .replace("PARTSTAT=NEEDS-ACTION", "PARTSTAT=ACCEPTED");
+
+    let (merged, report) = merged_text(base, &left, &right, IcalMergeSide::Left);
+
+    assert_eq!(
+        merged.matches("ATTENDEE").count(),
+        1,
+        "one address became two attendees:\n{merged}"
+    );
+    assert!(
+        merged.contains("PARTSTAT=ACCEPTED"),
+        "Ada's answer did not land:\n{merged}"
+    );
+    assert!(report.conflicts.is_empty(), "{:?}", report.conflicts);
+}
+
 /// Removing one attendee does not make another attendee's contested reply
 /// disappear from the report.
 ///

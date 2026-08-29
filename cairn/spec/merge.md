@@ -146,7 +146,7 @@ The preference SHALL decide only the case where both sides wrote a value. A prop
 
 ### Requirement: Property identity
 
-A property SHALL be addressed by an identity where iCalendar gives it one, and by its position among its same-named siblings only where it does not.
+A property SHALL be matched across versions down one ladder: an explicit synchronisation identity, then a natural identity where the format gives the property one, then equality, then position among its same-named siblings. iCalendar defines no synchronisation identity for a property, so the first rung is empty here and the second is the first one consulted.
 
 A property that may occur more than once in a component and whose value names a thing outside the calendar SHALL be identified by that value, the whole of it and as written: `ATTENDEE` by its calendar user address, `ATTACH` by its URI or inline binary, `RELATED-TO` by the `UID` it points at, `CONFERENCE` and `IMAGE` by their URI. Every other property SHALL carry no identity, since a property that may occur only once is already named by its name, and a property whose value is the datum would turn every edit into a replacement.
 
@@ -181,6 +181,20 @@ An addition is the exception, since it names a property the base did not hold: i
 - GIVEN a component holding one calendar address twice, edited once
 - WHEN it is merged with itself against the original
 - THEN the merged calendar is that edit and nothing is reported
+
+### Requirement: Matching normalises, writing is exact
+
+An identity SHALL be compared normalised and written back exactly. The comparison lowercases, so a URI scheme (RFC 3986 section 3.1) and the host of a calendar address meet whichever case they were written in. What goes back on the wire is the bytes the side that wrote them wrote, never a normalised form the merge chose.
+
+The two halves are one rule. Comparing raw bytes misses a match that is there; writing the normalised form loses the byte fidelity the whole crate is for.
+
+A case difference in a value is still a change, since only matching normalises: a side that rewrote the case of a scheme rewrote the value, and that change lands like any other.
+
+#### Scenario: One calendar address in two cases
+
+- GIVEN a base `ATTENDEE:MAILTO:Ada@Example.com`, a side adding a `CN` and a side that lowercased the address and answered
+- WHEN they are merged
+- THEN the component holds one attendee, carrying the answer
 
 ### Requirement: A removal meets what it takes away
 

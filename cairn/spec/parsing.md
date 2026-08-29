@@ -51,12 +51,19 @@ The parser SHALL resolve the wire shape of a line into logical content for every
 - QUOTED-PRINTABLE soft line breaks (a value ending in `=` under `ENCODING=QUOTED-PRINTABLE`), joined, with a dangling trailing `=` recorded rather than lost.
 - A missing final line break, accepted, with the line kept whole and no break invented.
 
+A recorded shape SHALL go back out in offset order, whichever of the tokeniser and the line splitter recorded each piece, and two pieces recorded at one offset SHALL keep the order they were recorded in. A value ending on two `=` is recorded by both at once, the soft break past the last logical byte and the dangling `=` before it, and emitting them in list order writes a line break into the middle of the value.
+
 An edited value SHALL drop the recorded shape of its own line rather than re-apply fold points that no longer match its bytes. A line whose length is unchanged keeps its shape, since every offset still indexes what it did.
 
 #### Scenario: A folded line
 - GIVEN `NOTE:foo\r\n bar\r\n`
 - WHEN it is parsed
 - THEN the line holds the logical value `foobar` and serializes folded exactly as it arrived
+
+#### Scenario: A value ending on two soft-break markers
+- GIVEN a `QUOTED-PRINTABLE` line whose value ends `x==`
+- WHEN it is parsed and serialized
+- THEN the output is the input, and it reparses to the same bytes rather than swallowing the line after it
 
 ### Requirement: Raw value bytes
 

@@ -120,14 +120,21 @@ impl<'a> IcalWire<'a> {
     /// Put `earlier`'s pieces before this shape's, keeping the sealed length.
     ///
     /// The tokeniser records what it resolved (blank lines, folds, soft breaks)
-    /// while the line splitter records only a trailing `=` at the very end, so
-    /// the two lists concatenate already ordered.
+    /// and the line splitter records a dangling `=` the value ends on. The two
+    /// lists are each ordered, and a piece sitting at the same offset in both
+    /// belongs to the tokeniser first, so a stable sort by offset merges them.
+    ///
+    /// The sort is not cosmetic. A value ending on two `=` gives the tokeniser
+    /// a soft break past the last logical byte and the splitter a dangling `=`
+    /// before it, so concatenating alone would emit the soft break first and
+    /// the reparsed line would swallow the one that follows.
     pub(crate) fn prepend(&mut self, mut earlier: IcalWire<'a>) {
         if earlier.parts.is_empty() {
             return;
         }
 
         earlier.parts.append(&mut self.parts);
+        earlier.parts.sort_by_key(|(offset, _)| *offset);
         self.parts = earlier.parts;
     }
 
@@ -239,5 +246,20 @@ mod tests {
         wire.prepend(earlier);
 
         assert_eq!(written(&wire, b"foo"), b"\r\nfoo=");
+    }
+
+    #[test]
+    fn orders_a_merged_shape_by_offset_rather_than_by_list() {
+        // NOTE: What a value ending on two `=` leaves: a soft break past the
+        // last logical byte, and the dangling `=` that precedes it.
+        let mut earlier = IcalWire::default();
+        earlier.soft(4, true);
+
+        let mut wire = IcalWire::default();
+        wire.skipped(3, "=");
+        wire.seal(3);
+        wire.prepend(earlier);
+
+        assert_eq!(written(&wire, b"foo"), b"foo==\r\n");
     }
 }

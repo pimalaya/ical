@@ -699,6 +699,27 @@ mod tests {
     }
 
     #[test]
+    fn round_trips_a_quoted_printable_value_ending_on_two_equals() {
+        // NOTE: The tokeniser records the soft break past the last logical
+        // byte and the splitter the dangling `=` before it, so a wire shape
+        // ordered by list rather than by offset emits `x=\r\n=` and the
+        // reparse swallows the END line.
+        let raw = concat!(
+            "BEGIN:VCALENDAR\r\n",
+            "VERSION:2.0\r\n",
+            "NOTE;ENCODING=QUOTED-PRINTABLE:x==\r\n",
+            "\r\n",
+            "END:VCALENDAR\r\n",
+        );
+
+        let cst = IcalCst::parse(raw).unwrap();
+        let bytes = cst.to_bytes();
+
+        assert_eq!(String::from_utf8(bytes.clone()).unwrap(), raw);
+        assert_eq!(IcalCst::parse(&bytes).unwrap().to_bytes(), bytes);
+    }
+
+    #[test]
     fn round_trips_a_whole_multi_calendar_file() {
         // NOTE: `parse` reads the first calendar and stops, so a file holding
         // several round-trips through `parse_many`, whose output concatenates

@@ -20,6 +20,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- Fixed a three-way merge reading one calendar address written in two cases as two people.
+
+  A property identity was compared on the raw bytes, so `MAILTO:Ada@Example.com` and `mailto:ada@example.com` missed each other and an attendee who answered in a client that normalises its output was reported as one person leaving and another arriving. An identity is now lowercased for comparison, a URI scheme being case-insensitive (RFC 3986 section 3.1). Only the comparison normalises: a line still goes back out with the bytes the side that wrote it wrote.
+
+- Fixed a `QUOTED-PRINTABLE` value ending on two `=` serializing with a line break in the middle of it.
+
+  A line remembers what the parser resolved away as pieces indexed by offset, and the tokeniser and the line splitter each record one of the two `=`. The two lists were concatenated rather than merged, so the soft break went out before the dangling `=` it follows, and the reparse of that output joined the next line into the value. The pieces are now emitted in offset order.
+
 - Fixed a three-way merge dropping, in silence, a change to a component that is not the first child of its parent.
 
   The lookup that read the replayed side numbered a component over all its parent's children rather than over its same-named ones, so a `DAYLIGHT` written after a `STANDARD` could not be found and the change was neither applied nor reported. A `VTIMEZONE` defining both observances was therefore unmergeable.

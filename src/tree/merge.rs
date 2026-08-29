@@ -39,15 +39,23 @@
 //! `UID` (a `VALARM`, a `STANDARD`, a `VTIMEZONE` observance) is matched by its
 //! position among its same-named siblings.
 //!
-//! Inside a matched component, a property is matched by its identity where
-//! iCalendar gives it one and by its position otherwise. A property that may
-//! occur more than once and whose value names a thing outside the calendar is
-//! identified by that value: `ATTENDEE` by its calendar user address,
-//! `ATTACH` by its URI or inline binary, `RELATED-TO` by the `UID` it points
-//! at, `CONFERENCE` and `IMAGE` by their URI. A different calendar address is
-//! a different person, so two properties carrying different identities are
-//! never matched with each other, and a value two siblings share tells neither
-//! of them apart, so both of those fall back to their positions.
+//! Inside a matched component, a property is matched down one ladder: a
+//! synchronisation identity, which iCalendar does not define for a property so
+//! the rung is empty here, then a natural identity, then equality, then
+//! position.
+//!
+//! A property that may occur more than once and whose value names a thing
+//! outside the calendar is identified by that value: `ATTENDEE` by its
+//! calendar user address, `ATTACH` by its URI or inline binary, `RELATED-TO`
+//! by the `UID` it points at, `CONFERENCE` and `IMAGE` by their URI.
+//!
+//! A different calendar address is a different person, so two properties
+//! carrying different identities are never matched with each other, and a
+//! value two siblings share tells neither of them apart, so both of those fall
+//! back to their positions.
+//!
+//! An identity is compared lowercased and written back exactly, so an address
+//! meets the other case it was written in while the line keeps its own bytes.
 //!
 //! Everything else is matched by name, then by equality, then by position, and
 //! a position an action carries is the one its target held in the base,
@@ -518,10 +526,10 @@ pub struct IcalPropPath<'a> {
     /// The value that tells the property from its same-named siblings, where
     /// iCalendar gives it one: the calendar user address of an `ATTENDEE`, the
     /// URI or inline binary of an `ATTACH`, the `UID` a `RELATED-TO` points
-    /// at, the URI of a `CONFERENCE` or an `IMAGE`. `None` for every other
-    /// property, whose position is then what tells it from its siblings, and
-    /// `None` too for a value a same-named sibling repeats, which tells
-    /// neither of them apart.
+    /// at, the URI of a `CONFERENCE` or an `IMAGE`. Lowercased, since matching
+    /// normalises and writing is exact. `None` for every other property, whose
+    /// position is then what tells it from its siblings, and `None` too for a
+    /// value a same-named sibling repeats, which tells neither of them apart.
     pub identity: Option<Cow<'a, str>>,
 }
 
@@ -1030,13 +1038,17 @@ fn diff_component<'a>(
         let mut base_free = of(&base_props);
         let mut side_free = of(&side_props);
 
-        // NOTE: An untouched property pairs with itself before anything else is
-        // consulted, so adding one line does not renumber every line after it.
+        // NOTE: iCalendar defines no synchronisation identity for a property,
+        // so the ladder's first rung is empty here and its second is the first
+        // one consulted.
         let mut pairs = Vec::new();
         let mut b = 0;
         while b < base_free.len() {
-            let same = side_free.iter().position(|&s| {
-                base_props[base_free[b]].decode(version) == side_props[s].decode(version)
+            let held = identity_in(&base_props, base_free[b]);
+            let same = held.and_then(|held| {
+                side_free
+                    .iter()
+                    .position(|&s| identity_in(&side_props, s).is_some_and(|side| side == held))
             });
 
             match same {
@@ -1045,13 +1057,12 @@ fn diff_component<'a>(
             }
         }
 
+        // NOTE: An untouched property pairs with itself before position is
+        // consulted, so adding one line does not renumber every line after it.
         let mut b = 0;
         while b < base_free.len() {
-            let held = identity_in(&base_props, base_free[b]);
-            let same = held.and_then(|held| {
-                side_free
-                    .iter()
-                    .position(|&s| identity_in(&side_props, s).is_some_and(|side| side == held))
+            let same = side_free.iter().position(|&s| {
+                base_props[base_free[b]].decode(version) == side_props[s].decode(version)
             });
 
             match same {
@@ -1127,6 +1138,7 @@ fn diff_component<'a>(
 /// property has none: either it may occur only once, so its name already tells
 /// it apart, or its value is the datum being edited, and keying on it would
 /// make every edit a replacement.
+///
 /// An identity that does not tell a property from its same-named siblings is
 /// no identity: a value written twice in one component names both of them, so
 /// those fall back to their positions, and a sibling that is still alone with
@@ -1157,7 +1169,7 @@ fn identity_of<'a>(line: &IcalLine<'a>) -> Option<Cow<'a, str>> {
         )
     );
 
-    identified.then(|| Cow::Owned(value_text(line)))
+    identified.then(|| Cow::Owned(value_key(line)))
 }
 
 /// The whole raw value of a line, as written.
@@ -1171,6 +1183,17 @@ fn value_text(line: &IcalLine<'_>) -> String {
     line.value.write_bytes(&mut out);
 
     String::from_utf8_lossy(&out).into_owned()
+}
+
+/// The same value, normalised into the key an identity is compared on.
+///
+/// Matching normalises and writing is exact. A URI scheme is
+/// case-insensitive (RFC 3986 3.1) and so is the host of a mail address, so
+/// `MAILTO:Ada@Example.com` and `mailto:ada@example.com` name one person and
+/// have to meet. What goes back on the wire is the bytes the line arrived
+/// with: normalise on the way out and byte fidelity is gone.
+fn value_key(line: &IcalLine<'_>) -> String {
+    value_text(line).to_lowercase()
 }
 
 /// The name a line decodes to.
@@ -1658,7 +1681,7 @@ fn line_ordinal(
 
     lines(cst)
         .filter(|line| line.name.get().eq_ignore_ascii_case(&at.name))
-        .position(|line| value_text(line) == **identity)
+        .position(|line| value_key(line) == **identity)
 }
 
 /// The line a property path names inside a component.
