@@ -1,7 +1,7 @@
 ---
 cairn: change
 id: rfc6868-param-encoding
-status: proposed
+status: landed
 created: 2026-08-29
 ---
 
@@ -24,6 +24,8 @@ The decoding is: `^n` becomes a newline, `^^` a caret, `^'` a double quote, and 
 Postel governs the transition: a value carrying no caret and no backslash means the same under both readings, which is nearly every parameter in the corpus, so the change must be invisible for those. What moves is a value carrying a backslash, which stops being unescaped, and one carrying a caret, which starts being decoded.
 
 Done when a parameter round trips byte for byte through decode and encode, when the three RFC 6868 sequences decode and re-encode, when a lone caret survives untouched, and when the golden corpus is unchanged except where a fixture genuinely carries one of these.
+
+Two things the proposal did not say, settled while it landed. The rules are keyed on the version rather than applied everywhere: RFC 6868 updates RFC 5545 and nothing earlier, so a vCalendar 1.0 caret stays literal, which means a parameter node has to carry an escaper the way a value node does. And the byte-for-byte round trip holds for the canonical spelling, since RFC 6868 decoding is deliberately not injective: `^x` and `^^x` both read as `^x`, and the encoder writes the canonical `^^x` for both.
 
 ## Blast radius
 

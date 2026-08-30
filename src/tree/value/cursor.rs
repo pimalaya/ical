@@ -4,19 +4,26 @@
 //!
 //! A cursor borrows a content line mutably and reads and writes its value
 //! through the codec: getters decode (unescape), setters encode (escape) and
-//! write through to the syntax node. A setter only rewrites the component it
-//! touches, so every other leaf (and every parameter) of a parsed line stays
-//! byte for byte intact. [`IcalValueCursor`] offers convenience accessors for
-//! the common single-value and list shapes, plus component-level access for the
+//! write through to the syntax node.
+//!
+//! A setter only rewrites the component it touches, so every other leaf (and
+//! every parameter) of a parsed line stays byte for byte intact.
+//!
+//! [`IcalValueCursor`] offers convenience accessors for the common
+//! single-value and list shapes, plus component-level access for the
 //! structured values (`GEO`, `REQUEST-STATUS`).
 //!
 //! Beside the UTF-8 text accessors it offers a raw byte hatch
 //! ([`bytes`](IcalValueCursor::bytes) /
-//! [`set_bytes`](IcalValueCursor::set_bytes)) for a value in a foreign charset,
-//! and, behind the content-encoding features, the
+//! [`set_bytes`](IcalValueCursor::set_bytes)) for a value in a foreign
+//! charset.
+//!
+//! Behind the content-encoding features sit the
 //! [`quoted_printable`](IcalValueCursor::quoted_printable) and
 //! [`charset`](IcalValueCursor::charset) decoders.
 
+#[cfg(feature = "encoding")]
+use alloc::string::String;
 use alloc::{borrow::Cow, vec::Vec};
 
 use crate::tree::{line::IcalLine, param::lens::IcalParamLens};
@@ -29,40 +36,42 @@ pub struct IcalValueCursor<'c, 'a> {
 }
 
 impl IcalValueCursor<'_, '_> {
-    /// The whole value as a single decoded text (component 0, value 0).
+    /// The whole value as a single decoded text, its `;` and `,` kept literal.
     pub fn text(&self) -> Cow<'_, str> {
-        self.line.value.decode_scalar_at(0)
+        self.line.value.decode()
     }
 
-    /// Set the value to a single text, escaping and preserving any other
-    /// components. Writes UTF-8; to keep a foreign charset, transcode yourself
-    /// and use [`set_bytes`](Self::set_bytes).
+    /// Set the whole value to a single text, escaping it. Writes UTF-8; to keep
+    /// a foreign charset, transcode yourself and use
+    /// [`set_bytes`](Self::set_bytes).
     pub fn set_text(&mut self, value: impl AsRef<str>) {
-        self.line.value.set_at(0, &[value]);
+        self.line.value.set(&[value]);
     }
 
-    /// The whole value's raw bytes (component 0, value 0), unescaped but not
-    /// transcoded and not transfer-decoded, for a value carrying a foreign
+    /// The whole value's raw bytes, unescaped but not otherwise decoded.
+    ///
+    /// Neither transcoded nor transfer-decoded, for a value carrying a foreign
     /// charset. To resolve `QUOTED-PRINTABLE` or a `CHARSET`, use the
     /// [`quoted_printable`](Self::quoted_printable) /
     /// [`charset`](Self::charset) feature helpers.
     pub fn bytes(&self) -> Cow<'_, [u8]> {
-        self.line.value.decode_bytes_at(0)
+        self.line.value.decode_bytes()
     }
 
-    /// Set the value to raw bytes (the foreign-charset escape hatch), escaping
-    /// structural separators but writing the bytes verbatim and preserving any
-    /// other components. The calendar's `CHARSET` parameter is left untouched: it
-    /// is the caller's to keep consistent.
+    /// Set the whole value to raw bytes (the foreign-charset escape hatch),
+    /// escaping structural separators but writing the bytes verbatim. The
+    /// calendar's `CHARSET` parameter is left untouched: it is the caller's to
+    /// keep consistent.
     pub fn set_bytes(&mut self, value: impl AsRef<[u8]>) {
-        self.line.value.set_bytes_at(0, &[value]);
+        self.line.value.set_bytes(&[value]);
     }
 
-    /// Decode the value's `QUOTED-PRINTABLE` `=XX` octets to raw bytes when the
-    /// line declares that encoding, else the raw [`bytes`](Self::bytes). Still
-    /// in the value's own (possibly foreign) charset; pair with
-    /// [`charset`](Self::charset) to get text. Requires the `quoted-printable`
-    /// feature.
+    /// Decode the value's `QUOTED-PRINTABLE` `=XX` octets to raw bytes.
+    ///
+    /// Only when the line declares that encoding, else the raw
+    /// [`bytes`](Self::bytes). Still in the value's own (possibly foreign)
+    /// charset; pair with [`charset`](Self::charset) to get text. Requires the
+    /// `quoted-printable` feature.
     #[cfg(feature = "quoted-printable")]
     pub fn quoted_printable(&self) -> Vec<u8> {
         let raw = self.bytes();
@@ -80,7 +89,7 @@ impl IcalValueCursor<'_, '_> {
     /// is also on, `QUOTED-PRINTABLE` octets are resolved first. Requires the
     /// `encoding` feature.
     #[cfg(feature = "encoding")]
-    pub fn charset(&self) -> alloc::string::String {
+    pub fn charset(&self) -> String {
         #[cfg(feature = "quoted-printable")]
         let bytes = self.quoted_printable();
         #[cfg(not(feature = "quoted-printable"))]
@@ -95,25 +104,25 @@ impl IcalValueCursor<'_, '_> {
         encoding.decode_without_bom_handling(&bytes).0.into_owned()
     }
 
-    /// The value's first component as a decoded list (its `,`-separated
-    /// values).
+    /// The whole value as a decoded list (its `,`-separated values), its `;`
+    /// kept literal.
     pub fn list(&self) -> Vec<Cow<'_, str>> {
-        self.line.value.decode_at(0)
+        self.line.value.decode_list()
     }
 
-    /// Set the value's first component to a list, escaping each value.
+    /// Set the whole value to a list, escaping each value.
     pub fn set_list<S: AsRef<str>>(&mut self, values: &[S]) {
-        self.line.value.set_at(0, values);
+        self.line.value.set(values);
     }
 
     /// The `i`th component as a decoded list, for structured values.
     pub fn component(&self, i: usize) -> Vec<Cow<'_, str>> {
-        self.line.value.decode_at(i)
+        self.line.value.decode_component_list(i)
     }
 
     /// Set the `i`th component, escaping each value and preserving the rest.
     pub fn set_component<S: AsRef<str>>(&mut self, i: usize, values: &[S]) {
-        self.line.value.set_at(i, values);
+        self.line.value.set_component(i, values);
     }
 
     /// The first parameter of type `P` on this line, decoded.
@@ -124,15 +133,19 @@ impl IcalValueCursor<'_, '_> {
 
 #[cfg(test)]
 mod tests {
-    use alloc::string::ToString;
+    use alloc::{
+        format,
+        string::{String, ToString},
+        vec,
+    };
 
     use crate::tree::{cst::IcalCst, prop::summary::SUMMARY};
 
     const HEAD: &str = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//x//EN\r\n";
     const TAIL: &str = "END:VCALENDAR\r\n";
 
-    fn cal(prop_line: &str) -> alloc::string::String {
-        alloc::format!("{HEAD}{prop_line}\r\n{TAIL}")
+    fn cal(prop_line: &str) -> String {
+        format!("{HEAD}{prop_line}\r\n{TAIL}")
     }
 
     #[test]
@@ -208,19 +221,74 @@ mod tests {
         assert!(c.to_string().contains("GEO:37.0;-100.0\r\n"));
     }
 
+    /// The generic accessors read and write the value, not its first slot.
+    ///
+    /// A semicolon separates nothing in a text value, so a read that stopped
+    /// at one handed back a truncated value and a write that rewrote only the
+    /// first component left the rest behind: read then write changed it.
+    #[test]
+    fn reads_and_writes_the_whole_value_not_its_first_component() {
+        use crate::tree::prop::description::DESCRIPTION;
+
+        let raw = cal("DESCRIPTION:a;b");
+        let mut c = IcalCst::parse(&raw).unwrap();
+
+        {
+            let cursor = c.prop_mut::<DESCRIPTION>().unwrap();
+            assert_eq!(cursor.text(), "a;b");
+            assert_eq!(cursor.bytes().as_ref(), b"a;b");
+            assert_eq!(cursor.list(), vec!["a;b"]);
+        }
+
+        let whole = c.prop_mut::<DESCRIPTION>().unwrap().text().into_owned();
+        c.prop_mut::<DESCRIPTION>().unwrap().set_text(&whole);
+
+        assert!(c.to_string().contains("DESCRIPTION:a\\;b\r\n"), "got: {c}");
+        assert_eq!(c.prop_mut::<DESCRIPTION>().unwrap().text(), "a;b");
+    }
+
+    /// A structured value read through its lens keeps its components' commas.
+    #[test]
+    fn reads_a_structured_component_past_its_first_comma() {
+        use crate::tree::prop::request_status::REQUEST_STATUS;
+
+        let raw = cal("REQUEST-STATUS:2.0;ok;rcpt,two");
+        let c = IcalCst::parse(&raw).unwrap();
+        let status = c.prop::<REQUEST_STATUS>().unwrap();
+
+        assert_eq!(status.description, "ok");
+        assert_eq!(status.extra, "rcpt,two");
+    }
+
     #[test]
     fn exercises_every_generic_accessor() {
         use crate::tree::prop::categories::CATEGORIES;
 
         let raw = cal("CATEGORIES:a,b");
         let mut c = IcalCst::parse(&raw).unwrap();
-        let mut cursor = c.prop_mut::<CATEGORIES>().unwrap();
 
-        let _ = cursor.text();
-        let _ = cursor.list();
-        let _ = cursor.component(0);
-        cursor.set_text("x");
-        cursor.set_list(&["a", "b"]);
-        cursor.set_component(1, &["y"]);
+        {
+            let mut cursor = c.prop_mut::<CATEGORIES>().unwrap();
+
+            // NOTE: A text read takes the whole value and a list read splits it
+            // on its commas, both keeping every `;` the value carries, while a
+            // component read takes one `;`-separated slot.
+            assert_eq!(cursor.text(), "a,b");
+            assert_eq!(cursor.list(), vec!["a", "b"]);
+            assert_eq!(cursor.component(0), vec!["a", "b"]);
+
+            cursor.set_text("x");
+            assert_eq!(cursor.text(), "x");
+
+            cursor.set_list(&["a", "b"]);
+            assert_eq!(cursor.list(), vec!["a", "b"]);
+
+            // A component past the last one extends the value rather than
+            // dropping the write.
+            cursor.set_component(1, &["y"]);
+            assert_eq!(cursor.component(1), vec!["y"]);
+        }
+
+        assert!(c.to_string().contains("CATEGORIES:a,b;y\r\n"), "got: {c}");
     }
 }

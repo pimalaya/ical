@@ -16,8 +16,8 @@ use crate::{
 impl<'v> Codec<'v> for IcalGeo<'v> {
     fn decode(node: &'v IcalValueNode<'_>) -> Self {
         IcalGeo {
-            latitude: node.decode_scalar_at(0),
-            longitude: node.decode_scalar_at(1),
+            latitude: node.decode_component(0),
+            longitude: node.decode_component(1),
         }
     }
 

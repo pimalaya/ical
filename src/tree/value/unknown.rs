@@ -15,7 +15,7 @@ impl<'v> Codec<'v> for IcalUnknownValue<'v> {
     fn decode(node: &'v IcalValueNode<'_>) -> Self {
         IcalUnknownValue {
             components: (0..node.component_count())
-                .map(|i| node.decode_at(i))
+                .map(|i| node.decode_component_list(i))
                 .collect(),
         }
     }

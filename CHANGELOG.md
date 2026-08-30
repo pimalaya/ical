@@ -28,13 +28,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
   The preference decides that case and no other: an update still beats a removal whichever side it came from, a property one side alone touched is still taken from that side, an untouched line still comes out byte for byte.
 
+### Changed
+
+- Changed the parameter codec to carry an escaping mode, which the parameter side never had.
+
+  `IcalParamNode` gains an `escaper` field, stamped by the parser once `VERSION` is known exactly as a value node's already was, and read by every parameter decode. `IcalParam::encode` and `IcalParamLens::encode` take the target `Escaper`, mirroring `IcalProp::encode` and the `Codec` trait, so a parameter is written in the same version's rules it was read in. `Escaper` gains `has_param_encoding`, true for iCalendar 2.0 and false for vCalendar 1.0.
+
+- Changed the value node accessors so a truncating read has to name the component it truncates at, replacing `decode_at`, `decode_scalar_at`, `decode_joined_at`, `decode_joined`, `decode_bytes_at`, `set_at` and `set_bytes_at`.
+
+  Reading component zero looks like reading the value and is not: it stops at the first unescaped `;`. Almost every call site passed `0`, and that one shape produced four separate defects in two days across three crates. `decode`, `decode_list` and `decode_bytes` now read the whole value; `decode_component` and `decode_component_list` read one `;`-component and always spell out which. `decode_scalar_at` and `decode_bytes_at` are gone, having cut twice, at a `;` and then at a `,`, which no caller wanted. `set` and `set_bytes` replace the whole value, `set_component` and `set_component_bytes` name their slot, so a read and the write that follows it address the same thing. `IcalValueCursor` follows the same split: `text`, `bytes`, `list` and their setters address the whole value, `component` and `set_component` one slot.
+
 ### Fixed
+
+- Fixed parameter value encoding, which read RFC 5545 section 3.3.11 text escapes into a parameter that has none, and never wrote RFC 6868 at all.
+
+  Section 3.2 gives a parameter value no backslash escapes, which is the whole reason RFC 6868 exists. So a backslash a parameter legitimately carried, a Windows path in an `ALTREP` or an `X-` parameter, was eaten on the way in and could not be written back, while a real `^n`, `^^` or `^'` from a conforming producer reached the caller with its encoding showing. A parameter is now decoded and encoded by RFC 6868 section 3.1: `^n` is a newline, `^^` a caret, `^'` a double quote, any other caret sequence stays literal as section 3.1 requires, and a backslash is content in both directions. RFC 6868 updates RFC 5545 and no earlier specification, so the rules apply to iCalendar 2.0 alone and a vCalendar 1.0 caret stays a caret; `Escaper::has_param_encoding` is the switch, and a parameter node now carries its calendar's `Escaper` the way a value node already did.
+
+- Fixed the merge reading two sides that wrote different bytes as one act, which dropped the difference without a word.
+
+  Agreement was decided on the decoded actions, and a decode is not injective: `\N` and `\n` both unescape to a line break (RFC 5545 section 3.3.11), so two sides writing a value each way produced equal actions, the right side's act was skipped as already made, and no conflict was reported. Agreement is now byte equality at the granularity of the act itself, which the property and component additions already required. The one exception is a parameter the specification gives no order, `DELEGATED-FROM` and `DELEGATED-TO` (sections 3.2.4 and 3.2.5), `MEMBER` (section 3.2.11) and `FEATURE` (RFC 7986 section 6.3), whose values now compare as a set, so writing one list in two orders stays one act rather than becoming a conflict. The merged bytes are unchanged either way, since the left side keeps its value; what changes is that the divergence is reported.
+
+- Fixed a list value being written back on a replay that changed nothing, which re-escaped items nobody edited.
+
+- Fixed the merge comparing parameters decoded, which hid an edit the decode cannot see.
+
+  A single-valued parameter decodes its first value alone, so `CN=Ada,Lovelace` and `CN=Ada,Byron` compared equal, the change was never reported, and the edit was dropped without a word. Parameters are now compared on their raw nodes, value by value, exactly as values already were, falling back to raw bytes across two calendars of different versions that share no decoding.
+
+- Fixed every value read that was silently truncating a value it had no business splitting.
+
+  RFC 5545 section 3.3.11 has a text value escape a `;` or a `,` it means literally, and section 3.3.13 gives a URI no escaping at all, so an unescaped separator is content. An `IcalText`, an `IcalTextList`, an `IcalDateTimeList`, an `IcalCalAddress`, an `IcalPeriod`, an `IcalBinary`, an `IcalBoolean`, an `IcalDate`, an `IcalDateTime`, an `IcalTime`, an `IcalDuration`, an `IcalFloat`, an `IcalInteger` and an `IcalUtcOffset` now keep everything past their first `;`, and a `REQUEST-STATUS` description and its extra data keep the commas inside them rather than being cut at the first one. The cursor's `text`, `bytes` and `list` read the whole value, and their setters replace it, so reading a value and writing it straight back no longer leaves the tail of the old one behind.
 
 - Aligned the three-way merge with vcard-rs, fixing five defects a green suite was hiding.
 
   The two crates state one merge contract and shared almost no implementation, and this side had drifted. A value was compared decoded rather than raw, and a text value decodes its first `;`-component alone, so `LOCATION:Room A;floor 2` edited to `floor 9` reported nothing and merged nothing. A list was diffed and replayed as a set rather than a multiset, so dropping one of two equal `CATEGORIES` items was invisible on the way in and took both on the way out. A replay target was corrected for the baseline side's removals but not for its additions, so a line that side inserted made every later edit land one property early, overwriting one and leaving the other stale. A property the baseline side removed and the other side edited twice came back once per edit rather than once. And a `VALUE` retyped on one side did not contest the other side's item edits, producing a property whose items contradict its own declared type (RFC 5545 section 3.8.5.2).
-
-- A URI value was truncated at its first `;`, and escaped on the way back out.
 
 - A URI value was truncated at its first `;`, and escaped on the way back out.
 

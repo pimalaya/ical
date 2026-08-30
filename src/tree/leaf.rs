@@ -3,12 +3,16 @@
 //! The atom of the syntax tree: a single raw piece of a calendar.
 //!
 //! Two leaf kinds split on a spec boundary. [`IcalLeaf`] wraps still-escaped
-//! *text* (a name, a parameter value, a line ending), US-ASCII in every version
-//! and so always valid UTF-8. [`IcalValueLeaf`] wraps a still-escaped *value*
-//! component as raw bytes, because a property value may carry a foreign charset
-//! (a vCalendar 1.0 `CHARSET`) that is not UTF-8. Both are a [`Cow`], so a
-//! parsed leaf borrows the source (the basis of byte-faithful round-trips) and
-//! only becomes owned when a build or an edit replaces it.
+//! *text* (a name, a parameter value, a line ending), US-ASCII in every
+//! version and so always valid UTF-8.
+//!
+//! [`IcalValueLeaf`] wraps a still-escaped *value* component as raw bytes,
+//! because a property value may carry a foreign charset (a vCalendar 1.0
+//! `CHARSET`) that is not UTF-8.
+//!
+//! Both are a [`Cow`], so a parsed leaf borrows the source (the basis of
+//! byte-faithful round-trips) and only becomes owned when a build or an edit
+//! replaces it.
 
 use alloc::{borrow::Cow, string::String, vec::Vec};
 

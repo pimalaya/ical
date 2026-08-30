@@ -11,7 +11,7 @@ use core::fmt;
 
 use alloc::vec::Vec;
 
-use crate::tree::leaf::IcalLeaf;
+use crate::tree::{codec::mode::Escaper, leaf::IcalLeaf};
 
 /// One raw parameter: a name and its `,`-separated raw values (empty when the
 /// parameter has no `=` list). The syntactic peer of the decoded
@@ -22,6 +22,9 @@ pub struct IcalParamNode<'a> {
     pub name: IcalLeaf<'a>,
     /// The raw value leaves.
     pub values: Vec<IcalLeaf<'a>>,
+    /// Which version's parameter encoding rules the values are written in.
+    /// Stamped by the parser once `VERSION` is known, as on a value node.
+    pub escaper: Escaper,
 }
 
 impl<'a> IcalParamNode<'a> {
@@ -34,10 +37,12 @@ impl<'a> IcalParamNode<'a> {
                     .into_iter()
                     .map(IcalLeaf::from)
                     .collect(),
+                escaper: Escaper::default(),
             },
             None => Self {
                 name: IcalLeaf::from(param),
                 values: Vec::new(),
+                escaper: Escaper::default(),
             },
         }
     }
@@ -47,6 +52,7 @@ impl<'a> IcalParamNode<'a> {
         IcalParamNode {
             name: self.name.into_static(),
             values: self.values.into_iter().map(IcalLeaf::into_static).collect(),
+            escaper: self.escaper,
         }
     }
 

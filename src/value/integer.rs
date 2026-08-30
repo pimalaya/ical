@@ -2,10 +2,10 @@
 //!
 //! The decoded integer value kind.
 //!
-//! Backs the integer-valued properties and parameters (RFC 5545 3.3.8): a signed
-//! decimal integer such as `1234` or `-9`. The value is kept as its raw text so
-//! the original lexical form round-trips; [`IcalInteger::get`] parses it into an
-//! [`i64`].
+//! Backs the integer-valued properties and parameters (RFC 5545 3.3.8): a
+//! signed decimal integer such as `1234` or `-9`. The value is kept as its
+//! raw text so the original lexical form round-trips; [`IcalInteger::get`]
+//! parses it into an [`i64`].
 
 use alloc::{borrow::Cow, string::String};
 

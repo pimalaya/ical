@@ -22,7 +22,7 @@ impl<'v> Codec<'v> for IcalText<'v> {
         // unescaped comma in one is data rather than a separator. RFC 5545
         // 3.3.11 says it should have been escaped; truncating the value at it
         // would be strictness applied to the wrong end of Postel's law.
-        IcalText(node.decode_joined_at(0))
+        IcalText(node.decode())
     }
 
     fn encode(&self, escaper: Escaper) -> IcalValueNode<'static> {
@@ -32,7 +32,7 @@ impl<'v> Codec<'v> for IcalText<'v> {
 
 impl<'v> Codec<'v> for IcalTextList<'v> {
     fn decode(node: &'v IcalValueNode<'_>) -> Self {
-        IcalTextList(node.decode_at(0))
+        IcalTextList(node.decode_list())
     }
 
     fn encode(&self, escaper: Escaper) -> IcalValueNode<'static> {

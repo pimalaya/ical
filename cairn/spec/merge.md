@@ -190,7 +190,11 @@ The outcome is the one a collision already has, with granularity settling which 
 
 ### Requirement: Agreement is not a collision
 
-Two sides that made the same change SHALL NOT be reported as diverging, and the merged calendar SHALL carry that change once. A collision is two people disagreeing, and two identical actions are not that. An addition is the same addition only where both sides wrote the same bytes, since an addition names where it lands and what it says but not how it is spelt.
+Two sides that made the same act SHALL NOT be reported as diverging, and the merged calendar SHALL carry that act once. A collision is two people disagreeing, and two identical acts are not that.
+
+Two sides SHALL be held to have made one act only where they wrote the same bytes. An unescape is not injective, since `\N` and `\n` both read as a line break (RFC 5545 section 3.3.11), so two acts that decode alike may say different things on the wire, and reading those as one act drops the difference without a word. What is weighed is what the act itself wrote: the component or the line an addition put there, the value a change wrote, the item a list gained, the parameter a side wrote. An act that only takes something away wrote no bytes, and what it names lives in the base both sides share, so the act itself settles it.
+
+The one exception SHALL be a parameter the specification gives no order: `DELEGATED-FROM` and `DELEGATED-TO` (sections 3.2.4 and 3.2.5), `MEMBER` (section 3.2.11) and `FEATURE` (RFC 7986 section 6.3) hold lists rather than sequences, so two sides writing one list in two orders SHALL be one act, its values compared as a set both decoded and raw.
 
 Merging two identical sides SHALL therefore return those bytes and report nothing.
 
@@ -199,6 +203,28 @@ Merging two identical sides SHALL therefore return those bytes and report nothin
 - GIVEN a base, and two sides holding the same edits of it
 - WHEN they are merged
 - THEN the merged calendar carries those edits and nothing is reported
+
+#### Scenario: One value spelled two ways
+
+- GIVEN a base holding `SUMMARY:a`, a left side holding `SUMMARY:b\nc` and a right side holding `SUMMARY:b\Nc`
+- WHEN they are merged
+- THEN the divergence is reported and the merged calendar is the left side's bytes
+
+#### Scenario: One unordered list parameter in two orders
+
+- GIVEN a base whose `ATTENDEE` carries no `DELEGATED-TO`, and two sides adding the same two addresses in two orders
+- WHEN they are merged
+- THEN nothing is reported and the merged calendar is the left side's bytes
+
+### Requirement: A list value is written back only when it changes
+
+A list value SHALL be written back only where the replayed item really joins or leaves it. Writing a list back escapes every item afresh, so a replay that changes nothing would spell the baseline side's own items the canonical way and churn bytes nobody edited.
+
+#### Scenario: An item both sides added
+
+- GIVEN a base holding `CATEGORIES:a`, and two sides that both added `b`
+- WHEN they are merged
+- THEN the merged list holds `a,b` with the baseline side's own bytes
 
 ### Requirement: An addition that loses does not join the one that beat it
 
@@ -228,7 +254,7 @@ Whatever the three calendars hold, the merged calendar SHALL parse, and SHALL re
 
 A line copied out of one side SHALL carry a line ending. The last line of a truncated download has none, and copied into the middle of a calendar it would swallow the line after it. The untouched bytes of the baseline side are not affected: only what the replay copies is terminated.
 
-What the replay writes into a line SHALL be the bytes the side that wrote them wrote, never a re-encoding of their decoded form. The two are not the same string: decoding a parameter resolves the value escapes and encoding one does not put them back, so a re-encoded parameter can carry a line break into a head. The decoded form is what the sides are compared on, and what is reported; it is not what is written.
+What the replay writes into a line SHALL be the bytes the side that wrote them wrote, never a re-encoding of their decoded form. The two are not the same string: a decoded parameter holds a real line break where the wire holds `^n`, and a re-encoding writes the canonical RFC 6868 spelling of a value the side spelled another way. The decoded form is what is reported; it is not what is written.
 
 #### Scenario: A bare record as one side
 
@@ -236,9 +262,9 @@ What the replay writes into a line SHALL be the bytes the side that wrote them w
 - WHEN they are merged
 - THEN the merged calendar parses and reparses to itself
 
-#### Scenario: A parameter holding an escape
+#### Scenario: A parameter holding an encoded newline
 
-- GIVEN a right side that changed a parameter whose value holds a `\n`
+- GIVEN a right side that changed a parameter whose value holds a `^n`
 - WHEN they are merged
 - THEN the merged line carries the parameter as the right side wrote it and the calendar parses
 
@@ -258,11 +284,19 @@ The replay addresses such a component by its path alone, so an action about the 
 
 Two values SHALL be compared on their raw nodes, component by component, rather than on what they decode to. A decoded value reads its own kind's shape, and a text value reads its first `;`-component alone, so two lines saying different things past that point decode alike and the difference is never seen.
 
-Where the two sides escape by different rules, only identical bytes SHALL count as the same value, there being no shared decoding to compare through.
+Two parameters SHALL be compared the same way, on their raw nodes and value by value, for the same reason: a single-valued parameter decodes its first value alone, so two parameters differing past their first `,` decode alike and the edit is never reported.
+
+Where the two sides escape by different rules, only identical bytes SHALL count as the same value or the same parameter, there being no shared decoding to compare through.
 
 #### Scenario: An edit past the first semicolon
 
 - GIVEN a base and a side whose text value differs only after its first `;`
+- WHEN they are diffed
+- THEN the change is reported and the merged calendar carries it
+
+#### Scenario: An edit past the first comma of a parameter
+
+- GIVEN a base holding `ATTENDEE;CN=Ada,Lovelace` and a side that changed it to `CN=Ada,Byron`
 - WHEN they are diffed
 - THEN the change is reported and the merged calendar carries it
 

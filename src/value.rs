@@ -2,14 +2,15 @@
 //!
 //! The decoded value of a property, one variant per iCalendar value kind.
 //!
-//! [`IcalValue`] is the semantic counterpart of a content line's raw value (the
-//! syntactic [`IcalValueNode`](crate::tree::value::node::IcalValueNode)). Most
-//! properties share a small set of kinds: a single text, a text list, a URI, a
-//! date/time, an integer. The genuinely structured ones get a bespoke type in a
-//! submodule here ([`geo::IcalGeo`], [`request_status::IcalRequestStatus`]).
-//! Anything the model does not decode falls back to
-//! [`Unknown`](IcalValue::Unknown), which keeps the raw components so it
-//! round-trips.
+//! [`IcalValue`] is the semantic counterpart of a content line's raw value
+//! (the syntactic [`IcalValueNode`](crate::tree::value::node::IcalValueNode)).
+//! Most properties share a small set of kinds: a single text, a text list, a
+//! URI, a date/time, an integer.
+//!
+//! The genuinely structured ones get a bespoke type in a submodule here
+//! ([`geo::IcalGeo`], [`request_status::IcalRequestStatus`]). Anything the
+//! model does not decode falls back to [`Unknown`](IcalValue::Unknown), which
+//! keeps the raw components so it round-trips.
 //!
 //! These types carry no wire name and no escaping: the name lives on
 //! [`IcalProp::name`](crate::prop::IcalProp::name), the escaping and framing on
@@ -239,7 +240,6 @@ pub enum IcalValue<'a> {
     Uri(IcalUri<'a>),
     /// A UTC offset (`TZOFFSETFROM`, `TZOFFSETTO`).
     UtcOffset(IcalUtcOffset<'a>),
-
     /// Any value the model does not decode, kept as its raw components so it
     /// round-trips.
     Unknown(IcalUnknownValue<'a>),
@@ -272,13 +272,11 @@ impl IcalValue<'_> {
         }
     }
 
-    /// The same value with every borrow replaced by an allocation, so it
-    /// outlives the bytes it was decoded from.
+    /// The same value with every borrow replaced by an allocation.
     ///
-    /// The counterpart of [`Cow::into_owned`](alloc::borrow::Cow::into_owned),
+    /// The counterpart of [`Cow::into_owned`](alloc::borrow::Cow::into_owned)
     /// for a whole value: a calendar read from a buffer that is about to go
-    /// away, or rebuilt from data that was never one line to begin with, needs
-    /// exactly this.
+    /// away, or rebuilt from data that was never one line, needs exactly this.
     pub fn into_owned(self) -> IcalValue<'static> {
         match self {
             Self::Binary(IcalBinary::Uri(value)) => {

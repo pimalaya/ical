@@ -2,9 +2,9 @@
 //!
 //! The decoded UTC-offset value kind.
 //!
-//! Backs `TZOFFSETFROM` and `TZOFFSETTO`: a signed `+/-HHMM[SS]` offset from UTC
-//! (RFC 5545 3.3.14; e.g. `-0500`), kept as its raw text. The crate does not
-//! decode it into hours, minutes and seconds.
+//! Backs `TZOFFSETFROM` and `TZOFFSETTO`: a signed `+/-HHMM[SS]` offset from
+//! UTC (RFC 5545 3.3.14; e.g. `-0500`), kept as its raw text. The crate does
+//! not decode it into hours, minutes and seconds.
 
 use alloc::{borrow::Cow, string::String};
 

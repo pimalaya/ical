@@ -7,7 +7,7 @@ use alloc::{borrow::Cow, string::ToString, vec::Vec};
 use crate::{
     param::IcalParamKind,
     tree::{
-        codec::unescape::unescape,
+        codec::{escape::escape_param, mode::Escaper, unescape::unescape_param},
         leaf::IcalLeaf,
         param::{lens::IcalParamLens, node::IcalParamNode},
     },
@@ -26,18 +26,19 @@ impl IcalParamLens for DELEGATED_FROM {
         param
             .values
             .iter()
-            .map(|value| unescape(value.get()))
+            .map(|value| unescape_param(value.get(), param.escaper))
             .collect()
     }
 
     #[allow(clippy::ptr_arg)]
-    fn encode(decoded: &Vec<Cow<'_, str>>) -> IcalParamNode<'static> {
+    fn encode(decoded: &Vec<Cow<'_, str>>, escaper: Escaper) -> IcalParamNode<'static> {
         IcalParamNode {
             name: IcalLeaf::from(Self::KIND.to_string()),
             values: decoded
                 .iter()
-                .map(|value| IcalLeaf::from(value.to_string()))
+                .map(|value| IcalLeaf::from(escape_param(value, escaper).into_owned()))
                 .collect(),
+            escaper,
         }
     }
 }

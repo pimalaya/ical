@@ -5,31 +5,40 @@
 //!
 //! Expansion is civil by design ([`recur`](crate::recur)) and that boundary
 //! stays: nothing here changes what a rule denotes. What it adds is the step
-//! after, the one nobody could take before. A caller holding an occurrence and
-//! the calendar it came from can ask what offset was in force, with no time-zone
-//! database and no new dependency, because RFC 5545 3.6.5 makes a calendar carry
-//! its own rules: a `VTIMEZONE` is a list of observances, each with the offset
-//! before it, the offset after it, and a recurrence rule saying when it takes
-//! effect.
+//! after, the one nobody could take before.
+//!
+//! A caller holding an occurrence and the calendar it came from can ask what
+//! offset was in force, with no time-zone database and no new dependency,
+//! because RFC 5545 3.6.5 makes a calendar carry its own rules.
+//!
+//! A `VTIMEZONE` is a list of observances, each with the offset before it,
+//! the offset after it, and a recurrence rule saying when it takes effect.
 //!
 //! ## The two hard cases are answered, not guessed
 //!
-//! A local clock is not a bijection. When it springs forward, the times it jumps
-//! over never happen; when it falls back, the times it repeats happen twice.
+//! A local clock is not a bijection. When it springs forward, the times it
+//! jumps over never happen; when it falls back, the times it repeats happen
+//! twice.
+//!
 //! [`resolve`](IcalTimezone::resolve) reports both as what they are, with the
 //! offsets either side, rather than picking one and calling it the answer.
-//! Choosing belongs to the caller, who knows whether a skipped alarm should fire
-//! early, late or not at all.
+//! Choosing belongs to the caller, who knows whether a skipped alarm should
+//! fire early, late or not at all.
 //!
 //! ## What is read, and what is not
 //!
 //! An observance contributes its `DTSTART`, its `RRULE`s and its `RDATE`s
 //! through the same [`IcalRecurSet`] every other component uses, so the
-//! transitions of a zone are just another recurrence set. `TZNAME`, `TZURL` and
-//! `LAST-MODIFIED` are not read: they name a zone, they do not place it. Every
-//! `DTSTART` inside an observance is local to the offset *before* the transition
-//! (RFC 5545 3.6.5), which is what makes a transition expressible in two local
-//! times at once, and what the gap and the fold are made of.
+//! transitions of a zone are just another recurrence set.
+//!
+//! `TZNAME`, `TZURL` and `LAST-MODIFIED` are not read: they name a zone, they
+//! do not place it.
+//!
+//! Every `DTSTART` inside an observance is local to the offset *before* the
+//! transition (RFC 5545 3.6.5), which is what makes a transition expressible
+//! in two local times at once, and what the gap and the fold are made of.
+
+use core::ops::Range;
 
 use alloc::{
     string::{String, ToString},
@@ -162,13 +171,11 @@ impl IcalTimezone {
             .find(|zone| zone.id == tzid)
     }
 
-    /// The offset in force at a civil local time, or the gap or fold it falls
-    /// in.
+    /// The offset in force at a civil local time, or the gap or fold it is in.
     ///
-    /// A zone with no observance at all resolves everything to UTC, since it
-    /// states no offset to apply. A local time before the first transition
-    /// takes the offset that transition says came before it, which is what
-    /// `TZOFFSETFROM` is for.
+    /// A zone with no observance resolves everything to UTC, stating no offset
+    /// to apply. A local time before the first transition takes the offset that
+    /// transition says came before it, which is what `TZOFFSETFROM` is for.
     pub fn resolve(&self, local: IcalRecurDateTime) -> IcalOffset {
         let mut previous: Option<Transition> = None;
         let mut next: Option<Transition> = None;
@@ -284,7 +291,7 @@ fn parse_offset(text: &str) -> Option<i32> {
         return None;
     }
 
-    let part = |range: core::ops::Range<usize>| digits[range].parse::<i32>().ok();
+    let part = |range: Range<usize>| digits[range].parse::<i32>().ok();
 
     let hours = part(0..2)?;
     let minutes = part(2..4)?;

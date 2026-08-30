@@ -25,8 +25,7 @@ use crate::{
 };
 
 /// The per-property contract: the versions it lives in, its multiplicity, the
-/// value-types and parameters it may carry (all per version), and the
-/// value-type in force for a given version and optionally declared `VALUE`.
+/// value types and parameters it may carry, all per version.
 ///
 /// Implemented on the zero-sized lens markers. The defaults cover the uniform
 /// majority (a single text value, valid in every version), so a property

@@ -1,13 +1,14 @@
-//! Parse/serialize benchmarks, comparing like-with-like by representation
-//! level.
+//! Parse and serialize benchmarks, comparing like with like by level.
 //!
 //! `parse_to_content_lines` pits this crate's byte-faithful CST against the
 //! `ical` crate's `PropertyParser`, which also stops at content lines with no
 //! value decoding.
-//! `parse_to_model` pits our parse + decode (to the `Ical` model, not the
+//!
+//! `parse_to_model` pits our parse plus decode (to the `Ical` model, not the
 //! validated `IcalValid<Ical>`) against the eager model parsers `calcard` and
 //! `icalendar`, plus the `ical` crate's `IcalParser`, which builds a component
 //! tree but leaves values as strings.
+//!
 //! Representations still differ in laziness, ownership and decoding depth, so
 //! read these as ballpark rather than a strict ranking.
 

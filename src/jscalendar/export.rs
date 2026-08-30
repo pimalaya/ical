@@ -158,7 +158,7 @@ fn entry_kind(component: &IcalComponent<'_>) -> Option<bool> {
 /// A component overrides a series when it carries a `RECURRENCE-ID` and
 /// another component of the same kind carries the same `UID`, no
 /// `RECURRENCE-ID` and an `RRULE` (draft 2.1.2). Without such a main it is a
-/// stand-alone instance, and converts to an entry of its own.
+/// stand-alone instance, converting to an entry of its own.
 fn mains(converted: &[Option<Entry>]) -> Vec<Option<usize>> {
     converted
         .iter()

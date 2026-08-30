@@ -5,35 +5,44 @@
 //! jCal is the JSON spelling of the iCalendar model. A component is
 //! `[name, [properties], [components]]` and a property is
 //! `[name, {params}, type, value...]` (RFC 7265 3.3, 3.4).
+//!
 //! [`Ical::to_jcal`] writes the decoded model as a [`serde_json::Value`];
 //! [`Ical::from_jcal`] reads one back, borrowing the JSON tree's strings.
+//!
 //! Import resolves each property's value kind through the same spec vtable as
 //! the wire decoder, so a jCal and the calendar it was written from decode to
 //! the same model.
 //!
 //! The boundary is a raw `Value`, not a serde implementation on any calendar
-//! type. One model has two JSON spellings here, jCal and JSCalendar (behind the
-//! `jscalendar` feature), and serde keys one representation per type, so it is
-//! the wrong tool; a raw-value boundary also keeps the public API free of a
-//! serialization commitment.
+//! type. One model has two JSON spellings here, jCal and JSCalendar (behind
+//! the `jscalendar` feature), and serde keys one representation per type, so
+//! it is the wrong tool.
+//!
+//! A raw-value boundary also keeps the public API free of a serialization
+//! commitment.
 //!
 //! ## Postel, again
 //!
 //! On the way out the RFC is followed: names are lowercased, the `VALUE`
 //! parameter moves into the type slot (RFC 7265 3.5.4), and dates, times,
 //! periods, offsets and recurrence rules are re-spelled in the JSON forms
-//! (3.5.1 to 3.5.7). On the way in anything is accepted: an unknown name, an
-//! unknown parameter and an unrecognised type slot all survive, a non-string
-//! scalar is coerced to text, and a missing part is an empty one.
+//! (3.5.1 to 3.5.7).
+//!
+//! On the way in anything is accepted: an unknown name, an unknown parameter
+//! and an unrecognised type slot all survive, a non-string scalar is coerced
+//! to text, and a missing part is an empty one.
 //!
 //! ## What round-trips, and what normalises
 //!
 //! A calendar written to jCal and read back decodes to the same model, with
-//! three normalisations that are the JSON format's, not the codec's: parameter
-//! order is lost to the JSON object, a recurrence rule comes back with its
-//! parts in the RFC's canonical order (a JSON object has no order to preserve),
-//! and names come back in their canonical spelling. Byte fidelity is the syntax
-//! tree's job; jCal is a projection of the decoded model.
+//! three normalisations that are the JSON format's, not the codec's.
+//!
+//! Parameter order is lost to the JSON object, a recurrence rule comes back
+//! with its parts in the RFC's canonical order (a JSON object has no order to
+//! preserve), and names come back in their canonical spelling.
+//!
+//! Byte fidelity is the syntax tree's job; jCal is a projection of the
+//! decoded model.
 
 use core::{error, fmt};
 
@@ -225,14 +234,11 @@ pub(crate) fn prop_to_jcal(prop: &IcalProp<'_>) -> Value {
     Value::Array(entry)
 }
 
-/// The type slot of a property: what `VALUE` declared, else the kind of its
-/// value, else `unknown`.
+/// The type slot: what `VALUE` declared, else the value's kind, else `unknown`.
 ///
-/// The declared kind comes first because it is the finer answer. A `DATE-TIME`
-/// list is `date-time-list` in this crate's model, which is a modelling detail
-/// and not one of RFC 7265's types; `RDATE;VALUE=PERIOD` therefore goes out as
-/// `period`, which is what the RFC's own examples show, and import resolves it
-/// back through the property's spec exactly as the wire decoder does.
+/// The declared kind wins as the finer answer: `date-time-list` is a
+/// modelling detail rather than an RFC 7265 type, so `RDATE;VALUE=PERIOD`
+/// goes out as `period`, and import resolves it back through the spec.
 pub(crate) fn type_slot(prop: &IcalProp<'_>) -> String {
     let declared = prop.params.iter().find_map(|param| match param {
         IcalParam::Value(kind) => Some(kind.to_ascii_lowercase()),
@@ -323,12 +329,10 @@ pub(crate) fn param_scalar<'a>(param: &'a IcalParam<'_>) -> Cow<'a, str> {
 
 /// One property read back.
 ///
-/// The type slot is resolved through the same spec vtable as the wire decoder,
-/// so a property whose model kind is a list (`RDATE`, `CATEGORIES`) comes back
-/// as one, and a slot the model does not know leaves the value undecoded. The
-/// slot goes back into a `VALUE` parameter whenever it says something the
-/// property's default does not, which is the inverse of the move `to_jcal`
-/// made.
+/// The type slot resolves through the same spec vtable as the wire decoder,
+/// so a list-kinded property returns as a list and an unknown slot leaves the
+/// value undecoded. The slot goes back into a `VALUE` parameter only where it
+/// says more than the default, inverting the move `to_jcal` made.
 pub(crate) fn prop_from_jcal<'a>(entry: &'a Value, version: IcalVersion) -> IcalProp<'a> {
     let array = entry.as_array().map(Vec::as_slice).unwrap_or(&[]);
     let name = array.first().and_then(Value::as_str).unwrap_or("");
@@ -696,6 +700,11 @@ pub(crate) fn datetime_to_json(text: &str) -> String {
     format!("{}T{}{zulu}", date_to_json(date), time_to_json(time))
 }
 
+/// The inverse of [`datetime_to_json`]: `YYYY-MM-DDTHH:MM:SS` back to
+/// `YYYYMMDDTHHMMSS`, the UTC suffix kept.
+///
+/// `None` when neither half was in the JSON spelling, so a value already on
+/// the wire form is left for the caller to pass through untouched.
 pub(crate) fn datetime_from_json(text: &str) -> Option<String> {
     let (body, zulu) = split_zulu(text);
 

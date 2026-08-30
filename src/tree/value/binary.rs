@@ -14,7 +14,7 @@ use crate::{
 
 impl<'v> Codec<'v> for IcalBinary<'v> {
     fn decode(node: &'v IcalValueNode<'_>) -> Self {
-        IcalBinary::Base64(node.decode_scalar_at(0))
+        IcalBinary::Base64(node.decode())
     }
 
     fn encode(&self, escaper: Escaper) -> IcalValueNode<'static> {

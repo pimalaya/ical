@@ -17,9 +17,9 @@ use crate::{
 impl<'v> Codec<'v> for IcalRequestStatus<'v> {
     fn decode(node: &'v IcalValueNode<'_>) -> Self {
         IcalRequestStatus {
-            code: node.decode_scalar_at(0),
-            description: node.decode_scalar_at(1),
-            extra: node.decode_scalar_at(2),
+            code: node.decode_component(0),
+            description: node.decode_component(1),
+            extra: node.decode_component(2),
         }
     }
 

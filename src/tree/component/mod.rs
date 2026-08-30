@@ -1,9 +1,11 @@
 //! # Component lenses
 //!
-//! The component lens contract ([`IcalComponentLens`](lens::IcalComponentLens)),
-//! the per-component spec ([`IcalComponentSpec`](spec::IcalComponentSpec)) and
-//! one module per iCalendar component. The markers are the type-level keys for
-//! typed subtree access
+//! The component lens contract
+//! ([`IcalComponentLens`](lens::IcalComponentLens)), the per-component spec
+//! ([`IcalComponentSpec`](spec::IcalComponentSpec)) and one module per
+//! iCalendar component.
+//!
+//! The markers are the type-level keys for typed subtree access
 //! ([`IcalCst::component`](crate::tree::cst::IcalCst::component)); the spec
 //! drives nesting and required-property checks in
 //! [`crate::tree::ical::validate`].

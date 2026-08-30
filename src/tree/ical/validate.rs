@@ -4,7 +4,8 @@
 //! [`IcalValid`] proof it mints.
 //!
 //! Validation walks the whole component tree and reports, against the
-//! calendar's version and the [property](crate::tree::prop::spec::IcalPropSpec) and
+//! calendar's version and the
+//! [property](crate::tree::prop::spec::IcalPropSpec) and
 //! [component](crate::tree::component::spec::IcalComponentSpec) specs:
 //!
 //! - a property the version does not define;
@@ -36,7 +37,8 @@ use crate::{
     ical::Ical,
     param::IcalParamKind,
     prop::{IcalProp, IcalPropKind, IcalPropName},
-    tree::{component::component_spec, prop::prop_spec},
+    recur::validate::IcalRecurRuleProblem,
+    tree::{component::component_spec, cst::IcalCst, prop::prop_spec},
     valid::IcalValid,
     value::IcalValueKind,
     version::IcalVersion,
@@ -77,10 +79,9 @@ pub enum IcalValidateError {
     },
     /// A property appears more times than its cardinality permits.
     ///
-    /// Only the "too many" direction: a property that is absent when it should
-    /// be there is a [`MissingProp`](Self::MissingProp), since whether a
-    /// property is required depends on the component it sits in and the
-    /// cardinality does not.
+    /// Only the "too many" direction: absence is a
+    /// [`MissingProp`](Self::MissingProp), since being required depends on the
+    /// component a property sits in and the cardinality does not.
     TooMany {
         /// The component name.
         component: String,
@@ -101,7 +102,7 @@ pub enum IcalValidateError {
         /// The property carrying the rule (`RRULE` or `EXRULE`).
         prop: IcalPropKind,
         /// What is wrong with it.
-        problem: crate::recur::validate::IcalRecurRuleProblem,
+        problem: IcalRecurRuleProblem,
     },
 }
 
@@ -247,10 +248,11 @@ fn check_required(
 ///
 /// Unknown (extension) properties, parameters and value kinds always pass:
 /// validity is a runtime predicate over the *known* vocabulary, and an
-/// extension is outside it by definition. A known property must exist in the
-/// calendar's version, take a value of a kind its spec allows there, and carry
-/// only parameters that spec allows there. A recurrence value is checked
-/// against RFC 5545 3.3.10 as well.
+/// extension is outside it by definition.
+///
+/// A known property must exist in the calendar's version, take a value of a
+/// kind its spec allows there, and carry only parameters that spec allows
+/// there. A recurrence value is checked against RFC 5545 3.3.10 as well.
 pub(crate) fn validate_prop(
     prop: &IcalProp<'_>,
     version: IcalVersion,
@@ -319,8 +321,7 @@ fn validate_rule(kind: IcalPropKind, prop: &IcalProp<'_>, errors: &mut Vec<IcalV
     );
 }
 
-/// Push a [`TooMany`](IcalValidateError::TooMany) for every property that
-/// appears more times than its spec permits.
+/// Report a [`TooMany`](IcalValidateError::TooMany) per over-frequent property.
 ///
 /// Only the "too many" direction: whether a property is *required* depends on
 /// the component it sits in, which the per-property cardinality does not know,
@@ -392,7 +393,7 @@ impl<'a> TryFrom<Ical<'a>> for IcalValid<Ical<'a>> {
     }
 }
 
-impl<'a> From<IcalValid<Ical<'a>>> for crate::tree::cst::IcalCst<'static> {
+impl<'a> From<IcalValid<Ical<'a>>> for IcalCst<'static> {
     fn from(valid: IcalValid<Ical<'a>>) -> Self {
         valid.into_inner().encode()
     }

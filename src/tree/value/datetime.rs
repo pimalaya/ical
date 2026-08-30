@@ -18,7 +18,7 @@ use crate::{
 
 impl<'v> Codec<'v> for IcalDate<'v> {
     fn decode(node: &'v IcalValueNode<'_>) -> Self {
-        IcalDate(node.decode_scalar_at(0))
+        IcalDate(node.decode())
     }
 
     fn encode(&self, escaper: Escaper) -> IcalValueNode<'static> {
@@ -27,7 +27,7 @@ impl<'v> Codec<'v> for IcalDate<'v> {
 }
 impl<'v> Codec<'v> for IcalDateTimeList<'v> {
     fn decode(node: &'v IcalValueNode<'_>) -> Self {
-        IcalDateTimeList(node.decode_at(0))
+        IcalDateTimeList(node.decode_list())
     }
 
     fn encode(&self, escaper: Escaper) -> IcalValueNode<'static> {
@@ -37,7 +37,7 @@ impl<'v> Codec<'v> for IcalDateTimeList<'v> {
 
 impl<'v> Codec<'v> for IcalDateTime<'v> {
     fn decode(node: &'v IcalValueNode<'_>) -> Self {
-        IcalDateTime(node.decode_scalar_at(0))
+        IcalDateTime(node.decode())
     }
 
     fn encode(&self, escaper: Escaper) -> IcalValueNode<'static> {
@@ -46,7 +46,7 @@ impl<'v> Codec<'v> for IcalDateTime<'v> {
 }
 impl<'v> Codec<'v> for IcalTime<'v> {
     fn decode(node: &'v IcalValueNode<'_>) -> Self {
-        IcalTime(node.decode_scalar_at(0))
+        IcalTime(node.decode())
     }
 
     fn encode(&self, escaper: Escaper) -> IcalValueNode<'static> {

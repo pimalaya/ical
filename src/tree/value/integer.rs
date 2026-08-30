@@ -12,7 +12,7 @@ use crate::{
 
 impl<'v> Codec<'v> for IcalInteger<'v> {
     fn decode(node: &'v IcalValueNode<'_>) -> Self {
-        IcalInteger(node.decode_scalar_at(0))
+        IcalInteger(node.decode())
     }
 
     fn encode(&self, escaper: Escaper) -> IcalValueNode<'static> {

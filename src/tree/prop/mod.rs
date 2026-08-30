@@ -3,12 +3,14 @@
 //! The property lens contract, the per-property spec, and one module per
 //! iCalendar property.
 //!
-//! [`IcalPropLens`](lens::IcalPropLens) ties a wire name to a decoded value type
-//! plus the `decode` projection and an edit cursor; each property implements it
-//! on the marker in its own module, the type-level key for
-//! [`IcalCst::prop`](crate::tree::cst::IcalCst::prop). The per-property contract
-//! is [`IcalPropSpec`](spec::IcalPropSpec), with the
-//! [`IcalPropCardinality`](cardinality::IcalPropCardinality) multiplicity axis.
+//! [`IcalPropLens`](lens::IcalPropLens) ties a wire name to a decoded value
+//! type plus the `decode` projection and an edit cursor; each property
+//! implements it on the marker in its own module, the type-level key for
+//! [`IcalCst::prop`](crate::tree::cst::IcalCst::prop).
+//!
+//! The per-property contract is [`IcalPropSpec`](spec::IcalPropSpec), with
+//! the [`IcalPropCardinality`](cardinality::IcalPropCardinality) multiplicity
+//! axis.
 
 pub mod aalarm;
 pub mod acknowledged;

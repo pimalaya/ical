@@ -2,15 +2,18 @@
 //!
 //! Reconcile two divergent edits of a calendar against their common base.
 //!
-//! [`IcalMerge::merge`] is the unit a synchronisation engine needs: given a base
-//! calendar and two calendars derived from it, it reports what each side changed
-//! relative to the base and builds one merged calendar. Never
-//! last-writer-wins: a field only one side touched is taken from that side, and
-//! a field both sides touched is a conflict, reported so a caller can resolve it
-//! differently. The merged calendar starts as a clone of the left one, so the
-//! left side's bytes are there exactly as they were, folds included; the right
-//! side's actions are then replayed line by line, so every line the right side
-//! did not touch keeps its bytes too.
+//! [`IcalMerge::merge`] is the unit a synchronisation engine needs: given a
+//! base calendar and two calendars derived from it, it reports what each side
+//! changed relative to the base and builds one merged calendar.
+//!
+//! Never last-writer-wins: a field only one side touched is taken from that
+//! side, and a field both sides touched is a conflict, reported so a caller
+//! can resolve it differently.
+//!
+//! The merged calendar starts as a clone of the left one, so the left side's
+//! bytes are there exactly as they were, folds included; the right side's
+//! actions are then replayed line by line, so every line the right side did
+//! not touch keeps its bytes too.
 //!
 //! ## Ours and theirs
 //!
@@ -21,18 +24,20 @@
 //!
 //! One side answers both questions on purpose. A caller reaches for a merge
 //! holding a version it is merging into, and that version is the one it would
-//! rather not churn and the one it means to keep. Every collision is reported
-//! either way, so a caller wanting the other value puts it to somebody rather
-//! than asking the merge to guess.
+//! rather not churn and the one it means to keep.
+//!
+//! Every collision is reported either way, so a caller wanting the other
+//! value puts it to somebody rather than asking the merge to guess.
 //!
 //! ## What is matched with what
 //!
 //! A component is matched across the three calendars by its `UID` and its
 //! `RECURRENCE-ID`, the identity iCalendar itself uses (RFC 5545 3.8.4.7,
 //! 3.8.4.4): an override of one instance is never confused with the series it
-//! belongs to, however the two are ordered in the file. A component carrying no
-//! `UID` (a `VALARM`, a `STANDARD`, a `VTIMEZONE` observance) is matched by its
-//! position among its same-named siblings.
+//! belongs to, however the two are ordered in the file.
+//!
+//! A component carrying no `UID` (a `VALARM`, a `STANDARD`, a `VTIMEZONE`
+//! observance) is matched by its position among its same-named siblings.
 //!
 //! Inside a matched component, a property is matched down one ladder: a
 //! synchronisation identity, which iCalendar does not define for a property so
@@ -52,12 +57,14 @@
 //! An identity is compared lowercased and written back exactly, so an address
 //! meets the other case it was written in while the line keeps its own bytes.
 //!
-//! Everything else is matched by name, then by equality, then by position, and
-//! a position an action carries is the one its target held in the base,
+//! Everything else is matched by name, then by equality, then by position,
+//! and a position an action carries is the one its target held in the base,
 //! translated through the baseline side's own removals before it is resolved
-//! against the merged calendar. An addition is the exception, since it names a
-//! property the base did not hold: it carries the position it holds in the
-//! side that added it, and never meets an action addressed in the base.
+//! against the merged calendar.
+//!
+//! An addition is the exception, since it names a property the base did not
+//! hold: it carries the position it holds in the side that added it, and
+//! never meets an action addressed in the base.
 //!
 //! ## What counts as a change
 //!
@@ -65,7 +72,26 @@
 //! added or removed, a parameter added, removed or changed. List items merge as
 //! a set, both sides' additions and removals applying, so they never collide.
 //!
-//! ## The three ways a merge can conflict
+//! ## What counts as one act performed twice
+//!
+//! Two sides agree only where they wrote the same bytes. A decode is not
+//! injective, so `\N` and `\n` read alike (RFC 5545 section 3.3.11) while
+//! saying different things on the wire, and reading two such lines as one act
+//! would drop the difference without a word.
+//!
+//! The right side's act is instead judged normally, meets the left side's,
+//! and is reported. An act that only takes something away wrote no bytes, and
+//! what it names lives in the base both sides share, so the act itself
+//! settles it.
+//!
+//! The one exception is a parameter the specification gives no order:
+//! `DELEGATED-FROM` and `DELEGATED-TO` (sections 3.2.4 and 3.2.5), `MEMBER`
+//! (section 3.2.11) and `FEATURE` (RFC 7986 section 6.3).
+//!
+//! Those hold lists rather than sequences, so two sides writing one list in
+//! two orders wrote one parameter and compare as a set.
+//!
+//! ## The two ways a merge can conflict
 //!
 //! **Divergence.** Both sides changed the same field. The left side's outcome
 //! is kept, except where a removal meets an update: there the update wins
@@ -73,17 +99,21 @@
 //!
 //! **Recurrence.** One side changed what defines the series (its `DTSTART`,
 //! `DTEND`, `DURATION`, `RRULE`, `RDATE` or `EXDATE`, or the series component
-//! itself) while the other changed one instance of it. Neither is wrong and
-//! both survive, but a rule that moved may have moved the ground the override
-//! stood on, so it is reported. A change to anything else the series carries
-//! cannot have moved an occurrence and is not reported against one.
+//! itself) while the other changed one instance of it.
+//!
+//! Neither is wrong and both survive, but a rule that moved may have moved
+//! the ground the override stood on, so it is reported. A change to anything
+//! else the series carries cannot have moved an occurrence and is not
+//! reported against one.
 
 use core::cmp::Reverse;
 
 use alloc::{
     borrow::{Cow, ToOwned},
+    boxed::Box,
     format,
     string::{String, ToString},
+    vec,
     vec::Vec,
 };
 
@@ -91,9 +121,11 @@ use crate::{
     param::IcalParam,
     prop::{IcalPropKind, IcalPropName},
     tree::{
+        codec::unescape::unescape_param,
         cst::{IcalCst, IcalItem},
         leaf::IcalLeaf,
         line::IcalLine,
+        param::node::IcalParamNode,
         value::{cursor::IcalValueCursor, node::IcalValueNode},
     },
     value::IcalValue,
@@ -254,34 +286,88 @@ impl<'a> IcalMerge<'_, 'a> {
 
     /// Whether the two sides performed the same act.
     ///
-    /// An addition names where it lands and what it says, never how it is
-    /// spelt, so the two sides' own bytes settle it: a property and a component
-    /// both sides added are the same addition only where both wrote the same
-    /// thing.
+    /// An act names where it lands and what it says, never how it is spelt, so
+    /// the two sides' own bytes settle it: what one side did is what the other
+    /// did only where both wrote the same thing.
     fn agrees(&self, left: &Op<'a>, right: &Op<'a>) -> bool {
-        if left.action != right.action {
-            return false;
-        }
+        same_change(&left.action, &right.action) && self.wrote_alike(left, right)
+    }
 
+    /// Whether the two sides put the same bytes on the wire for one act.
+    ///
+    /// A decode is not injective, so two sides that wrote different bytes can
+    /// decode alike, and calling that an agreement drops a difference without
+    /// a word. What is weighed is what the act wrote: a component or line
+    /// added, a value changed, a list item gained, a parameter written.
+    ///
+    /// An act that only takes something away wrote nothing, and what it names
+    /// lives in the base both sides share, so the act itself settles it.
+    ///
+    /// A parameter RFC 5545 gives no order compares as a set of raw values,
+    /// for the reason [`unordered`] gives.
+    fn wrote_alike(&self, left: &Op<'a>, right: &Op<'a>) -> bool {
         match &right.action {
-            IcalMergeAction::PropAdded { .. } => {
-                let held = self.added_line(self.left, left);
-
-                held.is_some() && held == self.added_line(self.right, right)
-            }
             IcalMergeAction::ComponentAdded { at } => {
                 let held = find(self.left, at).map(IcalCst::to_bytes);
 
                 held.is_some() && held == find(self.right, at).map(IcalCst::to_bytes)
             }
-            _ => true,
+            IcalMergeAction::PropAdded { .. } => {
+                let held = self.added_line(self.left, left);
+
+                held.is_some() && held == self.added_line(self.right, right)
+            }
+            IcalMergeAction::ComponentRemoved { .. }
+            | IcalMergeAction::PropRemoved { .. }
+            | IcalMergeAction::ValueItemRemoved { .. }
+            | IcalMergeAction::ParamRemoved { .. } => true,
+            IcalMergeAction::ValueChanged { .. } => {
+                let (Some(ours), Some(theirs)) = self.written_lines(left, right) else {
+                    return false;
+                };
+
+                raw_value(&ours.value) == raw_value(&theirs.value)
+            }
+            IcalMergeAction::ValueItemAdded { item, .. } => {
+                let (Some(ours), Some(theirs)) = self.written_lines(left, right) else {
+                    return false;
+                };
+
+                item_alike(&ours.value, &theirs.value, item)
+            }
+            IcalMergeAction::ParamAdded { param, .. }
+            | IcalMergeAction::ParamChanged { new: param, .. } => {
+                let (Some(ours), Some(theirs)) = self.written_lines(left, right) else {
+                    return false;
+                };
+
+                param_alike(ours, &left.slot, theirs, &right.slot, param)
+            }
         }
+    }
+
+    /// The two lines the two sides wrote their acts on, each in its own side.
+    fn written_lines(
+        &self,
+        left: &Op<'a>,
+        right: &Op<'a>,
+    ) -> (Option<&IcalLine<'a>>, Option<&IcalLine<'a>>) {
+        (
+            self.written_line(self.left, left),
+            self.written_line(self.right, right),
+        )
+    }
+
+    /// The line an act was written on, in the side that wrote it.
+    fn written_line<'c>(&self, cst: &'c IcalCst<'a>, op: &Op<'a>) -> Option<&'c IcalLine<'a>> {
+        let at = op.source.as_ref()?;
+
+        line_at(find(cst, &at.component)?, at, Some(at.index))
     }
 
     /// The bytes of the line an addition put in one side.
     fn added_line(&self, cst: &IcalCst<'a>, op: &Op<'a>) -> Option<Vec<u8>> {
-        let at = op.source.as_ref()?;
-        let line = line_at(find(cst, &at.component)?, at, Some(at.index))?;
+        let line = self.written_line(cst, op)?;
         let mut out = Vec::new();
 
         line.write_bytes(&mut out);
@@ -297,10 +383,10 @@ fn added(op: &Op<'_>) -> bool {
 
 /// Whether one action takes away what the other one still works on.
 ///
-/// Granularity is what settles it rather than the word removal: a side that
-/// drops one parameter of a property keeps the property, so against a side that
-/// removed the property whole it is the one preserving data. Two actions at one
-/// granularity are a stand-off unless exactly one of them removes.
+/// Granularity settles it rather than the word removal: a side dropping one
+/// parameter keeps the property, so against a side that removed the property
+/// whole it is the one preserving data. Two actions at one granularity are a
+/// stand-off unless exactly one removes.
 fn scraps(one: &Op<'_>, two: &Op<'_>) -> bool {
     if !one.action.is_removal() {
         return false;
@@ -317,8 +403,9 @@ fn scraps(one: &Op<'_>, two: &Op<'_>) -> bool {
 ///
 /// A component and a property carrying no identity of its own are addressed by
 /// the position they held in the base, and taking one out renumbers every
-/// same-named one after it. Removals therefore go last, highest position first,
-/// so each one still names in the merged calendar what it named in the base.
+/// same-named one after it. Removals therefore go last, highest position
+/// first, so each still names in the merged calendar what it named in the base.
+///
 /// Everything else keeps the order the diff produced, which a stable sort
 /// preserves.
 fn replay_order(op: &Op<'_>) -> (u8, Reverse<usize>) {
@@ -377,14 +464,15 @@ impl<'a> Shift<'a> {
         Self { removed, added }
     }
 
-    /// Where a base position sits in the merged calendar, or `None` where the
-    /// baseline side removed the very property the position names.
+    /// Where a base position sits in the merged calendar.
     ///
-    /// The merged calendar starts as the baseline side's own tree, so a base
-    /// position moves twice: up past everything that side removed below it,
-    /// then down past everything it added at or before where it lands. Reading
-    /// the removals alone made a left-side insertion address the line before
-    /// the one meant, which edited a property nobody had touched.
+    /// `None` where the baseline side removed the very property the position
+    /// names. The merged calendar starts as that side's own tree, so a base
+    /// position moves twice: up past everything it removed below, then down
+    /// past everything it added at or before where it lands.
+    ///
+    /// Reading the removals alone made a left-side insertion address the line
+    /// before the one meant, which edited a property nobody had touched.
     fn translate(&self, at: &IcalPropPath<'_>) -> Option<usize> {
         let name = at.name.to_ascii_uppercase();
         let mut shift = 0;
@@ -483,13 +571,16 @@ pub struct IcalPropPath<'a> {
     /// The position among the component's properties of that name, counted in
     /// the calendar the action was read from.
     pub index: usize,
-    /// The value that tells the property from its same-named siblings, where
-    /// iCalendar gives it one: the calendar user address of an `ATTENDEE`, the
-    /// URI or inline binary of an `ATTACH`, the `UID` a `RELATED-TO` points
-    /// at, the URI of a `CONFERENCE` or an `IMAGE`. Lowercased, since matching
-    /// normalises and writing is exact. `None` for every other property, whose
-    /// position is then what tells it from its siblings, and `None` too for a
-    /// value a same-named sibling repeats, which tells neither of them apart.
+    /// The value that tells the property from its same-named siblings.
+    ///
+    /// Where iCalendar gives it one: the calendar user address of an
+    /// `ATTENDEE`, the URI or inline binary of an `ATTACH`, the `UID` a
+    /// `RELATED-TO` points at, the URI of a `CONFERENCE` or an `IMAGE`.
+    /// Lowercased, since matching normalises and writing is exact.
+    ///
+    /// `None` for every other property, whose position then tells it from its
+    /// siblings, and `None` too for a value a same-named sibling repeats,
+    /// which tells neither of them apart.
     pub identity: Option<Cow<'a, str>>,
 }
 
@@ -648,8 +739,7 @@ enum Slot {
     },
 }
 
-/// Whether a component-level action takes away or replaces what another action
-/// works on.
+/// Whether a component-level action takes away or replaces another's target.
 ///
 /// A component one side removed or added is a component the other side cannot
 /// usefully edit, at any depth. Two removals overlapping are left alone: both
@@ -817,8 +907,8 @@ fn raw(cst: &IcalCst<'_>, kind: IcalPropKind) -> Option<String> {
 ///
 /// `BEGIN` and `END` are the component envelope rather than properties, and a
 /// bare, envelope-less record holds them as lines like any other, so they are
-/// skipped here: no side is ever reported as having added or removed one, and
-/// none is ever copied into a calendar that would then refuse to parse.
+/// skipped: no side is reported as adding or removing one, and none is copied
+/// into a calendar that would then refuse to parse.
 fn lines<'c, 'a>(cst: &'c IcalCst<'a>) -> impl Iterator<Item = &'c IcalLine<'a>> {
     cst.items
         .iter()
@@ -869,7 +959,7 @@ fn diff<'a>(base: &[Node<'_, 'a>], side: &[Node<'_, 'a>], version: IcalVersion) 
     // twice with no `RECURRENCE-ID` telling them apart, so each side component
     // is matched once: matching both base components against the same one
     // would report the difference between them as a change either side made.
-    let mut taken = alloc::vec![false; side.len()];
+    let mut taken = vec![false; side.len()];
 
     for node in base {
         let Some((at, held)) = side
@@ -1032,22 +1122,20 @@ fn diff_component<'a>(
     }
 }
 
-/// The value that tells a property from its same-named siblings, where
-/// iCalendar gives it one.
+/// The value that tells a property from its same-named siblings.
 ///
-/// A property that may occur more than once in a component and whose value
-/// names a thing outside the calendar is that thing: an `ATTENDEE` is a
-/// calendar user address (RFC 5545 3.8.4.1), an `ATTACH` a URI or an inline
-/// binary (3.8.1.1), a `RELATED-TO` the `UID` of another component (3.8.4.5), a
-/// `CONFERENCE` and an `IMAGE` a URI (RFC 7986 5.11, 5.10). Every other
-/// property has none: either it may occur only once, so its name already tells
-/// it apart, or its value is the datum being edited, and keying on it would
-/// make every edit a replacement.
+/// A property that may occur more than once and whose value names a thing
+/// outside the calendar is that thing: an `ATTENDEE` a calendar user address
+/// (RFC 5545 3.8.4.1), an `ATTACH` a URI or inline binary (3.8.1.1), a
+/// `RELATED-TO` a `UID` (3.8.4.5), a `CONFERENCE` or `IMAGE` a URI (RFC 7986).
 ///
-/// An identity that does not tell a property from its same-named siblings is
-/// no identity: a value written twice in one component names both of them, so
-/// those fall back to their positions, and a sibling that is still alone with
-/// its value keeps its own.
+/// Every other property has none: either it may occur only once, so its name
+/// already tells it apart, or its value is the datum being edited, and keying
+/// on it would make every edit a replacement.
+///
+/// An identity that does not tell a property from its siblings is no identity:
+/// a value written twice in one component names both, so those fall back to
+/// their positions, and a sibling still alone with its value keeps its own.
 fn identity_in<'a>(lines: &[&IcalLine<'a>], at: usize) -> Option<Cow<'a, str>> {
     let held = identity_of(lines[at])?;
     let name = lines[at].name.get();
@@ -1092,11 +1180,10 @@ fn value_text(line: &IcalLine<'_>) -> String {
 
 /// The same value, normalised into the key an identity is compared on.
 ///
-/// Matching normalises and writing is exact. A URI scheme is
-/// case-insensitive (RFC 3986 3.1) and so is the host of a mail address, so
-/// `MAILTO:Ada@Example.com` and `mailto:ada@example.com` name one person and
-/// have to meet. What goes back on the wire is the bytes the line arrived
-/// with: normalise on the way out and byte fidelity is gone.
+/// Matching normalises and writing is exact. A URI scheme is case-insensitive
+/// (RFC 3986 3.1) and so is a mail address host, so `MAILTO:Ada@Example.com`
+/// and `mailto:ada@example.com` name one person and have to meet. What goes
+/// back on the wire is the bytes the line arrived with.
 fn value_key(line: &IcalLine<'_>) -> String {
     value_text(line).to_lowercase()
 }
@@ -1151,16 +1238,22 @@ fn diff_prop<'a>(
         let ordinal = ordinal_of(&base_prop.params, index, &name);
         let held = nth_param(&side_prop.params, &name, ordinal);
 
+        // NOTE: the raw nodes are what is compared, not the decoded
+        // parameters: a single-valued parameter decodes its first value alone,
+        // so two parameters differing past the first `,` decode alike and the
+        // edit is never seen.
         let action = match held {
             None => IcalMergeAction::ParamRemoved {
                 at: at.clone(),
                 param: param.clone().into_owned(),
             },
-            Some(held) if held != param => IcalMergeAction::ParamChanged {
-                at: at.clone(),
-                old: param.clone().into_owned(),
-                new: held.clone().into_owned(),
-            },
+            Some(held) if !param_eq(&base.params[index], &side.params[held]) => {
+                IcalMergeAction::ParamChanged {
+                    at: at.clone(),
+                    old: param.clone().into_owned(),
+                    new: side_prop.params[held].clone().into_owned(),
+                }
+            }
             Some(_) => continue,
         };
 
@@ -1189,11 +1282,6 @@ fn diff_prop<'a>(
         });
     }
 
-    // NOTE: the raw nodes are what is compared, not the decoded values: a
-    // decoded value reads its own kind's shape, and a text value reads one
-    // component alone, so two lines differing past the first `;` decode alike
-    // and the edit is never seen. A line rewritten without changing what it
-    // says still compares equal, component by component.
     if value_eq(&base.value, &side.value) {
         return;
     }
@@ -1221,10 +1309,9 @@ fn diff_prop<'a>(
 
 /// Whether two raw value nodes say the same thing, component by component.
 ///
-/// The comparison is on the nodes rather than on the decoded values: a decoded
+/// The comparison is on the nodes rather than the decoded values: a decoded
 /// value reads its own kind's shape, and a text value reads one component
-/// alone, so two lines differing past the first `;` decode alike and the
-/// difference is never seen.
+/// alone, so two lines differing past the first `;` decode alike.
 fn value_eq(old: &IcalValueNode<'_>, new: &IcalValueNode<'_>) -> bool {
     // NOTE: two calendars of different versions escape values by different
     // rules, so they share no decoding to compare through. Only identical
@@ -1235,7 +1322,7 @@ fn value_eq(old: &IcalValueNode<'_>, new: &IcalValueNode<'_>) -> bool {
 
     let count = old.component_count().max(new.component_count());
 
-    (0..count).all(|i| component_eq(&old.decode_at(i), &new.decode_at(i)))
+    (0..count).all(|i| component_eq(&old.decode_component_list(i), &new.decode_component_list(i)))
 }
 
 /// The serialized bytes of a value node, for comparing across escaping modes.
@@ -1243,6 +1330,190 @@ fn raw_value(node: &IcalValueNode<'_>) -> Vec<u8> {
     let mut out = Vec::new();
     node.write_bytes(&mut out);
     out
+}
+
+/// Whether two raw parameter nodes say the same thing, value by value.
+///
+/// On the nodes rather than the decoded parameters, for the reason
+/// [`value_eq`] gives: a single-valued parameter reads its first value alone,
+/// so two differing past the first `,` decode alike.
+fn param_eq(old: &IcalParamNode<'_>, new: &IcalParamNode<'_>) -> bool {
+    // NOTE: two calendars of different versions encode parameters by different
+    // rules, so they share no decoding to compare through. Only identical
+    // bytes are then certainly the same parameter.
+    if old.escaper != new.escaper {
+        return raw_param(old) == raw_param(new);
+    }
+
+    old.values.len() == new.values.len()
+        && old
+            .values
+            .iter()
+            .zip(&new.values)
+            .all(|(old_value, value)| {
+                unescape_param(old_value.get(), old.escaper)
+                    == unescape_param(value.get(), new.escaper)
+            })
+}
+
+/// The serialized bytes of a parameter node, for comparing across escaping
+/// modes.
+fn raw_param(node: &IcalParamNode<'_>) -> Vec<u8> {
+    let mut out = Vec::new();
+    node.write_bytes(&mut out);
+    out
+}
+
+/// Whether two actions are the same change, before the bytes each side wrote
+/// are weighed.
+///
+/// Equality is exact but for a parameter the specification gives no order,
+/// whose values compare as a set: see [`same_param`].
+fn same_change(left: &IcalMergeAction<'_>, right: &IcalMergeAction<'_>) -> bool {
+    use IcalMergeAction::{ParamAdded, ParamChanged, ParamRemoved};
+
+    match (left, right) {
+        (
+            ParamAdded {
+                at: left_at,
+                param: left,
+            },
+            ParamAdded {
+                at: right_at,
+                param: right,
+            },
+        )
+        | (
+            ParamRemoved {
+                at: left_at,
+                param: left,
+            },
+            ParamRemoved {
+                at: right_at,
+                param: right,
+            },
+        ) => left_at == right_at && same_param(left, right),
+        (
+            ParamChanged {
+                at: left_at,
+                old: left_old,
+                new: left_new,
+            },
+            ParamChanged {
+                at: right_at,
+                old: right_old,
+                new: right_new,
+            },
+        ) => {
+            left_at == right_at
+                && same_param(left_old, right_old)
+                && same_param(left_new, right_new)
+        }
+        (left, right) => left == right,
+    }
+}
+
+/// Whether two parameters carry the same value, a list parameter the
+/// specification gives no order compared as a set: see [`unordered`].
+fn same_param(left: &IcalParam<'_>, right: &IcalParam<'_>) -> bool {
+    match (left, right) {
+        (IcalParam::DelegatedFrom(left), IcalParam::DelegatedFrom(right))
+        | (IcalParam::DelegatedTo(left), IcalParam::DelegatedTo(right))
+        | (IcalParam::Member(left), IcalParam::Member(right))
+        | (IcalParam::Feature(left), IcalParam::Feature(right)) => sorted(left) == sorted(right),
+        (left, right) => left == right,
+    }
+}
+
+/// Whether a parameter's values are a set rather than a sequence.
+///
+/// Two sides writing them in two orders then wrote one parameter.
+/// `DELEGATED-FROM` and `DELEGATED-TO` (RFC 5545 3.2.4, 3.2.5), `MEMBER`
+/// (3.2.11) and `FEATURE` (RFC 7986 6.3) each hold a list the specification
+/// gives no order, so no arrangement means more than another.
+fn unordered(param: &IcalParam<'_>) -> bool {
+    matches!(
+        param,
+        IcalParam::DelegatedFrom(_)
+            | IcalParam::DelegatedTo(_)
+            | IcalParam::Member(_)
+            | IcalParam::Feature(_)
+    )
+}
+
+/// A list parameter's values in a stable order, for comparing them as a set.
+fn sorted<'v>(values: &'v [Cow<'_, str>]) -> Vec<&'v str> {
+    let mut items: Vec<&str> = values.iter().map(Cow::as_ref).collect();
+    items.sort_unstable();
+    items
+}
+
+/// Whether two sides spelled one parameter the same way on the wire.
+///
+/// A parameter the specification gives no order compares as a set of raw
+/// values, for the reason [`unordered`] gives; every other parameter compares
+/// whole, so how it is written is part of what it says.
+fn param_alike(
+    ours: &IcalLine<'_>,
+    our_slot: &Slot,
+    theirs: &IcalLine<'_>,
+    their_slot: &Slot,
+    param: &IcalParam<'_>,
+) -> bool {
+    let (
+        Slot::Param {
+            name: our_name,
+            at: our_at,
+        },
+        Slot::Param {
+            name: their_name,
+            at: their_at,
+        },
+    ) = (our_slot, their_slot)
+    else {
+        return false;
+    };
+
+    let (Some(ours), Some(theirs)) = (
+        param_position(ours, our_name, *our_at).map(|held| &ours.params[held]),
+        param_position(theirs, their_name, *their_at).map(|held| &theirs.params[held]),
+    ) else {
+        return false;
+    };
+
+    if !unordered(param) {
+        return raw_param(ours) == raw_param(theirs);
+    }
+
+    let raw = |node: &IcalParamNode<'_>| {
+        let mut values: Vec<String> = node
+            .values
+            .iter()
+            .map(|leaf| leaf.get().to_string())
+            .collect();
+        values.sort_unstable();
+        values
+    };
+
+    ours.name.get().eq_ignore_ascii_case(theirs.name.get()) && raw(ours) == raw(theirs)
+}
+
+/// Whether two sides spelled one item of a list value the same way on the
+/// wire.
+fn item_alike(ours: &IcalValueNode<'_>, theirs: &IcalValueNode<'_>, item: &str) -> bool {
+    let raw = |node: &IcalValueNode<'_>| -> Option<Vec<u8>> {
+        let at = node
+            .decode_list()
+            .iter()
+            .position(|held| held.as_ref() == item)?;
+
+        node.raw_list().into_iter().nth(at)
+    };
+
+    match (raw(ours), raw(theirs)) {
+        (Some(ours), Some(theirs)) => ours == theirs,
+        _ => false,
+    }
 }
 
 /// Whether one component's values match, an all-empty component counting as
@@ -1337,15 +1608,15 @@ fn ordinal_of(params: &[IcalParam<'_>], at: usize, name: &str) -> usize {
         .count()
 }
 
-/// The parameter of that name at that position, if the property has one.
-fn nth_param<'p, 'a>(
-    params: &'p [IcalParam<'a>],
-    name: &str,
-    at: usize,
-) -> Option<&'p IcalParam<'a>> {
+/// The position of the parameter of that name at that ordinal, if the property
+/// has one. The index addresses the decoded list and its raw parameter nodes
+/// alike, which a decode maps one for one.
+fn nth_param(params: &[IcalParam<'_>], name: &str, at: usize) -> Option<usize> {
     params
         .iter()
-        .filter(|held| param_name(held) == name)
+        .enumerate()
+        .filter(|(_, held)| param_name(held) == name)
+        .map(|(index, _)| index)
         .nth(at)
 }
 
@@ -1366,9 +1637,7 @@ fn apply<'a>(
                 return;
             };
 
-            target
-                .items
-                .push(IcalItem::Component(alloc::boxed::Box::new(source)));
+            target.items.push(IcalItem::Component(Box::new(source)));
         }
         IcalMergeAction::ComponentRemoved { at } => {
             let Some(target) = find_mut(merged, &parent(at)) else {
@@ -1481,10 +1750,15 @@ fn apply_to_line<'a>(
         IcalMergeAction::ValueItemAdded { item, .. } => {
             let mut items: Vec<String> = list(line);
 
-            if !items.iter().any(|held| held == item) {
-                items.push(item.to_string());
+            // NOTE: the list is written back only where the item really joins
+            // it. Writing it back escapes every item afresh, so a replay that
+            // changes nothing would still spell the left side's own items the
+            // canonical way and churn bytes nobody edited.
+            if items.iter().any(|held| held == item) {
+                return;
             }
 
+            items.push(item.to_string());
             set_list(line, &items);
         }
         IcalMergeAction::ValueItemRemoved { item, .. } => {
@@ -1492,10 +1766,11 @@ fn apply_to_line<'a>(
             // multiset, so `a,a,b` losing one `a` keeps the other.
             let mut kept = list(line);
 
-            if let Some(held) = kept.iter().position(|held| held == item) {
-                kept.remove(held);
-            }
+            let Some(held) = kept.iter().position(|held| held == item) else {
+                return;
+            };
 
+            kept.remove(held);
             set_list(line, &kept);
         }
         // NOTE: A parameter name may be written more than once on one line
@@ -1509,9 +1784,9 @@ fn apply_to_line<'a>(
             }
         }
         // NOTE: The parameter is copied off the source line rather than
-        // re-encoded from the decoded action: decoding resolves the value
-        // escapes and encoding does not put them back, so a re-encoding can
-        // write a line break into the head.
+        // re-encoded from the decoded action, so the side that wrote it keeps
+        // its own spelling: a re-encoding would write the canonical RFC 6868
+        // form of a value the source spelled another way.
         IcalMergeAction::ParamAdded { .. } | IcalMergeAction::ParamChanged { .. } => {
             let Slot::Param { name, at } = &op.slot else {
                 return;
@@ -1543,13 +1818,22 @@ fn param_position(line: &IcalLine<'_>, name: &str, at: usize) -> Option<usize> {
         .nth(at)
 }
 
-/// The items of a line's list value.
+/// The items of a line's list value, an emptied list holding none.
 fn list(line: &mut IcalLine<'_>) -> Vec<String> {
-    IcalValueCursor { line }
+    let items: Vec<String> = IcalValueCursor { line }
         .list()
         .into_iter()
         .map(Cow::into_owned)
-        .collect()
+        .collect();
+
+    // NOTE: The wire cannot tell an empty list from a list of one empty item,
+    // so an emptied value reads back as a single empty item. Left there, the
+    // next addition would keep it and write a leading comma into the value.
+    if items.iter().all(|item| item.is_empty()) {
+        return Vec::new();
+    }
+
+    items
 }
 
 /// Replace the items of a line's list value.
@@ -1675,10 +1959,10 @@ fn nth_line_mut<'c, 'a>(
 
 /// A copy of a line that is sure to end.
 ///
-/// A side may have been read from a truncated download, and its last line then
-/// carries no line ending. Copied into the middle of a calendar it would
-/// swallow the line after it, `END:VCALENDAR` included, and the merge would
-/// emit bytes its own parser refuses.
+/// A side may have been read from a truncated download, its last line carrying
+/// no line ending. Copied into the middle of a calendar it would swallow the
+/// line after it, `END:VCALENDAR` included, and the merge would emit bytes its
+/// own parser refuses.
 fn terminated<'a>(line: &IcalLine<'a>) -> IcalLine<'a> {
     let mut held = line.clone();
 

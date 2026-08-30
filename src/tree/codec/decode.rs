@@ -1,16 +1,19 @@
 //! # Decode (syntax to model)
 //!
 //! The read side of the structural bridge: project a raw syntax tree onto the
-//! decoded model. A [`IcalValueNode`] decodes its components, a
-//! [`IcalParamNode`] decodes into an [`IcalParam`], an [`IcalLine`] decodes into
-//! an [`IcalProp`], and an [`IcalCst`] decodes into a whole [`Ical`]
-//! (recursively, walking every nested component).
+//! decoded model.
+//!
+//! A [`IcalValueNode`] decodes its components, a [`IcalParamNode`] decodes
+//! into an [`IcalParam`], an [`IcalLine`] decodes into an [`IcalProp`], and an
+//! [`IcalCst`] decodes into a whole [`Ical`], recursively, walking every
+//! nested component.
 //!
 //! A property's value kind is resolved through its spec, not a name match:
-//! [`IcalLine::decode`] maps the name to an [`IcalPropKind`], asks the spec for
-//! the in-force value kind (version plus any declared `VALUE`), then routes to
-//! that kind's decoder. The parameter name dispatch is the match in
-//! [`IcalParamNode::decode`].
+//! [`IcalLine::decode`] maps the name to an [`IcalPropKind`], asks the spec
+//! for the in-force value kind (version plus any declared `VALUE`), then
+//! routes to that kind's decoder.
+//!
+//! The parameter name dispatch is the match in [`IcalParamNode::decode`].
 
 use alloc::{borrow::Cow, vec::Vec};
 
@@ -20,7 +23,7 @@ use crate::{
     param::{IcalParam, IcalParamKind},
     prop::{IcalProp, IcalPropKind, IcalPropName},
     tree::{
-        codec::{Codec, unescape::unescape},
+        codec::{Codec, unescape::unescape_param},
         cst::{IcalCst, IcalItem},
         line::IcalLine,
         param::node::IcalParamNode,
@@ -187,7 +190,9 @@ impl IcalParamNode<'_> {
     pub fn decode(&self) -> IcalParam<'_> {
         let Ok(kind) = self.name.get().parse::<IcalParamKind>() else {
             return IcalParam::Unknown {
-                name: unescape(self.name.get()),
+                // NOTE: a parameter name is a token (RFC 5545 3.2), with no
+                // encoding of any kind to resolve.
+                name: Cow::Borrowed(self.name.get()),
                 values: self.list(),
             };
         };
@@ -229,17 +234,21 @@ impl IcalParamNode<'_> {
         }
     }
 
-    /// The parameter's first value, decoded (empty when there is none).
+    /// The parameter's first value, decoded by the RFC 6868 rules (empty when
+    /// there is none).
     fn scalar(&self) -> Cow<'_, str> {
         self.values
             .first()
-            .map(|v| unescape(v.get()))
+            .map(|v| unescape_param(v.get(), self.escaper))
             .unwrap_or(Cow::Borrowed(""))
     }
 
-    /// The parameter's values, decoded.
+    /// The parameter's values, decoded by the RFC 6868 rules.
     fn list(&self) -> Vec<Cow<'_, str>> {
-        self.values.iter().map(|v| unescape(v.get())).collect()
+        self.values
+            .iter()
+            .map(|v| unescape_param(v.get(), self.escaper))
+            .collect()
     }
 }
 
@@ -258,11 +267,30 @@ fn param_is_quoted_printable(param: &IcalParamNode<'_>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use alloc::borrow::Cow;
+    use alloc::{borrow::Cow, vec};
 
     use crate::{
-        tree::cst::IcalCst,
-        value::{IcalValue, datetime::IcalDateTime, text::IcalText},
+        param::IcalParam,
+        tree::{
+            codec::Codec, cst::IcalCst, param::node::IcalParamNode, value::node::IcalValueNode,
+        },
+        value::{
+            IcalValue,
+            binary::IcalBinary,
+            boolean::IcalBoolean,
+            cal_address::IcalCalAddress,
+            datetime::{IcalDate, IcalDateTime, IcalDateTimeList, IcalTime},
+            duration::IcalDuration,
+            float::IcalFloat,
+            integer::IcalInteger,
+            period::IcalPeriod,
+            recur::IcalRecur,
+            request_status::IcalRequestStatus,
+            text::{IcalText, IcalTextList},
+            uri::IcalUri,
+            utc_offset::IcalUtcOffset,
+        },
+        version::IcalVersion,
     };
 
     #[test]
@@ -283,7 +311,7 @@ mod tests {
 
         // NOTE: VERSION is the indicator; PRODID is the only calendar-level
         // prop.
-        assert_eq!(cal.version, crate::version::IcalVersion::V2_0);
+        assert_eq!(cal.version, IcalVersion::V2_0);
         assert_eq!(cal.props.len(), 1);
         assert_eq!(&*cal.props[0].name, "PRODID");
         assert_eq!(cal.components.len(), 1);
@@ -308,5 +336,93 @@ mod tests {
         let cal = cst.decode();
         assert!(matches!(cal.props[0].value, IcalValue::Unknown(_)));
         assert_eq!(&*cal.props[0].name, "X-WR-CALNAME");
+    }
+
+    /// A kind with no `;`-structure of its own is decoded whole.
+    ///
+    /// RFC 5545 3.3.11 has a text value escape a semicolon it means literally
+    /// and 3.3.13 gives a URI no structure, so an unescaped `;` is content in
+    /// either, and reading component by component dropped everything past it.
+    #[test]
+    fn decodes_every_unstructured_kind_whole() {
+        let node = IcalValueNode::parse(b"a;b,c");
+
+        assert_eq!(IcalText::decode(&node).0, "a;b,c");
+        assert_eq!(IcalUri::decode(&node).0, "a;b,c");
+        assert_eq!(IcalCalAddress::decode(&node).0, "a;b,c");
+        assert_eq!(IcalPeriod::decode(&node).0, "a;b,c");
+        assert_eq!(IcalRecur::decode(&node).0, "a;b,c");
+        assert_eq!(
+            IcalBinary::decode(&node),
+            IcalBinary::Base64(Cow::Borrowed("a;b,c")),
+        );
+        assert_eq!(IcalBoolean::decode(&node).0, "a;b,c");
+        assert_eq!(IcalDate::decode(&node).0, "a;b,c");
+        assert_eq!(IcalDateTime::decode(&node).0, "a;b,c");
+        assert_eq!(IcalTime::decode(&node).0, "a;b,c");
+        assert_eq!(IcalDuration::decode(&node).0, "a;b,c");
+        assert_eq!(IcalFloat::decode(&node).0, "a;b,c");
+        assert_eq!(IcalInteger::decode(&node).0, "a;b,c");
+        assert_eq!(IcalUtcOffset::decode(&node).0, "a;b,c");
+
+        // NOTE: A list value owns its commas and nothing else, so only they
+        // separate.
+        assert_eq!(
+            IcalTextList::decode(&node).0,
+            vec![Cow::Borrowed("a;b"), Cow::Borrowed("c")],
+        );
+        assert_eq!(
+            IcalDateTimeList::decode(&node).0,
+            vec![Cow::Borrowed("a;b"), Cow::Borrowed("c")],
+        );
+    }
+
+    /// A structured value's component keeps the commas inside it.
+    ///
+    /// A `REQUEST-STATUS` description is a text, where a comma separates
+    /// nothing, so reading only a component's first comma-piece truncated the
+    /// status a caller reads.
+    #[test]
+    fn decodes_a_structured_component_past_its_first_comma() {
+        let node = IcalValueNode::parse(br"2.0;Success\, welcome;rcpt,two");
+        let status = IcalRequestStatus::decode(&node);
+
+        assert_eq!(status.code, "2.0");
+        assert_eq!(status.description, "Success, welcome");
+        assert_eq!(status.extra, "rcpt,two");
+    }
+
+    #[test]
+    fn decodes_the_rfc_6868_parameter_sequences() {
+        // NOTE: RFC 6868 section 3.1 spells the three characters a parameter
+        // value cannot carry raw.
+        let node = IcalParamNode::parse("CN=a^nb^^c^'d");
+
+        assert_eq!(node.decode(), IcalParam::Cn(Cow::Borrowed("a\nb^c\"d")));
+    }
+
+    #[test]
+    fn keeps_an_unknown_caret_sequence_in_a_parameter() {
+        // NOTE: RFC 6868 section 3.1 forbids reading any other caret sequence
+        // as an error, so the caret and what follows stay literal, and so does
+        // a trailing one.
+        let node = IcalParamNode::parse("CN=a^xb^");
+
+        assert_eq!(node.decode(), IcalParam::Cn(Cow::Borrowed("a^xb^")));
+    }
+
+    #[test]
+    fn keeps_a_backslash_in_a_parameter() {
+        // NOTE: RFC 6868 section 3.2 forbids backslash escaping in a parameter
+        // value, so a Windows path keeps its separators.
+        let node = IcalParamNode::parse(r"X-PATH=C:\temp\note.txt");
+
+        assert_eq!(
+            node.decode(),
+            IcalParam::Unknown {
+                name: Cow::Borrowed("X-PATH"),
+                values: vec![Cow::Borrowed(r"C:\temp\note.txt")],
+            },
+        );
     }
 }

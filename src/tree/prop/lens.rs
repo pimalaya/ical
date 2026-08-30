@@ -2,9 +2,10 @@
 //!
 //! [`IcalPropLens`] ties a property (by type) to its decoded value type, an
 //! edit cursor, and the `decode` projection from the generic syntax node onto
-//! the type. The wire name comes from its [`IcalPropSpec::KIND`] supertrait,
-//! so the two stay in sync; each property implements it on the marker in its
-//! own module.
+//! the type.
+//!
+//! The wire name comes from its [`IcalPropSpec::KIND`] supertrait, so the two
+//! stay in sync; each property implements it on the marker in its own module.
 
 use crate::{
     tree::{codec::Codec, line::IcalLine, prop::spec::IcalPropSpec},

@@ -2,17 +2,21 @@
 //!
 //! [`IcalValid`], the marker a check mints and nothing else can.
 //!
-//! Validity is a runtime predicate in this crate, never a second, stricter type:
-//! a conformant calendar may still carry extensions, so a no-extension type
-//! would name a useless category. What a type *can* carry is the proof that a
-//! check ran and passed, which is what this is: a plain wrapper with a private
-//! field, so the only way to hold one is to have been handed it by a validator.
+//! Validity is a runtime predicate in this crate, never a second, stricter
+//! type: a conformant calendar may still carry extensions, so a no-extension
+//! type would name a useless category.
+//!
+//! What a type *can* carry is the proof that a check ran and passed, which is
+//! what this is: a plain wrapper with a private field, so the only way to
+//! hold one is to have been handed it by a validator.
 //!
 //! Two validators mint it, at opposite ends of the crate:
 //! [`Ical::validate`](crate::ical::Ical::validate) over a whole calendar, and
-//! [`IcalRecurRule::validate`](crate::recur::IcalRecurRule::validate) over one
-//! recurrence rule. The marker lives in the dependency-free core so neither has
-//! to depend on the other's feature to speak the same language.
+//! [`IcalRecurRule::validate`](crate::recur::IcalRecurRule::validate) over
+//! one recurrence rule.
+//!
+//! The marker lives in the dependency-free core so neither has to depend on
+//! the other's feature to speak the same language.
 
 use core::ops;
 

@@ -1,4 +1,4 @@
-//! The three-way merge.
+//! # Three-way merge
 //!
 //! Every case states a base and two edits of it, and asserts three things: the
 //! merged bytes, what each side is reported to have done, and which of the
@@ -606,4 +606,76 @@ fn retyping_a_value_collides_with_the_other_sides_items() {
         "the retype is contested: {:?}",
         report.conflicts,
     );
+}
+
+#[test]
+fn sees_a_parameter_edit_past_the_value_its_decode_reads() {
+    // A single-valued parameter decodes its first value alone, so comparing
+    // the decoded parameters hides an edit to anything after it: the change
+    // is never reported and the right side's edit is silently dropped.
+    let base = edited(
+        "ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:ada@example.com",
+        "ATTENDEE;CN=Ada,Lovelace:mailto:ada@example.com",
+    );
+    let right = base.replace("CN=Ada,Lovelace", "CN=Ada,Byron");
+
+    let report = merge(&base, &base, &right);
+
+    assert!(
+        bytes(&report).contains("CN=Ada,Byron"),
+        "{}",
+        bytes(&report)
+    );
+    assert_eq!(report.right.len(), 1);
+    assert!(matches!(
+        report.right[0],
+        IcalMergeAction::ParamChanged { .. }
+    ));
+}
+
+/// Two sides that wrote different bytes did not perform one act, however
+/// alike the two read.
+///
+/// `\N` and `\n` both unescape to a line break (RFC 5545 section 3.3.11), so
+/// the two actions decoded equal and the right side's edit was taken for the
+/// left side's own: it was skipped as already made and the difference between
+/// the two spellings was never said out loud.
+#[test]
+fn spelling_a_value_two_ways_is_no_agreement() {
+    let left = edited("SUMMARY:Weekly sync", "SUMMARY:Sprint\\nsync");
+    let right = edited("SUMMARY:Weekly sync", "SUMMARY:Sprint\\Nsync");
+
+    let report = merge(BASE, &left, &right);
+
+    assert_eq!(report.conflicts.len(), 1, "{:?}", report.conflicts);
+    assert!(matches!(
+        report.conflicts[0].reason,
+        IcalMergeReason::Divergent(_),
+    ));
+
+    // NOTE: the left side is the one being merged into, so it keeps its own
+    // spelling and the merged calendar is its bytes, untouched.
+    assert_eq!(bytes(&report), left);
+}
+
+/// A parameter the specification gives no order is a set, so two sides
+/// writing one list in two orders wrote one parameter.
+///
+/// `DELEGATED-TO` holds a list RFC 5545 section 3.2.5 gives no order, so
+/// neither arrangement says anything the other does not.
+#[test]
+fn writing_an_unordered_list_parameter_in_two_orders_is_agreement() {
+    let left = edited(
+        "ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:ada@example.com",
+        "ATTENDEE;PARTSTAT=NEEDS-ACTION;DELEGATED-TO=\"mailto:bob@example.com\",\"mailto:cyd@example.com\":mailto:ada@example.com",
+    );
+    let right = edited(
+        "ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:ada@example.com",
+        "ATTENDEE;PARTSTAT=NEEDS-ACTION;DELEGATED-TO=\"mailto:cyd@example.com\",\"mailto:bob@example.com\":mailto:ada@example.com",
+    );
+
+    let report = merge(BASE, &left, &right);
+
+    assert!(report.conflicts.is_empty(), "{:?}", report.conflicts);
+    assert_eq!(bytes(&report), left);
 }

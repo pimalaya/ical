@@ -3,37 +3,44 @@
 //! The typed recurrence rule and its occurrence iterator (RFC 5545 3.3.10,
 //! extended by RFC 7529).
 //!
-//! [`IcalRecur`](crate::value::recur::IcalRecur) keeps a rule as its raw text,
-//! which is what byte-faithful round-tripping needs and all a store or a codec
-//! ever wants. This module is the opt-in layer above it:
-//! [`IcalRecurRule::parse`] decodes that text into typed parts, and
-//! [`expand::IcalRecurExpand`] turns a rule plus a start into the dates it
-//! actually denotes. A rule is only ever part of the answer: what a component
-//! happens on is its whole *recurrence set*, `DTSTART` plus every `RRULE` and
-//! `RDATE`, minus every `EXDATE` and `EXRULE`, with the `RECURRENCE-ID`
-//! overrides applied. That is [`set::IcalRecurSet`], and it is what a client
-//! wants.
+//! [`IcalRecur`](crate::value::recur::IcalRecur) keeps a rule as its raw
+//! text, which is what byte-faithful round-tripping needs and all a store or
+//! a codec ever wants.
+//!
+//! This module is the opt-in layer above it: [`IcalRecurRule::parse`] decodes
+//! that text into typed parts, and [`expand::IcalRecurExpand`] turns a rule
+//! plus a start into the dates it actually denotes.
+//!
+//! A rule is only ever part of the answer: what a component happens on is its
+//! whole *recurrence set*, `DTSTART` plus every `RRULE` and `RDATE`, minus
+//! every `EXDATE` and `EXRULE`, with the `RECURRENCE-ID` overrides applied.
+//! That is [`set::IcalRecurSet`], and it is what a client wants.
 //!
 //! ## Civil times, no time zones
 //!
-//! RFC 5545 defines expansion on the local wall-clock time of `DTSTART`: a daily
-//! rule on a zoned start recurs at the same local time every day, and a UTC start
-//! is simply the case where local is UTC. Expansion therefore never needs a UTC
-//! offset, and this module never resolves one. Occurrences are civil
-//! [`IcalRecurDateTime`]s; turning one into an instant, with the time-zone
-//! database, the invalid local times of a spring-forward and the ambiguous ones
-//! of a fall-back, belongs to the caller at that boundary.
+//! RFC 5545 defines expansion on the local wall-clock time of `DTSTART`: a
+//! daily rule on a zoned start recurs at the same local time every day, and a
+//! UTC start is simply the case where local is UTC. Expansion therefore never
+//! needs a UTC offset, and this module never resolves one.
+//!
+//! Occurrences are civil [`IcalRecurDateTime`]s; turning one into an instant,
+//! with the time-zone database, the invalid local times of a spring-forward
+//! and the ambiguous ones of a fall-back, belongs to the caller at that
+//! boundary.
 //!
 //! ## Liberal in, strict out
 //!
 //! Parsing follows the crate's Postel's law: an unrecognised rule part is
 //! ignored rather than refused, since RFC 5545 requires exactly that, and a
 //! malformed value inside a part the module does claim to understand is an
-//! error. The typed rule is not the round-trip path (the syntax tree is), so
-//! ignored parts are dropped rather than carried.
+//! error.
+//!
+//! The typed rule is not the round-trip path (the syntax tree is), so ignored
+//! parts are dropped rather than carried.
 
-use alloc::vec::Vec;
-use core::{fmt, num::ParseIntError, str::FromStr};
+use core::{fmt, num::ParseIntError, ops::Range, str::FromStr};
+
+use alloc::{string::String, vec::Vec};
 
 mod civil;
 pub mod expand;
@@ -43,9 +50,8 @@ pub mod validate;
 /// A civil date and time, with no time zone and no offset.
 ///
 /// The unit both ends of this module speak: the start an expansion runs from,
-/// the bound `UNTIL` sets, and every occurrence yielded. Comparison is
-/// lexicographic through the derived ordering, which is the chronological
-/// order for civil values.
+/// the bound `UNTIL` sets, and every occurrence yielded. The derived ordering
+/// is lexicographic, which is chronological for civil values.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct IcalRecurDateTime {
     /// The proleptic Gregorian year, negative before 1 BCE.
@@ -106,10 +112,9 @@ impl IcalRecurDateTime {
 
     /// Parses the `DATE` and `DATE-TIME` forms of RFC 5545 3.3.4 and 3.3.5.
     ///
-    /// Accepts `YYYYMMDD`, `YYYYMMDDTHHMMSS` and the `Z`-suffixed UTC form,
-    /// the three spellings `UNTIL` admits. The suffix is consumed and not
-    /// recorded: this type is civil, and a UTC `UNTIL` against a zoned start
-    /// is the caller's to convert (see [`IcalRecurRule::until`]).
+    /// Accepts the three spellings `UNTIL` admits: `YYYYMMDD`,
+    /// `YYYYMMDDTHHMMSS` and the `Z`-suffixed UTC form. The suffix is consumed
+    /// and not recorded, this type being civil (see [`IcalRecurRule::until`]).
     pub fn parse(value: &str) -> Result<Self, IcalRecurRuleError> {
         let bytes = value.as_bytes();
         let naive = match bytes.len() {
@@ -122,7 +127,7 @@ impl IcalRecurDateTime {
             return Err(IcalRecurRuleError::DateTime);
         }
 
-        let num = |range: core::ops::Range<usize>| -> Result<u32, IcalRecurRuleError> {
+        let num = |range: Range<usize>| -> Result<u32, IcalRecurRuleError> {
             naive
                 .get(range)
                 .ok_or(IcalRecurRuleError::DateTime)?
@@ -244,10 +249,9 @@ impl FromStr for IcalRecurWeekday {
 
 /// One `BYDAY` entry: a weekday, optionally ordinal.
 ///
-/// The ordinal counts occurrences of that weekday inside the period the
-/// frequency defines, forward when positive and backward when negative, so
-/// `-1SU` is the last Sunday of a monthly or yearly period. It is meaningless
-/// at any other frequency and RFC 5545 forbids it there.
+/// The ordinal counts occurrences of that weekday inside the frequency's
+/// period, forward when positive and backward when negative, so `-1SU` is the
+/// last Sunday of a monthly or yearly one. RFC 5545 forbids it elsewhere.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct IcalRecurWeekdayNum {
     /// The occurrence within the period, `None` when unqualified.
@@ -276,10 +280,9 @@ impl FromStr for IcalRecurWeekdayNum {
 
 /// How RFC 7529 resolves a date its calendar scale cannot express.
 ///
-/// Only ever consulted for a non-Gregorian `RSCALE`, or for a leap day a
-/// Gregorian year lacks. Parsed so a rule carrying it round-trips through the
-/// typed form; expansion honours [`Self::Omit`], the default, and treats the
-/// other two as omission until a non-Gregorian scale is supported.
+/// Only consulted for a non-Gregorian `RSCALE` or a leap day a Gregorian year
+/// lacks. Parsed so a rule round-trips; expansion honours the default
+/// [`Self::Omit`], the others as omission until a non-Gregorian scale exists.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum IcalRecurSkip {
     /// Drop the unrepresentable date. The default.
@@ -310,10 +313,8 @@ impl FromStr for IcalRecurSkip {
 /// A decoded recurrence rule.
 ///
 /// Every part RFC 5545 3.3.10 defines, plus the RFC 7529 extensions, in the
-/// shape expansion consumes. Absent parts stay empty or `None` rather than
-/// being defaulted from a start date: the defaulting rules depend on the
-/// frequency and belong to [`expand::IcalRecurExpand`], not to the decoded
-/// value.
+/// shape expansion consumes. Absent parts stay empty or `None`: defaulting
+/// depends on the frequency, so it belongs to [`expand::IcalRecurExpand`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct IcalRecurRule {
     /// The frequency, the only required part.
@@ -321,9 +322,8 @@ pub struct IcalRecurRule {
     /// The last date the rule may yield, inclusive.
     ///
     /// NOTE: RFC 5545 requires this to be UTC whenever `DTSTART` is zoned,
-    /// while expansion is civil throughout. A caller whose start carries a
-    /// `TZID` therefore converts this bound into that zone before expanding;
-    /// left unconverted it is off by the zone's offset at the boundary.
+    /// while expansion is civil, so a caller with a `TZID` start converts the
+    /// bound into that zone; unconverted it is off by that zone's offset.
     pub until: Option<IcalRecurDateTime>,
     /// How many occurrences the rule yields in total, the start included.
     pub count: Option<u32>,
@@ -357,7 +357,7 @@ pub struct IcalRecurRule {
     ///
     /// Anything other than `GREGORIAN` is decoded and then refused by
     /// expansion, which implements the Gregorian scale alone.
-    pub scale: Option<alloc::string::String>,
+    pub scale: Option<String>,
     /// `SKIP`, the RFC 7529 resolution of an unrepresentable date.
     pub skip: IcalRecurSkip,
 }
@@ -365,10 +365,9 @@ pub struct IcalRecurRule {
 impl IcalRecurRule {
     /// Decodes a rule from the raw text of a `RRULE` or `EXRULE` value.
     ///
-    /// Unrecognised parts are ignored, as RFC 5545 requires; a malformed
-    /// value inside a known part is an error. `FREQ` is mandatory, and
-    /// `UNTIL` with `COUNT` is refused since the RFC declares them mutually
-    /// exclusive.
+    /// Unrecognised parts are ignored, as RFC 5545 requires; a malformed value
+    /// inside a known part is an error. `FREQ` is mandatory, and `UNTIL` with
+    /// `COUNT` is refused, the RFC declaring them mutually exclusive.
     pub fn parse(value: &str) -> Result<Self, IcalRecurRuleError> {
         let mut freq = None;
         let mut rule = Self {
@@ -538,7 +537,7 @@ impl fmt::Display for IcalRecurRuleError {
 
 #[cfg(test)]
 mod tests {
-    use alloc::vec;
+    use alloc::{format, vec};
 
     use crate::recur::*;
 
@@ -626,7 +625,7 @@ mod tests {
         // NOTE: A rule is text off the wire, so a BYDAY whose last characters
         // are multi-byte must be refused, never split mid-character.
         for value in ["€", "𝄞", "SU€", "-1€", "1FR€"] {
-            assert!(IcalRecurRule::parse(&alloc::format!("FREQ=DAILY;BYDAY={value}")).is_err());
+            assert!(IcalRecurRule::parse(&format!("FREQ=DAILY;BYDAY={value}")).is_err());
         }
     }
 

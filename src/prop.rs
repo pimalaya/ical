@@ -2,12 +2,14 @@
 //!
 //! A decoded property and the iCalendar property-name vocabulary.
 //!
-//! An [`IcalProp`] is an [`IcalPropName`], a list of parameters, and a decoded
-//! value. The name is stored explicitly because many properties share one
-//! [`IcalValue`] kind: `SUMMARY` and `LOCATION` both decode to text, so the
-//! value alone cannot say which property it is. A known name is held as the
-//! closed [`IcalPropKind`] identity (its wire spelling reached through `Deref`
-//! and `FromStr`); an unknown one keeps its verbatim bytes.
+//! An [`IcalProp`] is an [`IcalPropName`], a list of parameters, and a
+//! decoded value. The name is stored explicitly because many properties share
+//! one [`IcalValue`] kind: `SUMMARY` and `LOCATION` both decode to text, so
+//! the value alone cannot say which property it is.
+//!
+//! A known name is held as the closed [`IcalPropKind`] identity (its wire
+//! spelling reached through `Deref` and `FromStr`); an unknown one keeps its
+//! verbatim bytes.
 //!
 //! Build a property directly from its public fields; strict, spec-checked
 //! construction lives in the syntax layer
@@ -130,10 +132,11 @@ impl IcalProp<'_> {
 }
 
 /// The closed iCalendar property-name vocabulary, one fieldless variant per
-/// known property. An identity for dispatch and allowed-sets; the
-/// open-vocabulary counterpart that also carries unknown names is
-/// [`IcalPropName`]. Covers RFC 5545, 7986, 9073 and 9074, plus the vCalendar
-/// 1.0 legacy alarm properties.
+/// known property.
+///
+/// An identity for dispatch and allowed-sets; [`IcalPropName`] is the open
+/// counterpart that also carries unknown names. Covers RFC 5545, 7986, 9073
+/// and 9074, plus the vCalendar 1.0 legacy alarm properties.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IcalPropKind {
     /// `CALSCALE`: calendar scale (RFC 5545 3.7.1).

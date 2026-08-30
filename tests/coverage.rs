@@ -19,6 +19,7 @@ use ical::{
     ical::Ical,
     param::{IcalParam, IcalParamKind},
     prop::{IcalProp, IcalPropKind, IcalPropName},
+    tree::codec::mode::Escaper,
     tree::cst::IcalCst,
     tree::error::IcalParseError,
     tree::param::{
@@ -441,7 +442,7 @@ macro_rules! assert_scalar_lens {
         let node = IcalParamNode::parse(wire);
         assert_eq!(<$lens>::decode(&node), $sample, "{wire} does not decode");
 
-        let encoded = <$lens>::encode(&Cow::Borrowed($sample));
+        let encoded = <$lens>::encode(&Cow::Borrowed($sample), Escaper::Modern);
         assert_eq!(encoded.to_string(), wire, "{wire} does not encode back");
         assert_eq!(
             <$lens>::decode(&encoded),
@@ -461,7 +462,7 @@ macro_rules! assert_list_lens {
         let node = IcalParamNode::parse(wire);
         assert_eq!(<$lens>::decode(&node), expected, "{wire} does not decode");
 
-        let encoded = <$lens>::encode(&expected);
+        let encoded = <$lens>::encode(&expected, Escaper::Modern);
         assert_eq!(encoded.to_string(), wire, "{wire} does not encode back");
         assert_eq!(
             <$lens>::decode(&encoded),

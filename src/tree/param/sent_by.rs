@@ -7,7 +7,7 @@ use alloc::{borrow::Cow, string::ToString, vec};
 use crate::{
     param::IcalParamKind,
     tree::{
-        codec::unescape::unescape,
+        codec::{escape::escape_param, mode::Escaper, unescape::unescape_param},
         leaf::IcalLeaf,
         param::{lens::IcalParamLens, node::IcalParamNode},
     },
@@ -26,14 +26,15 @@ impl IcalParamLens for SENT_BY {
         param
             .values
             .first()
-            .map(|value| unescape(value.get()))
+            .map(|value| unescape_param(value.get(), param.escaper))
             .unwrap_or_default()
     }
 
-    fn encode(decoded: &Cow<'_, str>) -> IcalParamNode<'static> {
+    fn encode(decoded: &Cow<'_, str>, escaper: Escaper) -> IcalParamNode<'static> {
         IcalParamNode {
             name: IcalLeaf::from(Self::KIND.to_string()),
-            values: vec![IcalLeaf::from(decoded.to_string())],
+            values: vec![IcalLeaf::from(escape_param(decoded, escaper).into_owned())],
+            escaper,
         }
     }
 }

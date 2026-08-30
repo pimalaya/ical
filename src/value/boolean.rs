@@ -3,9 +3,9 @@
 //! The decoded boolean value kind.
 //!
 //! Backs the boolean-valued properties and parameters (RFC 5545 3.3.2): the
-//! case-insensitive tokens `TRUE` and `FALSE`. The value is kept as its raw text
-//! so the original casing round-trips; [`IcalBoolean::is_true`] reads it as a
-//! `bool`.
+//! case-insensitive tokens `TRUE` and `FALSE`. The value is kept as its raw
+//! text so the original casing round-trips; [`IcalBoolean::is_true`] reads it
+//! as a `bool`.
 
 use alloc::{borrow::Cow, string::String};
 

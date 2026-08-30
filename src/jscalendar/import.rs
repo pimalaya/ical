@@ -4,10 +4,11 @@
 //!
 //! Every member the export writes is read back under the name the escape
 //! hatch recorded for it, or, where nothing was recorded, under the name
-//! [`default_name`](crate::jscalendar::hatch::default_name) assumes. A member
-//! no iCalendar property holds becomes a `JSPROP` property carrying its JSON,
-//! located by a `JSPTR` parameter, which is the mirror hatch the conversion
-//! draft defines (4.1.2, 4.2.2).
+//! [`default_name`](crate::jscalendar::hatch::default_name) assumes.
+//!
+//! A member no iCalendar property holds becomes a `JSPROP` property carrying
+//! its JSON, located by a `JSPTR` parameter, which is the mirror hatch the
+//! conversion draft defines (4.1.2, 4.2.2).
 
 use alloc::{
     borrow::{Cow, ToOwned},

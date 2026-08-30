@@ -2,10 +2,10 @@
 //!
 //! The decoded duration value kind.
 //!
-//! Backs `DURATION` and the duration form of other properties (RFC 5545 3.3.6):
-//! an ISO 8601 duration such as `P15DT5H0M20S` or `-P1D`, always prefixed by `P`
-//! (with an optional leading sign). The value is kept as its raw text; the crate
-//! does not parse it into day/hour/minute/second components.
+//! Backs `DURATION` and the duration form of other properties (RFC 5545
+//! 3.3.6): an ISO 8601 duration such as `P15DT5H0M20S` or `-P1D`, always
+//! prefixed by `P` (with an optional leading sign). The value is kept as its
+//! raw text; the crate does not parse it into day/hour/minute/second parts.
 
 use alloc::{borrow::Cow, string::String};
 

@@ -45,14 +45,59 @@ Each property SHALL state the versions that define it, and validation SHALL repo
 - WHEN the calendar is validated
 - THEN nothing is reported about it
 
-### Requirement: A single text value is not split on its commas
+### Requirement: A single value is not split on a separator it does not own
 
-A property whose value is one text SHALL keep an unescaped comma as data. RFC 5545 3.3.11 says the comma should have been escaped, and there is no list for it to separate, so truncating the value at it would apply strictness to the wrong end of Postel's law.
+A property whose value is one text, one URI or one scalar SHALL keep an unescaped `,` and an unescaped `;` as data. RFC 5545 3.3.11 says a text should have escaped either, 3.3.13 gives a URI no escaping at all, and there is no list and no structure for them to separate, so truncating the value at one would apply strictness to the wrong end of Postel's law.
+
+Only the kinds the specification structures with `;` (`GEO`, `REQUEST-STATUS`, and the rule parts of `RECUR`) read component by component, and each of their components keeps the commas inside it.
 
 #### Scenario: An unescaped comma in a summary
 - GIVEN `SUMMARY:Standup, moved`
 - WHEN it is decoded
 - THEN the summary reads `Standup, moved`
+
+#### Scenario: An unescaped semicolon in a description
+- GIVEN `DESCRIPTION:a;b`
+- WHEN it is decoded
+- THEN the description reads `a;b` rather than stopping at the semicolon
+
+#### Scenario: A comma inside a structured component
+- GIVEN `REQUEST-STATUS:2.0;ok;rcpt,two`
+- WHEN it is decoded
+- THEN the extra data reads `rcpt,two` rather than stopping at the comma
+
+### Requirement: A parameter value is encoded by RFC 6868, not by the text escapes
+
+A parameter value SHALL be decoded and encoded by RFC 6868 section 3.1: `^n` reads as a newline, `^^` as a caret, `^'` as a double quote, and any other caret sequence, a trailing lone caret included, stays exactly as written, which section 3.1 requires rather than merely permits. A backslash SHALL be content in both directions, since RFC 5545 section 3.2 gives a parameter value no escapes at all and RFC 6868 section 3.2 forbids adding the backslash ones.
+
+RFC 6868 updates RFC 5545 and no earlier specification, so the rules SHALL apply to iCalendar 2.0 alone. A vCalendar 1.0 parameter carries its caret literally, and a parameter node SHALL therefore carry the escaping mode of the calendar it was parsed from, stamped once `VERSION` is known, as a value node already does.
+
+A value the wire spelled inside its own double quotes SHALL keep that pair on the way out, only what they enclose being encoded. The decoded model holds a parameter exactly as it was written, delimiters included, so encoding the surrounding pair would strip the quoting off every quoted URI.
+
+#### Scenario: The three sequences
+- GIVEN `CN=a^nb^^c^'d` in a 2.0 calendar
+- WHEN it is decoded and encoded again
+- THEN it reads `a`, a newline, `b^c"d`, and comes back as `CN=a^nb^^c^'d`
+
+#### Scenario: A caret before an ordinary letter
+- GIVEN `CN=a^xb^`
+- WHEN it is decoded
+- THEN it reads `a^xb^`, the caret and what follows staying as written
+
+#### Scenario: A backslash in a parameter
+- GIVEN `X-PATH=C:\temp\note.txt`
+- WHEN it is decoded
+- THEN the value keeps both separators rather than losing them to a text escape
+
+#### Scenario: A caret in a vCalendar 1.0 parameter
+- GIVEN `LABEL=a^nb` in a 1.0 calendar
+- WHEN it is decoded
+- THEN it reads `a^nb`, the version predating RFC 6868
+
+#### Scenario: A quoted parameter through a round trip
+- GIVEN `ALTREP="cid:part1.0001@example.org"`
+- WHEN it is decoded and encoded again
+- THEN the bytes are the ones it arrived as
 
 ### Requirement: A declared VALUE decides the kind, known name or not
 

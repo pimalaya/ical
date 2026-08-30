@@ -2,13 +2,16 @@
 //!
 //! A decoded parameter and the iCalendar parameter-name vocabulary.
 //!
-//! [`IcalParam`] is a closed set of the parameters RFC 5545 and its extensions
-//! define, one variant each, plus an [`Unknown`](IcalParam::Unknown) arm so
-//! anything else round-trips. Parameters are few and simple (a text or a small
-//! list), so unlike properties each variant carries its value directly rather
-//! than through a shared value type; the variant itself names the parameter. A
-//! known name is the closed [`IcalParamKind`], reached through `FromStr` and
-//! `Deref`. Pure model, no [`crate::tree`] dependency.
+//! [`IcalParam`] is a closed set of the parameters RFC 5545 and its
+//! extensions define, one variant each, plus an
+//! [`Unknown`](IcalParam::Unknown) arm so anything else round-trips.
+//!
+//! Parameters are few and simple (a text or a small list), so unlike
+//! properties each variant carries its value directly rather than through a
+//! shared value type; the variant itself names the parameter.
+//!
+//! A known name is the closed [`IcalParamKind`], reached through `FromStr`
+//! and `Deref`. Pure model, no [`crate::tree`] dependency.
 
 use core::{error, fmt, ops, str};
 
@@ -310,7 +313,6 @@ pub enum IcalParam<'a> {
     Gap(Cow<'a, str>),
     /// `CHARSET`: the character set of the value (vCalendar 1.0).
     Charset(Cow<'a, str>),
-
     /// Any parameter the model does not decode: its name and its values.
     Unknown {
         /// The verbatim parameter name.

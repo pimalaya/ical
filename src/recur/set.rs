@@ -2,32 +2,36 @@
 //!
 //! The occurrences a *component* denotes, not the ones a single rule does.
 //!
-//! RFC 5545 3.8.5 builds the set a `VEVENT` or `VTODO` actually happens on out
-//! of five properties, plus the overrides that sit in sibling components:
+//! RFC 5545 3.8.5 builds the set a `VEVENT` or `VTODO` actually happens on
+//! out of five properties, plus the overrides that sit in sibling components.
+//!
 //! `DTSTART` and every `RRULE` and `RDATE` add instances, every `EXDATE` and
-//! `EXRULE` take them away, and a component carrying a `RECURRENCE-ID` replaces
-//! one. [`IcalRecurSet`] holds those pieces and [`IcalRecurSetExpand`] walks
-//! them.
+//! `EXRULE` take them away, and a component carrying a `RECURRENCE-ID`
+//! replaces one. [`IcalRecurSet`] holds those pieces and
+//! [`IcalRecurSetExpand`] walks them.
 //!
 //! ## Identity, and the order it comes in
 //!
-//! Every occurrence has two times. Its **identity** is the time the rules place
-//! it at, which is what a `RECURRENCE-ID` names and what an `EXDATE` removes.
-//! Its **start** is when it actually happens, which is the identity unless an
-//! override moved it.
+//! Every occurrence has two times. Its **identity** is the time the rules
+//! place it at, which is what a `RECURRENCE-ID` names and what an `EXDATE`
+//! removes. Its **start** is when it actually happens, which is the identity
+//! unless an override moved it.
 //!
-//! Occurrences come out in the chronological order of their *identity*, which is
-//! what keeps the walk lazy: nothing is buffered, so an endless rule can be taken
-//! from without running it to its end. An override that moves an instance is
-//! emitted in the place of the instance it replaces, so its start can fall out of
-//! order. A caller that needs starts in order sorts a window of them, which is a
-//! decision about a window, not about the walk.
+//! Occurrences come out in the chronological order of their *identity*, which
+//! is what keeps the walk lazy: nothing is buffered, so an endless rule can
+//! be taken from without running it to its end.
+//!
+//! An override that moves an instance is emitted in the place of the instance
+//! it replaces, so its start can fall out of order. A caller that needs
+//! starts in order sorts a window of them, which is a decision about a
+//! window, not about the walk.
 //!
 //! ## Civil, like everything else here
 //!
 //! Nothing here resolves a time zone. `DTSTART`, `RDATE`, `EXDATE` and
 //! `RECURRENCE-ID` are read as the civil times they spell, and a `TZID`
-//! parameter is ignored, exactly as [expansion](crate::recur::expand) ignores it.
+//! parameter is ignored, exactly as [expansion](crate::recur::expand) ignores
+//! it.
 
 use alloc::{vec, vec::Vec};
 
@@ -66,8 +70,7 @@ pub struct IcalRecurOverride {
     pub this_and_future: bool,
 }
 
-/// The recurrence set of one component: what adds to it, what takes away from
-/// it, and what replaces an instance of it.
+/// The recurrence set of one component: what adds, subtracts and overrides.
 ///
 /// Build one from a decoded component with
 /// [`of_component`](Self::of_component), or by hand, and walk it with
@@ -92,10 +95,9 @@ pub struct IcalRecurSet {
 impl IcalRecurSet {
     /// Read the set a decoded component denotes, its overrides aside.
     ///
-    /// A component with no `DTSTART` and no `RDATE` denotes nothing, and comes
+    /// A component with no `DTSTART` and no `RDATE` denotes nothing and comes
     /// back empty rather than as an error: this is the liberal side of the
-    /// crate, and a rule that names no start is simply a rule nobody can
-    /// expand. A malformed date or rule is skipped for the same reason.
+    /// crate. A malformed date or rule is skipped for the same reason.
     pub fn of_component(component: &IcalComponent<'_>) -> Self {
         let mut set = Self::default();
 
@@ -226,10 +228,9 @@ impl IcalRecurSet {
 
 /// The lazy walk of an [`IcalRecurSet`], in identity order.
 ///
-/// A k-way merge over the rule expansions and the literal dates, with the
-/// exclusions applied as it goes: an `EXDATE` is a membership test on a sorted
-/// list, an `EXRULE` is another lazy stream advanced in step. Nothing is
-/// materialised beyond the literal lists, which are literal on the wire too.
+/// A k-way merge over the rule expansions and the literal dates, exclusions
+/// applied as it goes: an `EXDATE` is a membership test, an `EXRULE` another
+/// lazy stream in step. Only the wire-literal lists are ever materialised.
 pub struct IcalRecurSetExpand<'a> {
     set: &'a IcalRecurSet,
     streams: Vec<IcalRecurExpand>,

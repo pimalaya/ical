@@ -3,20 +3,21 @@
 //! The decoded calendar: a version plus the `VCALENDAR`'s properties and nested
 //! components.
 //!
-//! [`Ical`] is the top of the decoded model, the semantic counterpart of a whole
-//! [`IcalCst`](crate::tree::cst::IcalCst). It is a `VCALENDAR` with its
-//! [`version`](Ical::version) hoisted out of the property list (the `VERSION`
-//! line is the envelope indicator, not a free property), its remaining
-//! calendar-level [`props`](Ical::props) (`PRODID`, `CALSCALE`, `METHOD`, ...),
-//! and its nested [`components`](Ical::components) (`VEVENT`, `VTODO`,
-//! `VTIMEZONE`, ...), each a recursive [`IcalComponent`].
+//! [`Ical`] is the top of the decoded model, the semantic counterpart of a
+//! whole [`IcalCst`](crate::tree::cst::IcalCst). It is a `VCALENDAR` with its
+//! [`version`](Ical::version) hoisted out of the property list: the `VERSION`
+//! line is the envelope indicator, not a free property.
 //!
-//! [`IcalComponent`]: crate::component::IcalComponent
+//! What remains is its calendar-level [`props`](Ical::props) (`PRODID`,
+//! `CALSCALE`, `METHOD`, ...) and its nested [`components`](Ical::components)
+//! (`VEVENT`, `VTODO`, `VTIMEZONE`, ...), each a recursive [`IcalComponent`].
 //!
 //! Build a calendar directly from its public fields; strict construction and
 //! conformance checking live in the syntax layer
 //! ([`validate`](crate::tree::ical::validate)), which this module does not
 //! depend on: pure model, no [`crate::tree`].
+//!
+//! [`IcalComponent`]: crate::component::IcalComponent
 
 use alloc::vec::Vec;
 

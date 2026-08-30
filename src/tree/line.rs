@@ -5,14 +5,17 @@
 //! [`IcalLine`] is the syntactic unit a property occupies. It owns the line
 //! tokeniser ([`take`](IcalLine::take), which splits one logical line off the
 //! remaining input) and the head splitter separating the name from its
-//! parameters, but stays generic: what the name means and how the value decodes
-//! belong to the lens markers and the [`codec`](crate::tree::codec).
+//! parameters.
 //!
-//! Folding, stray blank lines and QUOTED-PRINTABLE soft breaks are resolved on
-//! parse, so every layer above sees one logical line, and recorded on the line's
-//! [`wire`](IcalLine::wire) shape, so serialization puts them back. A calendar
-//! therefore round-trips byte for byte however it was laid out. The final line
-//! needs no trailing break.
+//! It stays generic: what the name means and how the value decodes belong to
+//! the lens markers and the [`codec`](crate::tree::codec).
+//!
+//! Folding, stray blank lines and QUOTED-PRINTABLE soft breaks are resolved
+//! on parse, so every layer above sees one logical line, and recorded on the
+//! line's [`wire`](IcalLine::wire) shape, so serialization puts them back.
+//!
+//! A calendar therefore round-trips byte for byte however it was laid out.
+//! The final line needs no trailing break.
 
 use core::{fmt, str};
 
@@ -29,12 +32,13 @@ use crate::tree::{
 
 /// One raw content line: a name, parameters, a value and the line ending.
 ///
-/// This is a *logical* line, not a physical one: [`take`](Self::take) unfolds
-/// RFC 5545 3.1 folded continuations and QUOTED-PRINTABLE soft line breaks, so
-/// a `IcalLine` never holds an internal line break, only its terminating
-/// [`eol`](Self::eol). What it unfolded is kept on [`wire`](Self::wire), which
-/// is what puts the folds back on output. It is also the syntactic unit for the
-/// `BEGIN` / `VERSION` / `END` envelope lines, not only decoded properties.
+/// This is a *logical* line: [`take`](Self::take) unfolds RFC 5545 3.1
+/// continuations and QUOTED-PRINTABLE soft breaks, so a line holds no internal
+/// break, only its terminating [`eol`](Self::eol), and what it unfolded is
+/// kept on [`wire`](Self::wire) to put the folds back on output.
+///
+/// It is also the syntactic unit for the `BEGIN` / `VERSION` / `END` envelope
+/// lines, not only decoded properties.
 #[derive(Clone, Debug)]
 pub struct IcalLine<'a> {
     /// The property name leaf, with any group prefix.
@@ -67,11 +71,12 @@ impl<'a> IcalLine<'a> {
         }
     }
 
-    /// Tokenise the logical line at the start of `rest`, unfolding any folded
-    /// continuation lines, and return it with the remaining input. RFC 5545 3.1
-    /// folds a long line by inserting a CRLF and a single leading space or tab;
-    /// unfolding drops them. A line with no folds borrows the source; a folded
-    /// line is rebuilt owned, since its bytes are no longer contiguous.
+    /// Tokenise the logical line at the start of `rest`, unfolding as it goes.
+    ///
+    /// Returns the line and the remaining input. RFC 5545 3.1 folds a long line
+    /// by inserting a CRLF and a single leading space or tab; unfolding drops
+    /// them. A line with no folds borrows the source; a folded one is rebuilt
+    /// owned, its bytes no longer contiguous.
     pub fn take(rest: &'a [u8]) -> Result<(Self, &'a [u8]), IcalParseError> {
         // NOTE: Everything this tokeniser resolves is recorded here, so
         // serialization can put it back.
@@ -170,12 +175,11 @@ impl<'a> IcalLine<'a> {
         Ok((line, tail))
     }
 
-    /// Split the first physical line off `rest`, verbatim (its content and its
-    /// ending), and return it with what follows.
+    /// Split the first physical line off `rest` verbatim, content and ending.
     ///
-    /// This is the recovering parser's step over a line [`take`](Self::take)
-    /// refuses: the bytes are kept whole rather than structured, so they still
-    /// round-trip.
+    /// Returned with what follows. This is the recovering parser's step over a
+    /// line [`take`](Self::take) refuses: the bytes are kept whole rather than
+    /// structured, so they still round-trip.
     pub fn take_physical(rest: &'a [u8]) -> (&'a [u8], &'a [u8]) {
         let (content, eol, tail) = physical_line(rest);
         (&rest[..content.len() + eol.len()], tail)
@@ -339,13 +343,12 @@ fn split_head(head: &str) -> (&str, Vec<IcalParamNode<'_>>) {
     (name, params)
 }
 
-/// The index of the `:` separating a line's head from its value: the first one
-/// outside a double-quoted parameter value, which RFC 5545 section 3.2 lets
-/// carry both a colon and a semicolon.
+/// The index of the `:` separating a line's head from its value.
 ///
-/// A head with an unbalanced quote would swallow the rest of the line, so with
-/// no colon outside quotes the scan falls back to the first colon anywhere and
-/// the line still parses.
+/// The first one outside a double-quoted parameter value, which RFC 5545 3.2
+/// lets carry both a colon and a semicolon. A head with an unbalanced quote
+/// would swallow the rest of the line, so with no colon outside quotes the
+/// scan falls back to the first colon anywhere and the line still parses.
 fn value_colon(content: &[u8]) -> Option<usize> {
     let mut quoted = false;
 

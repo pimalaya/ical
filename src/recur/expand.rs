@@ -6,12 +6,15 @@
 //! ## What one step does
 //!
 //! Expansion walks the periods the frequency defines, `INTERVAL` of them at a
-//! time, beginning with the period `DTSTART` falls in. Each period becomes an
-//! ordered candidate set: the `BY` parts either widen that set or narrow it,
-//! which of the two depending on the frequency, and `BYSETPOS` then picks
-//! positions out of the finished set. What survives is yielded in order before
-//! the next period is looked at, so nothing is ever buffered beyond one
-//! period and an endless rule is walked lazily.
+//! time, beginning with the period `DTSTART` falls in.
+//!
+//! Each period becomes an ordered candidate set: the `BY` parts either widen
+//! that set or narrow it, which of the two depending on the frequency, and
+//! `BYSETPOS` then picks positions out of the finished set.
+//!
+//! What survives is yielded in order before the next period is looked at, so
+//! nothing is ever buffered beyond one period and an endless rule is walked
+//! lazily.
 //!
 //! `DTSTART` bounds the walk but is not forced into it: candidates before it
 //! are dropped, and a start the rule does not itself generate is simply never
@@ -21,13 +24,17 @@
 //! ## Unsatisfiable rules end
 //!
 //! `FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=30` names a date no year has, and a rule
-//! like it would otherwise search forever for a next occurrence. Expansion
-//! stops at year 9999, the last year an RFC 5545 date can spell, and periods
-//! that cannot hold a candidate are skipped whole rather than stepped through,
-//! so reaching that end stays cheap even at `FREQ=SECONDLY`. A period the date
-//! gates admit but `BYSETPOS` then empties cannot be skipped that way, so a
-//! second bound, a budget of barren periods per occurrence, keeps a rule such
-//! as `FREQ=SECONDLY;BYSETPOS=2` from walking to year 9999 a second at a time.
+//! like it would otherwise search forever for a next occurrence.
+//!
+//! Expansion stops at year 9999, the last year an RFC 5545 date can spell,
+//! and periods that cannot hold a candidate are skipped whole rather than
+//! stepped through, so reaching that end stays cheap even at `FREQ=SECONDLY`.
+//!
+//! A period the date gates admit but `BYSETPOS` then empties cannot be
+//! skipped that way, so a second bound, a budget of barren periods per
+//! occurrence, keeps a rule such as `FREQ=SECONDLY;BYSETPOS=2` from walking
+//! to year 9999 a second at a time.
+//!
 //! Neither bound truncates a rule that does yield: an occurrence is an
 //! occurrence however far apart from the last one it falls.
 
@@ -40,15 +47,16 @@ const MAX_YEAR: i32 = 9999;
 
 /// How many barren periods one occurrence may cost before expansion gives up.
 ///
-/// The year cap alone bounds a rule whose periods are days or longer, but not
-/// one whose periods are seconds: `FREQ=SECONDLY;BYSETPOS=2` names a second
-/// that no one-element candidate set can hold, and walking to year 9999 a
-/// second at a time is a lifetime of work for an answer that is always none.
-/// One budget covers both ways a period comes up barren, the empty candidate
-/// set and the failing date gate, so the work behind any one `next` is bounded
-/// whatever shape the rule takes. No satisfiable rule comes near it: the gates
+/// The year cap bounds a rule whose periods are days or longer, but not one
+/// whose periods are seconds: `FREQ=SECONDLY;BYSETPOS=2` names a second no
+/// one-element candidate set can hold, and walking to year 9999 a second at a
+/// time is a lifetime of work for an answer that is always none.
+///
+/// The budget covers both ways a period comes up barren, an empty candidate
+/// set and a failing date gate, so any one `next` is bounded whatever the
+/// rule's shape. No satisfiable rule comes near a million skips: the gates
 /// are skipped over rather than stepped through (see
-/// [`IcalRecurExpand::seek`]), and this many skips is a millennium of them.
+/// [`IcalRecurExpand::seek`]).
 const EMPTY_PERIODS: u32 = 1_000_000;
 
 /// Seconds in a day.
@@ -112,15 +120,14 @@ pub struct IcalRecurExpand {
 impl IcalRecurExpand {
     /// Starts an expansion of a rule from a start date-time.
     ///
-    /// The start plays the part `DTSTART` plays in RFC 5545: it opens the
-    /// walk, and it supplies the fields no `BY` part pins down, such as the
-    /// time of day of a daily rule or the day of the month of a yearly one.
+    /// The start plays `DTSTART`'s part in RFC 5545: it opens the walk and
+    /// supplies the fields no `BY` part pins down, such as a daily rule's time
+    /// of day.
     ///
-    /// An `RSCALE` other than `GREGORIAN` yields nothing: expanding another
-    /// calendar system needs the CLDR arithmetic RFC 7529 5 points at, and
-    /// yielding Gregorian dates under a Hebrew rule would be a wrong answer
-    /// rather than a missing one. `RSCALE=GREGORIAN` is expanded, `SKIP` and
-    /// all (RFC 7529 4.1).
+    /// An `RSCALE` other than `GREGORIAN` yields nothing: another calendar
+    /// system needs the CLDR arithmetic RFC 7529 5 points at, and Gregorian
+    /// dates under a Hebrew rule would be wrong rather than missing.
+    /// `RSCALE=GREGORIAN` is expanded, `SKIP` and all (RFC 7529 4.1).
     pub fn new(rule: IcalRecurRule, start: IcalRecurDateTime) -> Self {
         let alien = rule
             .scale
@@ -166,12 +173,11 @@ impl IcalRecurExpand {
     /// Beyond the bounds this checks, the work here is the sub-daily skip: at
     /// `FREQ=SECONDLY` a `BYMONTH=1` rules out eleven months a candidate at a
     /// time, so a failing gate jumps the cursor to the next day, hour, minute
-    /// or second the gate could pass at, keeping it on the `INTERVAL` lattice.
-    /// A daily or coarser frequency has no such gap to close, one period being
-    /// a whole day at the least.
+    /// or second it could pass at, keeping it on the `INTERVAL` lattice.
     ///
-    /// Every skip spends one unit of the caller's budget, since a gate that
-    /// keeps failing walks the calendar just as a run of empty periods does.
+    /// A daily or coarser frequency has no such gap to close. Every skip
+    /// spends one unit of the caller's budget, since a gate that keeps failing
+    /// walks the calendar just as a run of empty periods does.
     fn seek(&mut self, budget: &mut u32) -> bool {
         loop {
             if self.cursor.year > MAX_YEAR
@@ -380,19 +386,17 @@ impl IcalRecurExpand {
         !self.rule.by_month_day.is_empty() && self.rule.freq != IcalRecurFreq::Weekly
     }
 
-    /// The days an invalid day of the month resolves to under `SKIP` (RFC 7529
-    /// 4.1).
+    /// The days an invalid day of the month resolves to (RFC 7529 4.1 `SKIP`).
     ///
     /// Only a day the rule actually intends is resolved: each positive
-    /// `BYMONTHDAY`, or the day of the month the start supplies when no part
-    /// selects a day. A negative `BYMONTHDAY` counts back from the end of the
-    /// month and so always names a day that exists, and in the Gregorian scale
-    /// a month number always does too, which leaves the day of the month as
-    /// the only thing that can be missing.
+    /// `BYMONTHDAY`, or the day the start supplies when no part selects one. A
+    /// negative `BYMONTHDAY` counts back from the month's end and a Gregorian
+    /// month number always exists, so the day of the month is all that can be
+    /// missing.
     ///
-    /// A resolved day is not put back through the day-selecting parts. RFC
-    /// 7529 4.1 resolves the day *after* `BYMONTHDAY` has chosen it, and the
-    /// whole point is to land on a date the rule did not choose.
+    /// A resolved day is not put back through the day-selecting parts: RFC
+    /// 7529 4.1 resolves the day *after* `BYMONTHDAY` chose it, and the point
+    /// is to land on a date the rule did not choose.
     fn skipped_days(&self) -> Vec<i64> {
         if self.rule.skip == IcalRecurSkip::Omit {
             return Vec::new();
@@ -536,10 +540,10 @@ impl IcalRecurExpand {
 
     /// Whether the fields the start supplies admit a day.
     ///
-    /// Only consulted when no part selects a day, which is when RFC 5545 has
-    /// the frequency read the missing field off `DTSTART`: a monthly rule
-    /// keeps its day of the month, a yearly one its month too unless `BYMONTH`
-    /// supplies that, and a weekly one its weekday.
+    /// Only consulted when no part selects a day: RFC 5545 then reads the
+    /// missing field off `DTSTART`, a monthly rule keeping its day of the
+    /// month, a yearly one its month too unless `BYMONTH` gives it, and a
+    /// weekly one its weekday.
     fn default_day_matches(&self, day: i64, month: u8, date: u8) -> bool {
         let rule = &self.rule;
         // NOTE: Only a part that is *in force* counts as selecting a day: one
@@ -613,13 +617,14 @@ fn period_start(rule: &IcalRecurRule, start: IcalRecurDateTime) -> IcalRecurDate
 
 /// The period a `BYDAY` ordinal counts inside.
 ///
-/// RFC 5545 3.3.10 admits an ordinal at `MONTHLY` and `YEARLY` alone, and
-/// scopes it to the period the frequency names, narrowed to the month when
-/// `BYMONTH` picks the months of a yearly period. The other `BY` parts do not
-/// change that scope: an ordinal keeps counting even where the table has
-/// `BYDAY` limit rather than expand, which is what every other implementation
-/// does (`BYMONTHDAY=15;BYDAY=2MO` is the 15th when it is also the second
-/// Monday, not the 15th when it is any Monday).
+/// RFC 5545 3.3.10 admits an ordinal at `MONTHLY` and `YEARLY` alone, scoped
+/// to the frequency's period and narrowed to the month when `BYMONTH` picks a
+/// yearly period's months.
+///
+/// The other `BY` parts do not change that scope: an ordinal keeps counting
+/// even where the table limits rather than expands `BYDAY`, as every other
+/// implementation does (`BYMONTHDAY=15;BYDAY=2MO` is the 15th only when it is
+/// also the second Monday).
 fn ordinals(rule: &IcalRecurRule) -> IcalRecurOrdinals {
     match rule.freq {
         IcalRecurFreq::Monthly => IcalRecurOrdinals::Month,
@@ -687,6 +692,8 @@ fn align(from: i64, target: i64, step: i64) -> i64 {
 
 #[cfg(test)]
 mod tests {
+    use alloc::format;
+
     use crate::recur::expand::*;
 
     fn expand(rule: &str, start: IcalRecurDateTime, take: usize) -> Vec<IcalRecurDateTime> {
@@ -901,7 +908,7 @@ mod tests {
         for freq in [
             "SECONDLY", "MINUTELY", "HOURLY", "DAILY", "WEEKLY", "MONTHLY", "YEARLY",
         ] {
-            let rule = alloc::format!("FREQ={freq};COUNT=2");
+            let rule = format!("FREQ={freq};COUNT=2");
             IcalRecurExpand::new(IcalRecurRule::parse(&rule).unwrap(), start)
                 .take(2)
                 .for_each(drop);

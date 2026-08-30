@@ -3,19 +3,23 @@
 //! What the mapping cannot express, kept rather than dropped.
 //!
 //! Every JSCalendar object this conversion writes may carry an `iCalendar`
-//! member holding an `ICalComponent` object
-//! ([draft-ietf-calext-jscalendar-icalendar](https://datatracker.ietf.org/doc/draft-ietf-calext-jscalendar-icalendar/)
-//! 5.1.1): the component's name, the properties and subcomponents that did not
-//! convert (in jCal syntax, so the sibling [`crate::jcal`] codec reads and
+//! member holding an `ICalComponent` object ([the conversion draft] 5.1.1).
+//!
+//! It holds the component's name, the properties and subcomponents that did
+//! not convert (in jCal syntax, so the sibling [`crate::jcal`] codec reads and
 //! writes them), and a `convertedProperties` map recording, per JSCalendar
 //! member, which iCalendar property it came from and what was left over on it.
 //!
 //! That last map is what makes the round trip exact rather than approximate.
 //! Several iCalendar properties share one JSCalendar member (`updated` is
 //! either `DTSTAMP` or `LAST-MODIFIED`, a link is any of `ATTACH`, `IMAGE`,
-//! `LINK` or `URL`), and a property may carry parameters the JSCalendar object
-//! has nowhere to put. [`default_name`] holds the assumption the writer makes,
-//! so a record is written only where the assumption would be wrong.
+//! `LINK` or `URL`).
+//!
+//! A property may also carry parameters the JSCalendar object has nowhere to
+//! put. [`default_name`] holds the assumption the writer makes, so a record is
+//! written only where the assumption would be wrong.
+//!
+//! [the conversion draft]: https://datatracker.ietf.org/doc/draft-ietf-calext-jscalendar-icalendar/
 
 use alloc::{
     borrow::{Cow, ToOwned},
@@ -264,12 +268,11 @@ pub(crate) fn converted<'a>(
     })
 }
 
-/// The iCalendar property a member is assumed to have come from, so a record
-/// is needed only where the assumption is wrong.
+/// The iCalendar property a member is assumed to have come from.
 ///
-/// A pointer into a collection is matched by shape, with the collection's key
-/// standing as `*`: every link is an `ATTACH` unless recorded otherwise, and a
-/// location's `coordinates` is always a `GEO`.
+/// A record is needed only where the assumption is wrong. A pointer into a
+/// collection is matched by shape, the key standing as `*`: every link is an
+/// `ATTACH` unless recorded otherwise, a location's `coordinates` a `GEO`.
 pub(crate) fn default_name(component: &str, pointer: &str) -> Option<&'static str> {
     let shape = shape(pointer);
 

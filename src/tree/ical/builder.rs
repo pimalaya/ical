@@ -2,13 +2,16 @@
 //!
 //! Strict, version-aware construction of a single property.
 //!
-//! [`IcalPropBuilder`] is the write-side counterpart of the lenses: keyed by the
-//! same zero-sized markers, it carries the calendar version, accumulates
-//! parameters, and emits an open [`IcalProp`]. Its name is pinned by the
-//! marker's [`IcalPropSpec`], and [`build`](IcalPropBuilder::build) runs the
-//! shared per-property check ([`validate_prop`](crate::tree::ical::validate)),
-//! so a known property must be defined in the calendar's version (extensions
-//! pass). To emit something the spec forbids, construct the open [`IcalProp`] by
+//! [`IcalPropBuilder`] is the write-side counterpart of the lenses: keyed by
+//! the same zero-sized markers, it carries the calendar version, accumulates
+//! parameters, and emits an open [`IcalProp`].
+//!
+//! Its name is pinned by the marker's [`IcalPropSpec`], and
+//! [`build`](IcalPropBuilder::build) runs the shared per-property check
+//! ([`validate_prop`](crate::tree::ical::validate)), so a known property must
+//! be defined in the calendar's version (extensions pass).
+//!
+//! To emit something the spec forbids, construct the open [`IcalProp`] by
 //! hand. The version is a value the builder carries, never a type parameter.
 //!
 //! # Example
@@ -70,10 +73,11 @@ impl<'a, L: IcalPropSpec> IcalPropBuilder<'a, L> {
         self
     }
 
-    /// Finish with a value, emitting the property; its name is taken from the
-    /// spec. Runs the same per-property check as
-    /// [`Ical::validate`](crate::ical::Ical::validate): the value kind must
-    /// be allowed and every known parameter must be allowed for the version
+    /// Finish with a value, emitting the property named by the spec.
+    ///
+    /// Runs the same per-property check as
+    /// [`Ical::validate`](crate::ical::Ical::validate): the value kind must be
+    /// allowed and every known parameter must be allowed for the version
     /// (unknown, i.e. extension, parameters pass).
     pub fn build(self, value: IcalValue<'a>) -> Result<IcalProp<'a>, Vec<IcalValidateError>> {
         let prop = IcalProp {

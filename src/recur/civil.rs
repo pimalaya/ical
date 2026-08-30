@@ -3,10 +3,12 @@
 //! Proleptic Gregorian date arithmetic for recurrence expansion: day counts,
 //! weekdays, days of the year and week numbers, integers throughout.
 //!
-//! The two day-count conversions are Howard Hinnant's, from his [date
-//! algorithms](https://howardhinnant.github.io/date_algorithms.html), with
-//! 1970-01-01 as day zero. They are exact over the whole `i32` year range,
-//! and everything else here is derived from them, so the leap-year and era
+//! The two day-count conversions are Howard Hinnant's, from his
+//! [date algorithms](https://howardhinnant.github.io/date_algorithms.html),
+//! with 1970-01-01 as day zero. They are exact over the whole `i32` year
+//! range.
+//!
+//! Everything else here is derived from them, so the leap-year and era
 //! arithmetic is written once.
 //!
 //! Week numbering is the ISO 8601 rule generalised to an arbitrary first day
@@ -40,11 +42,9 @@ pub(crate) const fn days_in_year(year: i32) -> u16 {
 
 /// The days from 1970-01-01 to the date, negative before the epoch.
 ///
-/// NOTE: the constants are Hinnant's. An era is the 400 years over which the
-/// calendar repeats, 146097 days long, and 719468 is the distance from the
-/// era starting on 0000-03-01 to the epoch. Shifting the year to start in
-/// March puts the leap day last, so the 153/5 ratio walks the month lengths
-/// with no leap-year term at all.
+/// NOTE: Hinnant's constants. An era is the 400 years the calendar repeats
+/// over (146097 days), 719468 its 0000-03-01 start to the epoch. Starting the
+/// year in March puts the leap day last, so 153/5 needs no leap-year term.
 pub(crate) const fn days_from_civil(year: i32, month: u8, day: u8) -> i64 {
     let month = month as i64;
     let year = year as i64 - (month <= 2) as i64;
@@ -75,9 +75,8 @@ pub(crate) const fn civil_from_days(days: i64) -> (i32, u8, u8) {
 
 /// The day of the week, Sunday being zero through Saturday six.
 ///
-/// The numbering is the one
-/// [`IcalRecurWeekday`](crate::recur::IcalRecurWeekday) gives its variants, so
-/// a weekday is a cast and never a lookup.
+/// The numbering matches [`IcalRecurWeekday`](crate::recur::IcalRecurWeekday),
+/// so a weekday is a cast and never a lookup.
 ///
 /// NOTE: day zero, 1970-01-01, was a Thursday, hence the shift by four.
 pub(crate) const fn weekday(year: i32, month: u8, day: u8) -> u8 {
@@ -89,20 +88,17 @@ pub(crate) const fn day_of_year(year: i32, month: u8, day: u8) -> u16 {
     (days_from_civil(year, month, day) - days_from_civil(year, 1, 1) + 1) as u16
 }
 
-/// The week-numbering year and the week the date falls in, weeks counted from
-/// one.
+/// The week-numbering year and the week the date falls in, counted from one.
 ///
-/// The ISO 8601 rule generalised to any first day of the week, which is what
-/// RFC 5545 reads `BYWEEKNO` against `WKST`: a week starts on `week_start`
-/// (Sunday being zero, as in [`weekday`]) and week one is the first week
-/// holding at least four days of the year. The year returned is the
-/// week-numbering one, which differs from the calendar year over the few days
-/// either side of January 1.
+/// The ISO 8601 rule generalised to any `WKST`, which is what RFC 5545 reads
+/// `BYWEEKNO` against: a week starts on `week_start` (Sunday zero, as in
+/// [`weekday`]) and week one is the first holding four days of the year, so
+/// the year returned can differ from the calendar one around January 1.
 ///
-/// NOTE: a week belongs to the year of its fourth day, since holding that day
-/// and holding four days of a year are the same condition. That fourth day
-/// also lands in the first seven days of January for week one, which is what
-/// makes the week its day of the year divided by seven.
+/// NOTE: a week belongs to the year of its fourth day, holding that day and
+/// holding four days of a year being one condition; for week one that day
+/// falls in the first seven of January, making the week its day of the year
+/// divided by seven.
 pub(crate) const fn week_number(year: i32, month: u8, day: u8, week_start: u8) -> (i32, u8) {
     let offset = (weekday(year, month, day) + 7 - week_start % 7) % 7;
     let middle = days_from_civil(year, month, day) + 3 - offset as i64;

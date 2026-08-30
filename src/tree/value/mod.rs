@@ -4,11 +4,12 @@
 //! per-value-type [`Codec`](crate::tree::codec::Codec) impls, one module each,
 //! mirroring the model's `value/`.
 //!
-//! [`IcalValueNode`](node::IcalValueNode) is the generic, byte-faithful value
-//! (`;`-separated components of `,`-separated leaves), and
-//! [`IcalValueCursor`](cursor::IcalValueCursor) reads and writes it through the
-//! codec, escaping on write and preserving every component it does not touch.
-//! What the components *mean* is the lens's business (see
+//! [`IcalValueNode`](node::IcalValueNode) is the generic, byte-faithful
+//! value: `;`-separated components of `,`-separated leaves.
+//!
+//! [`IcalValueCursor`](cursor::IcalValueCursor) reads and writes it through
+//! the codec, escaping on write and preserving every component it does not
+//! touch. What the components *mean* is the lens's business (see
 //! [`crate::tree::prop`]).
 
 pub mod cursor;

@@ -14,7 +14,11 @@ fuzz_target!(|data: &[u8]| {
         let _ = cst.to_string();
 
         let reparsed = IcalCst::parse(&bytes).expect("serialized output must reparse");
-        assert_eq!(reparsed.to_bytes(), bytes, "serialization is not idempotent");
+        assert_eq!(
+            reparsed.to_bytes(),
+            bytes,
+            "serialization is not idempotent"
+        );
     }
 
     // The multi-calendar path must not panic either.

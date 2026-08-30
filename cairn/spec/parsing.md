@@ -28,10 +28,30 @@ A file holding several calendars round-trips through the multi-calendar entry po
 - WHEN it is parsed and serialized
 - THEN the output is byte-identical to the input
 
+An edit through a cursor that names a component rewrites that component alone. An edit through one that names none replaces the whole value, being the inverse of the reader that names none.
+
 #### Scenario: One edited property
 - GIVEN a parsed, folded calendar
 - WHEN one property value is set through its lens cursor
 - THEN every line but the edited one keeps its original wire shape
+
+### Requirement: A truncating read names the component it truncates at
+
+A value node SHALL read the whole value through readers that take no index (`decode`, `decode_list`, `decode_bytes`), keeping every `;` the value carries literal, and SHALL read one `;`-component only through readers that name it (`decode_component`, `decode_component_list`). No reader SHALL cut a value at both a `;` and a `,`.
+
+The un-indexed writers (`set`, `set_bytes`) SHALL replace the whole value, so a value read whole and written back comes back unchanged. The component writers (`set_component`, `set_component_bytes`) SHALL rewrite nothing but the component they name.
+
+The value cursor SHALL follow the same split: `text`, `bytes`, `list` and their setters address the whole value, `component` and `set_component` address one slot.
+
+#### Scenario: A description read past its first semicolon
+- GIVEN a calendar carrying `DESCRIPTION:a;b`
+- WHEN the value is read through its lens cursor
+- THEN it reads `a;b` rather than stopping at the semicolon
+
+#### Scenario: A value read whole and written straight back
+- GIVEN a value of several `;`-components
+- WHEN it is read whole and written back through the un-indexed setter
+- THEN it reads back as it went in, with no component of the old value left behind
 
 ### Requirement: Serialization fixpoint
 

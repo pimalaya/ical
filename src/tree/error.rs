@@ -2,11 +2,12 @@
 //!
 //! The parsing errors.
 //!
-//! [`IcalParseError`] is the single error type returned by `IcalCst::parse` and
-//! the line tokeniser it drives, each variant pinpointing one structural failure
-//! and carrying the offending text. Parsing is the only fallible bridge in the
-//! crate: decoding, encoding and serializing never fail, so this is the whole
-//! error surface.
+//! [`IcalParseError`] is the single error type returned by `IcalCst::parse`
+//! and the line tokeniser it drives, each variant pinpointing one structural
+//! failure and carrying the offending text.
+//!
+//! Parsing is the only fallible bridge in the crate: decoding, encoding and
+//! serializing never fail, so this is the whole error surface.
 
 use core::{error, fmt};
 

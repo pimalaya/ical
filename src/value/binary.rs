@@ -3,14 +3,17 @@
 //! The decoded binary value kind.
 //!
 //! Backs the binary-bearing properties (`ATTACH`, `IMAGE`, `STRUCTURED-DATA`)
-//! where the value is inline base64 rather than an external URI reference (the
-//! BINARY value, RFC 5545 3.3.1, carried with `ENCODING=BASE64`); a property
-//! referencing an external URI decodes to
+//! where the value is inline base64 rather than an external URI reference
+//! (the BINARY value, RFC 5545 3.3.1, carried with `ENCODING=BASE64`).
+//!
+//! A property referencing an external URI decodes to
 //! [`IcalUri`](crate::value::uri::IcalUri) instead. The form is told by the
 //! line's `VALUE` / `ENCODING` parameters, and the payload is kept verbatim
 //! (base64 is not decoded to bytes).
 
 use alloc::borrow::Cow;
+#[cfg(feature = "base64")]
+use alloc::vec::Vec;
 
 /// A decoded binary value: an external URI reference, or inline base64 kept as
 /// its raw text.
@@ -27,7 +30,7 @@ impl IcalBinary<'_> {
     /// Decode the inline [`Base64`](Self::Base64) payload to raw bytes; `None`
     /// for a [`Uri`](Self::Uri) reference, which embeds no data. Requires the
     /// `base64` feature.
-    pub fn decode_base64(&self) -> Option<Result<alloc::vec::Vec<u8>, base64::DecodeError>> {
+    pub fn decode_base64(&self) -> Option<Result<Vec<u8>, base64::DecodeError>> {
         use base64::prelude::{BASE64_STANDARD, Engine};
 
         match self {

@@ -4,10 +4,11 @@
 //!
 //! [`IcalVersion`] is the decoded `VERSION` line: one of the two defined
 //! versions (vCalendar 1.0 / iCalendar 2.0), an unrecognised or missing one
-//! normalising to [`V2_0`](IcalVersion::V2_0) at decode time. It sits apart from
-//! the other properties because the syntax tree, which is what preserves the raw
-//! `VERSION` line byte for byte, treats it as part of the calendar envelope.
-//! Pure model, no syntax dependency.
+//! normalising to [`V2_0`](IcalVersion::V2_0) at decode time.
+//!
+//! It sits apart from the other properties because the syntax tree, which is
+//! what preserves the raw `VERSION` line byte for byte, treats it as part of
+//! the calendar envelope. Pure model, no syntax dependency.
 
 use core::{error, fmt, ops, str};
 

@@ -1,8 +1,7 @@
 #![no_main]
 
 //! Coverage-guided fuzz target for the three-way merge. The input is three
-//! calendars separated by a NUL byte, preceded by one byte choosing the
-//! collision preference.
+//! calendars separated by a NUL byte.
 //!
 //! Five oracles: merging never panics; the merged calendar reparses to its own
 //! bytes; a merge of one calendar with itself against itself changes nothing; a
@@ -13,22 +12,12 @@
 
 use ical::tree::{
     cst::{IcalCst, IcalItem},
-    merge::{IcalMerge, IcalMergeSide},
+    merge::IcalMerge,
 };
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
-    let Some((head, rest)) = data.split_first() else {
-        return;
-    };
-
-    let prefer = if head % 2 == 0 {
-        IcalMergeSide::Left
-    } else {
-        IcalMergeSide::Right
-    };
-
-    let mut parts = rest.split(|byte| *byte == 0);
+    let mut parts = data.split(|byte| *byte == 0);
 
     let (Some(base), Some(left), Some(right)) = (parts.next(), parts.next(), parts.next()) else {
         return;
@@ -46,14 +35,16 @@ fuzz_target!(|data: &[u8]| {
         base: &base,
         left: &left,
         right: &right,
-        right_speaks_for: None,
-        prefer,
     }
     .merge();
 
     let bytes = report.merged.to_bytes();
     let reparsed = IcalCst::parse(&bytes).expect("the merged calendar must reparse");
-    assert_eq!(reparsed.to_bytes(), bytes, "the merged calendar is not a fixpoint");
+    assert_eq!(
+        reparsed.to_bytes(),
+        bytes,
+        "the merged calendar is not a fixpoint"
+    );
 
     for conflict in &report.conflicts {
         assert!(
@@ -66,8 +57,6 @@ fuzz_target!(|data: &[u8]| {
         base: &base,
         left: &base,
         right: &base,
-        right_speaks_for: None,
-        prefer,
     }
     .merge();
 
@@ -93,8 +82,6 @@ fuzz_target!(|data: &[u8]| {
         base: &base,
         left: &left,
         right: &left,
-        right_speaks_for: None,
-        prefer,
     }
     .merge();
 

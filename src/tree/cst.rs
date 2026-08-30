@@ -2,19 +2,24 @@
 //!
 //! The core representation: a whole calendar as generic, byte-faithful syntax.
 //!
-//! [`IcalCst`] is the hub of the crate. It models a component (the `VCALENDAR`
-//! and every nested `VEVENT`, `VALARM`, `VTIMEZONE`, ...) as a `BEGIN` / `END`
-//! envelope wrapping an ordered body of [`items`](IcalCst::items): property
-//! lines and nested components, in source order, so anything round-trips byte
-//! for byte even when a producer interleaves them. It knows nothing about what a
-//! property or component *means*. It is filled from bytes
-//! ([`parse`](IcalCst::parse)) or from typed items, exports its bytes
-//! byte-faithfully ([`to_bytes`](IcalCst::to_bytes), or the lossy-for-non-UTF-8
-//! [`Display`](core::fmt::Display)), and offers typed access by lens
-//! ([`prop`](IcalCst::prop), [`prop_mut`](IcalCst::prop_mut),
-//! [`component`](IcalCst::component)). The semantic projection
-//! ([`decode`](IcalCst::decode)) and the codec live in the
-//! [`decode`](crate::tree::codec::decode) /
+//! [`IcalCst`] is the hub of the crate. It models a component (the
+//! `VCALENDAR` and every nested `VEVENT`, `VALARM`, `VTIMEZONE`, ...) as a
+//! `BEGIN` / `END` envelope wrapping an ordered body of
+//! [`items`](IcalCst::items): property lines and nested components.
+//!
+//! They are kept in source order, so anything round-trips byte for byte even
+//! when a producer interleaves them. The tree itself knows nothing about what
+//! a property or component *means*.
+//!
+//! It is filled from bytes ([`parse`](IcalCst::parse)) or from typed items,
+//! and exports its bytes byte-faithfully ([`to_bytes`](IcalCst::to_bytes), or
+//! the lossy-for-non-UTF-8 [`Display`](core::fmt::Display)).
+//!
+//! Typed access goes by lens ([`prop`](IcalCst::prop),
+//! [`prop_mut`](IcalCst::prop_mut), [`component`](IcalCst::component)).
+//!
+//! The semantic projection ([`decode`](IcalCst::decode)) and the codec live
+//! in the [`decode`](crate::tree::codec::decode) /
 //! [`encode`](crate::tree::codec::encode) siblings.
 //!
 //! # Examples
@@ -36,7 +41,7 @@
 //! assert!(cst.to_string().contains("SUMMARY:Dinner\r\n"));
 //! ```
 
-use core::fmt;
+use core::{fmt, iter, mem};
 
 use alloc::{
     borrow::Cow,
@@ -70,11 +75,11 @@ pub enum IcalItem<'a> {
     Opaque(Cow<'a, [u8]>),
 }
 
-/// A component as raw syntax: an optional `BEGIN` / `END` envelope and the
-/// ordered body of property lines and nested components between them. Used for
-/// the `VCALENDAR` root and every subcomponent alike. The envelope is absent
-/// only for a bare, envelope-less record parsed by
-/// [`parse`](IcalCst::parse).
+/// A component as raw syntax: an optional envelope and its ordered body.
+///
+/// The `BEGIN` / `END` envelope wraps property lines and nested components, in
+/// source order. Used for the `VCALENDAR` root and every subcomponent alike;
+/// it is absent only for a bare record parsed by [`parse`](IcalCst::parse).
 #[derive(Clone, Debug)]
 pub struct IcalCst<'a> {
     /// The `BEGIN` line, or `None` for a bare record parsed without an
@@ -105,12 +110,11 @@ impl<'a> IcalCst<'a> {
         }
     }
 
-    /// Parse the first calendar from raw text, borrowing it for the Cst
-    /// lifetime. A bare, envelope-less record (every line a property) is also
-    /// accepted, so a lone component fragment round-trips.
+    /// Parse the first calendar from raw text, borrowed for the Cst lifetime.
     ///
-    /// Anything after the first calendar is not part of it and is dropped,
-    /// except trailing blank lines, which are kept: use
+    /// A bare, envelope-less record (every line a property) is also accepted,
+    /// so a lone component fragment round-trips. Anything after the first
+    /// calendar is dropped, except trailing blank lines, which are kept: use
     /// [`parse_many`](Self::parse_many) to read a multi-calendar file whole.
     pub fn parse<T: AsRef<[u8]> + ?Sized>(input: &'a T) -> Result<Self, IcalParseError> {
         let input = input.as_ref();
@@ -150,18 +154,18 @@ impl<'a> IcalCst<'a> {
         Ok(cst)
     }
 
-    /// Parse every top-level calendar in the input, lazily, one item per
-    /// calendar (or the parse error that stopped iteration).
+    /// Parse every top-level calendar in the input, lazily, one item each.
     ///
-    /// Blank lines between calendars belong to the calendar that follows them,
-    /// and blank lines after the last one to the last calendar, so
-    /// concatenating what this yields reproduces the file byte for byte.
+    /// An item is a calendar or the parse error that stopped iteration. Blank
+    /// lines between calendars belong to the calendar that follows them, and
+    /// those after the last one to the last calendar, so concatenating what
+    /// this yields reproduces the file byte for byte.
     pub fn parse_many<T: AsRef<[u8]> + ?Sized>(
         input: &'a T,
     ) -> impl Iterator<Item = Result<Self, IcalParseError>> {
         let mut rest = input.as_ref();
 
-        core::iter::from_fn(move || {
+        iter::from_fn(move || {
             if is_blank(rest) {
                 return None;
             }
@@ -184,16 +188,15 @@ impl<'a> IcalCst<'a> {
     /// Parse the whole input, recovering from anything that cannot be
     /// structured instead of refusing the calendar.
     ///
-    /// A physical line with no colon, or whose name is not UTF-8, is kept as an
-    /// [`Opaque`](IcalItem::Opaque) item and parsing carries on. A component
-    /// left open at end of input is closed with no `END`. Either way the bytes
-    /// survive, so the recovered calendars still serialize back to the input,
-    /// and every problem is reported in [`IcalRecovery::problems`].
+    /// A physical line with no colon, or whose name is not UTF-8, is kept as
+    /// an [`Opaque`](IcalItem::Opaque) item and parsing carries on, and a
+    /// component left open at end of input is closed with no `END`. The bytes
+    /// survive either way, so the recovered calendars serialize back unchanged.
     ///
-    /// The strict entry points ([`parse`](Self::parse),
-    /// [`parse_many`](Self::parse_many)) are unchanged and stay the default:
-    /// use this one when a calendar from the wild matters more than the
-    /// guarantee that it was well formed.
+    /// Every problem is reported in [`IcalRecovery::problems`]. The strict
+    /// [`parse`](Self::parse) and [`parse_many`](Self::parse_many) stay the
+    /// default: use this when a calendar from the wild matters more than the
+    /// guarantee it was well formed.
     pub fn parse_recovering<T: AsRef<[u8]> + ?Sized>(input: &'a T) -> IcalRecovery<'a> {
         let mut rest = input.as_ref();
         let mut recovery = IcalRecovery::default();
@@ -374,12 +377,18 @@ impl<'a> IcalCst<'a> {
         }
     }
 
-    /// Stamp the escaping mode onto every value node in the subtree, once the
-    /// root `VERSION` is known (it can only be determined for the whole tree).
+    /// Stamp the escaping mode onto every value and parameter node in the
+    /// subtree, once the root `VERSION` is known (it can only be determined for
+    /// the whole tree).
     fn stamp_escaper(&mut self, escaper: Escaper) {
         for item in &mut self.items {
             match item {
-                IcalItem::Prop(line) => line.value.escaper = escaper,
+                IcalItem::Prop(line) => {
+                    line.value.escaper = escaper;
+                    for param in &mut line.params {
+                        param.escaper = escaper;
+                    }
+                }
                 IcalItem::Component(child) => child.stamp_escaper(escaper),
                 IcalItem::Opaque(_) => {}
             }
@@ -577,7 +586,7 @@ impl<'a> IcalRecovery<'a> {
             return;
         }
 
-        self.calendars.push(IcalCst::bare(core::mem::take(loose)));
+        self.calendars.push(IcalCst::bare(mem::take(loose)));
     }
 }
 
@@ -612,11 +621,14 @@ mod tests {
         vec::Vec,
     };
 
-    use crate::tree::{
-        component::vevent::VEVENT,
-        cst::IcalCst,
-        error::IcalParseError,
-        prop::{prodid::PRODID, summary::SUMMARY},
+    use crate::{
+        tree::{
+            component::vevent::VEVENT,
+            cst::IcalCst,
+            error::IcalParseError,
+            prop::{prodid::PRODID, summary::SUMMARY},
+        },
+        version::IcalVersion,
     };
 
     const CAL: &str = concat!(
@@ -665,7 +677,7 @@ mod tests {
     #[test]
     fn reports_the_version() {
         let cst = IcalCst::parse(CAL).unwrap();
-        assert_eq!(cst.version(), crate::version::IcalVersion::V2_0);
+        assert_eq!(cst.version(), IcalVersion::V2_0);
     }
 
     #[test]

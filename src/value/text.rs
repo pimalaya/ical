@@ -1,12 +1,14 @@
 //! # Text values
 //!
-//! The decoded text value kinds: a single text, and a comma-separated text list.
+//! The decoded text value kinds: a single text, and a comma-separated list.
 //!
 //! These back the bulk of RFC 5545 properties whose value is plain text (the
 //! TEXT value type, RFC 5545 3.3.11): `SUMMARY`, `DESCRIPTION`, `LOCATION`,
-//! `COMMENT`, `PRODID`, `UID`, `TZID`, ... for [`IcalText`], and `CATEGORIES` /
-//! `RESOURCES` for [`IcalTextList`]. Carrying no wire name, the same value type
-//! round-trips through any property that shares the kind.
+//! `COMMENT`, `PRODID`, `UID`, `TZID`, ... for [`IcalText`], and `CATEGORIES`
+//! / `RESOURCES` for [`IcalTextList`].
+//!
+//! Carrying no wire name, the same value type round-trips through any
+//! property that shares the kind.
 
 use alloc::{borrow::Cow, string::String, vec::Vec};
 

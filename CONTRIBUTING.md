@@ -11,13 +11,39 @@ Whether you are a human or an AI agent, read these in order before touching the 
 
 Everything below documents only what differs from the Pimalaya standards.
 
+## Deviation: wire-spelled lens markers
+
+The property, parameter and component lens markers are spelled exactly as their wire token (`SUMMARY`, `DTSTAMP`, `PERCENT_COMPLETE`, `RESOURCE_TYPE`, `VEVENT`), against naming-007, which asks every public item to carry the `Ical` domain prefix. Every other public item does carry it.
+
+They are type-level keys naming a spec token, written only inside a turbofish (`cst.prop::<SUMMARY>()`), never constructed and never handled as values.
+
+Prefixing them would push the wire name, the one thing they encode, to the end of a longer identifier, and make the call site read less like the calendar it addresses.
+
+A token the wire spells with a hyphen takes an underscore, Rust having none, and every marker carries `#[allow(non_camel_case_types)]` for the same reason.
+
+The discrepancy is flagged upstream, so the guideline can grow a third exception for spec-token type-level keys. The twin crate vcard-rs carries the same deviation, for the same reason.
+
+## Deviation: the jscalendar feature
+
+The `jscalendar` feature is `["jcal"]` and pulls no crate of its own, against crate-003, which asks that a feature exist only where it changes the crate set. Every other feature here does pull one: `parser` takes `memchr`, `jcal` takes `serde_json`, and the three content decoders take one small crate each.
+
+It is kept because a cargo feature is also a discovery surface, not only a build switch: a reader looking for JSCalendar support reads the feature list, and folding it into `jcal` would leave the RFC 8984 conversion undiscoverable from the manifest.
+
+The alias also states the real dependency, `jscalendar` implying `jcal` since the conversion reuses jCal syntax for its escape hatch. It costs a name and no build weight.
+
 ## Cairn
 
-This repository follows [Cairn](https://github.com/pimalaya/cairn): a living spec, reviewable change proposals and a dated log, kept next to the code. Non-trivial work starts with a change folder under cairn/changes, and nothing behavioural is done until its delta is folded into cairn/spec and an entry is appended to cairn/log. The activation stanza is [AGENTS.md](./AGENTS.md).
+This repository follows [Cairn](https://github.com/pimalaya/cairn): a living spec, reviewable change proposals and a dated log, kept next to the code.
+
+Non-trivial work starts with a change folder under cairn/changes, and nothing behavioural is done until its delta is folded into cairn/spec and an entry is appended to cairn/log. The activation stanza is [AGENTS.md](./AGENTS.md).
 
 ## Build
 
-ical-rs is not an I/O library, so it has no coroutine, client or TLS layers. It is a no_std library (with alloc) whose core is dependency-free; every dependency sits behind a feature: parser (the byte-faithful syntax tree), quoted-printable, base64 and encoding (content decoders for encoded text, inline binary and foreign character sets), and jcal and jscalendar (the JSON representations). Everything under the tree module is gated on parser, while the decoded model, the recurrence layer and the time zones are always available.
+ical-rs is not an I/O library, so it has no coroutine, client or TLS layers. It is a no_std library (with alloc) whose core is dependency-free, every dependency sitting behind a feature.
+
+Those features are parser (the byte-faithful syntax tree), quoted-printable, base64 and encoding (content decoders for encoded text, inline binary and foreign character sets), and jcal and jscalendar (the JSON representations).
+
+Everything under the tree module is gated on parser, while the decoded model, the recurrence layer and the time zones are always available.
 
 Check both the full build and the bare core, so gated code never leaks into the always-on core:
 
@@ -39,8 +65,10 @@ New parser inputs are also worth handing to the fuzzer, described in [fuzz/READM
 
 ## The recurrence corpus
 
-The recurrence expander is pinned by tests/corpus/recur, a frozen differential run against python-dateutil and libical. consensus.tsv holds the cases where both oracles agree, divergence.tsv the cases where this crate deliberately parts from one of them. The replay needs neither Python nor a C toolchain. Regenerating the corpus does, and the procedure is in tests/corpus/recur/ATTRIBUTION.md. Never edit an expected value to make a test pass: a changed answer is either a bug or a documented divergence.
+The recurrence expander is pinned by tests/corpus/recur, a frozen differential run against python-dateutil and libical. consensus.tsv holds the cases where both oracles agree, divergence.tsv the cases where this crate deliberately parts from one of them.
+
+The replay needs neither Python nor a C toolchain. Regenerating the corpus does, and the procedure is in tests/corpus/recur/ATTRIBUTION.md. Never edit an expected value to make a test pass: a changed answer is either a bug or a documented divergence.
 
 ## Examples and benchmarks
 
-The runnable programs from the docs live in [./examples](./examples); run one with cargo run --example followed by its name. The parse benchmark runs with cargo bench --bench parse.
+The runnable programs from the docs live in [./examples](./examples); run one with cargo run --example followed by its name. The comparative parse benchmark runs with cargo bench --bench parse, and its methodology and current numbers are recorded in [benches/README.md](./benches/README.md).

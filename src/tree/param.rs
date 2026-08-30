@@ -1,8 +1,10 @@
 //! # Parameters (syntax side)
 //!
-//! The per-parameter lens contract ([`IcalParamLens`](lens::IcalParamLens)) and
-//! one module per iCalendar parameter, tying a wire name to its decoded shape;
-//! the markers are the type-level keys for
+//! The per-parameter lens contract ([`IcalParamLens`](lens::IcalParamLens))
+//! and one module per iCalendar parameter, tying a wire name to its decoded
+//! shape.
+//!
+//! The markers are the type-level keys for
 //! [`IcalLine::param`](crate::tree::line::IcalLine::param). The raw
 //! [`IcalParamNode`](node::IcalParamNode) they read and write is defined
 //! alongside.

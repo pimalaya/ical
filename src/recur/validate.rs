@@ -4,15 +4,16 @@
 //!
 //! Expansion is liberal by design: a `BY` part the frequency forbids is
 //! ignored rather than refused, because that is what "liberal in what it
-//! accepts" means for a rule that arrived from someone else's server. That
-//! leaves a caller who is *writing* a rule with no way to learn it is
+//! accepts" means for a rule that arrived from someone else's server.
+//!
+//! That leaves a caller who is *writing* a rule with no way to learn it is
 //! malformed, which is what this is for. The two never disagree: validation
 //! reports the part, expansion still ignores it.
 //!
 //! A rule that passes earns an [`IcalValid`], the same proof
 //! [`Ical::validate`](crate::ical::Ical::validate) mints for a whole calendar.
 
-use core::fmt;
+use core::{error, fmt};
 
 use alloc::vec::Vec;
 
@@ -109,7 +110,7 @@ impl fmt::Display for IcalRecurRuleProblem {
     }
 }
 
-impl core::error::Error for IcalRecurRuleProblem {}
+impl error::Error for IcalRecurRuleProblem {}
 
 /// The wire spelling of a frequency.
 fn freq_name(freq: IcalRecurFreq) -> &'static str {
@@ -228,7 +229,7 @@ mod tests {
     use alloc::vec;
 
     use crate::recur::{
-        IcalRecurFreq, IcalRecurRule,
+        IcalRecurDateTime, IcalRecurFreq, IcalRecurRule,
         validate::{IcalRecurPart, IcalRecurRuleProblem},
     };
 
@@ -305,7 +306,7 @@ mod tests {
         // NOTE: Parsing refuses this pair, so the case has to be built by hand,
         // which is exactly the caller this check is for.
         let mut rule = IcalRecurRule::parse("FREQ=DAILY;COUNT=3").unwrap();
-        rule.until = Some(crate::recur::IcalRecurDateTime::date(2026, 1, 1));
+        rule.until = Some(IcalRecurDateTime::date(2026, 1, 1));
 
         assert_eq!(rule.problems(), [IcalRecurRuleProblem::UntilWithCount]);
     }

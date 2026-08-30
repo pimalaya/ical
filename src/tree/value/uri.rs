@@ -14,7 +14,7 @@ use crate::{
 
 impl<'v> Codec<'v> for IcalUri<'v> {
     fn decode(node: &'v IcalValueNode<'_>) -> Self {
-        IcalUri(node.decode_joined())
+        IcalUri(node.decode())
     }
 
     fn encode(&self, escaper: Escaper) -> IcalValueNode<'static> {
