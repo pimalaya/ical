@@ -22,7 +22,7 @@ The merged calendar SHALL keep the untouched bytes of the left side: it starts a
 
 #### Scenario: Two edits to the same property
 
-- GIVEN both versions setting a different summary, and a caller stating no preference
+- GIVEN both versions setting a different summary
 - WHEN they are merged
 - THEN the left side's summary is kept and the collision is reported rather than one side silently winning
 
@@ -30,7 +30,7 @@ The merged calendar SHALL keep the untouched bytes of the left side: it starts a
 
 - GIVEN one version removing a property and the other changing it
 - WHEN they are merged
-- THEN the changed property survives, whichever side changed it and whatever the preference, and the collision is still reported
+- THEN the changed property survives, whichever side changed it, and the collision is still reported
 
 #### Scenario: Two edits to one list
 
@@ -96,53 +96,25 @@ The order the replay applies actions in is therefore not the order the diff prod
 - WHEN it is merged against an untouched other side
 - THEN the merged component holds the third one alone
 
-### Requirement: Organiser authority
+### Requirement: Ours wins, and the collision is still reported
 
-Where the caller says which calendar address the right side edits as, a right-side change to a property only the organiser may set SHALL be refused and reported (RFC 5546 3.2). An attendee owns their own `ATTENDEE` line, the transparency they show, their alarms and anything outside the vocabulary; everything describing the meeting is the organiser's.
+The left side SHALL be `ours` and the right side `theirs`, in git's sense. The merged calendar SHALL be built from the left side's bytes, and where both sides changed one property to different things it SHALL carry the left side's value. Neither is a caller's to choose.
 
-Where the caller says nothing, no claim is made and nothing is refused on this ground.
+One side answering both questions is the point rather than a shortcut. A caller reaches for a merge holding a version it is merging into, and that version is both the one it would rather not churn and the one it means to keep. A caller wanting the other value has the collision in the report and can put it to somebody, which is a better answer than a flag that silently picks.
 
-Authority SHALL stay on the replayed side, and a refusal SHALL NOT depend on the collision preference: a permission check belongs to the change being applied rather than to the baseline it is applied to. A caller therefore puts the edit it speaks for on the replayed side, and states its preference separately when that edit should also win.
+The rule SHALL decide only the case where both sides wrote a value. A property one side alone touched is still taken from that side, an untouched line still comes out byte for byte, an update still beats a removal whichever side it came from, and the report still names both actions.
 
-#### Scenario: An attendee moving a meeting
+#### Scenario: Both sides write a value
 
-- GIVEN a right side speaking for an attendee, changing the start of a meeting someone else organises
-- WHEN it is merged, under either preference
-- THEN the start does not change and the refusal is reported
-
-#### Scenario: An attendee answering an invitation
-
-- GIVEN the same right side changing its own `PARTSTAT`
-- WHEN it is merged
-- THEN the answer applies and nothing is reported
-
-### Requirement: The winning side is chosen, not implied
-
-A caller SHALL be able to say which side's value the merged calendar carries when both sides changed one property to different things, independently of which side supplies the baseline bytes. Where the caller says nothing, the left side wins, which is what a merge has always done.
-
-The two are different questions. Which side is the baseline decides whose folding, whose parameter casing and whose property order survive untouched, and is answered by whichever version the caller would rather not churn. Which side wins a collision is a statement about two people disagreeing, and is answered by what the caller knows about them. Deciding the second by the first makes a byte-fidelity choice settle a data-loss one.
-
-Authority is what forces the split rather than mere tidiness. Only the replayed side is judged, so a caller wanting its own edit refused where it exceeds an attendee's authority has to put that edit on the replayed side, and without a preference stated apart from the baseline that would be the same act as making it lose every collision. A caller would then be choosing between refusing what a person may not change and keeping what they did change, which are not alternatives.
-
-The preference SHALL decide only the case where both sides wrote a value. A property one side alone touched is still taken from that side, an untouched line still comes out byte for byte, and the report still names both actions whichever way the preference falls.
-
-#### Scenario: The right side is preferred
-
-- GIVEN both versions setting a different summary, and a caller preferring the right side
+- GIVEN both versions setting a different summary
 - WHEN they are merged
-- THEN the merged calendar carries the right side's summary and the collision is reported as it always was
+- THEN the merged calendar carries the left side's summary and the collision is reported
 
-#### Scenario: The preference does not reach an uncontested property
+#### Scenario: The rule does not reach an uncontested property
 
-- GIVEN a property only the left side changed, and a caller preferring the right side
+- GIVEN a property only the right side changed
 - WHEN they are merged
-- THEN the left side's change survives and nothing is reported for it
-
-#### Scenario: Being judged no longer costs the collision
-
-- GIVEN a right side speaking for an attendee, changing its own `PARTSTAT` and also setting a summary the left side set differently, with the right side preferred
-- WHEN they are merged
-- THEN the answer applies, the summary is the right side's, and only the summary is reported
+- THEN the right side's change survives and nothing is reported for it
 
 ### Requirement: Property identity
 
@@ -220,7 +192,7 @@ The outcome is the one a collision already has, with granularity settling which 
 
 Two sides that made the same change SHALL NOT be reported as diverging, and the merged calendar SHALL carry that change once. A collision is two people disagreeing, and two identical actions are not that. An addition is the same addition only where both sides wrote the same bytes, since an addition names where it lands and what it says but not how it is spelt.
 
-Merging two identical sides SHALL therefore return those bytes and report nothing, under either preference.
+Merging two identical sides SHALL therefore return those bytes and report nothing.
 
 #### Scenario: A side merged with itself
 
@@ -228,15 +200,15 @@ Merging two identical sides SHALL therefore return those bytes and report nothin
 - WHEN they are merged
 - THEN the merged calendar carries those edits and nothing is reported
 
-### Requirement: An addition that wins replaces the one it beat
+### Requirement: An addition that loses does not join the one that beat it
 
-Where both sides added a property or a component the base lacked and the merge keeps the replayed side's, the addition it beat SHALL be replaced where it stood rather than left beside it. The merged calendar SHALL never hold more members of a group than the side that wrote the most, so a property RFC 5545 allows once is never emitted twice and `validate` never refuses what the merge produced, and a position addressing the members of a group SHALL NOT be renumbered by the replacement.
+Where both sides added a property or a component the base lacked, the merged calendar SHALL hold the left side's alone and report the collision. The right side's addition SHALL NOT be written beside it, so the merged calendar never holds more members of a group than the side that wrote the most: a property RFC 5545 allows once is never emitted twice, and `validate` never refuses what the merge produced.
 
 #### Scenario: Both sides setting a location the base lacked
 
-- GIVEN a base with no `LOCATION` and two sides adding a different one, with the right side preferred
+- GIVEN a base with no `LOCATION` and two sides adding a different one
 - WHEN they are merged
-- THEN the merged event holds the right side's `LOCATION` alone and the collision is reported
+- THEN the merged event holds the left side's `LOCATION` alone and the collision is reported
 
 ### Requirement: Repeated parameters
 
@@ -281,3 +253,55 @@ The replay addresses such a component by its path alone, so an action about the 
 - GIVEN a calendar with two events sharing a `UID`, edited once
 - WHEN it is merged with itself against the original
 - THEN the merged calendar is that edit and nothing is reported
+
+### Requirement: A value is compared as written
+
+Two values SHALL be compared on their raw nodes, component by component, rather than on what they decode to. A decoded value reads its own kind's shape, and a text value reads its first `;`-component alone, so two lines saying different things past that point decode alike and the difference is never seen.
+
+Where the two sides escape by different rules, only identical bytes SHALL count as the same value, there being no shared decoding to compare through.
+
+#### Scenario: An edit past the first semicolon
+
+- GIVEN a base and a side whose text value differs only after its first `;`
+- WHEN they are diffed
+- THEN the change is reported and the merged calendar carries it
+
+### Requirement: A list is a multiset
+
+A list value SHALL be diffed and replayed as a multiset. One item leaving a list that held it twice SHALL be reported as one removal, and SHALL take one item rather than every item equal to it.
+
+#### Scenario: One of two equal items leaves
+
+- GIVEN a base holding `a,a,b` and a side holding `a,b`
+- WHEN the removal is reported and replayed
+- THEN the merged list holds `a,b`
+
+### Requirement: A replay target follows its property
+
+Where the baseline side added a property, the position a replayed action lands on SHALL account for that addition as well as for the baseline side's removals. The merged calendar is the baseline side's own tree, so a line it inserted moves every base-derived line at or after it.
+
+#### Scenario: An insertion above an edit
+
+- GIVEN a baseline side that inserted a property above two it kept
+- WHEN the other side's edit of the second one is replayed
+- THEN the edit lands on that property, and the one above it is untouched
+
+### Requirement: A restored property comes back once
+
+Where the baseline side removed a property the other side edited, the property SHALL be restored once however many actions the other side made on it. The restored line is the other side's own, bytes and all, so every one of its actions is already in it.
+
+#### Scenario: Two edits to a removed property
+
+- GIVEN a baseline side that removed a property, and another side that changed both its value and one of its parameters
+- WHEN the actions are replayed
+- THEN the merged component holds that property once
+
+### Requirement: Retyping a value contests it
+
+A change to the `VALUE` parameter SHALL collide with a value-level action on the other side, and a whole-value change SHALL collide with the other side's item edits. `VALUE` declares how the value is read, so items written under the old type cannot stand beside the new one (RFC 5545 section 3.8.5.2).
+
+#### Scenario: A retype against an addition
+
+- GIVEN one side adding an `RDATE` item and the other retyping the property to `PERIOD`
+- WHEN they are merged
+- THEN the collision is reported rather than both landing

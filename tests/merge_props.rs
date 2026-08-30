@@ -24,18 +24,11 @@
 
 #![cfg(feature = "parser")]
 
-use std::{
-    borrow::Cow,
-    collections::{BTreeMap, BTreeSet},
-};
+use std::collections::{BTreeMap, BTreeSet};
 
-use ical::{
-    component::IcalComponentKind,
-    prop::{IcalPropKind, IcalPropName},
-    tree::{
-        cst::IcalCst,
-        merge::{IcalMerge, IcalMergeReport, IcalMergeSide},
-    },
+use ical::tree::{
+    cst::IcalCst,
+    merge::{IcalMerge, IcalMergeReport},
 };
 use proptest::{
     prelude::*,
@@ -57,31 +50,13 @@ fn cases() -> u32 {
         .unwrap_or(512)
 }
 
-/// Both preferences, so every law is stated under each of them.
-const PREFERENCES: [IcalMergeSide; 2] = [IcalMergeSide::Left, IcalMergeSide::Right];
-
 /// Merge three calendars given as wire bytes.
-fn merge<'a>(
-    base: &'a [u8],
-    left: &'a [u8],
-    right: &'a [u8],
-    prefer: IcalMergeSide,
-    speaks_for: Option<&'a str>,
-) -> Option<IcalMergeReport<'a>> {
+fn merge<'a>(base: &'a [u8], left: &'a [u8], right: &'a [u8]) -> Option<IcalMergeReport<'a>> {
     let base = Box::leak(Box::new(IcalCst::parse(base).ok()?));
     let left = Box::leak(Box::new(IcalCst::parse(left).ok()?));
     let right = Box::leak(Box::new(IcalCst::parse(right).ok()?));
 
-    Some(
-        IcalMerge {
-            base,
-            left,
-            right,
-            right_speaks_for: speaks_for.map(Into::into),
-            prefer,
-        }
-        .merge(),
-    )
+    Some(IcalMerge { base, left, right }.merge())
 }
 
 /// The merged calendar's bytes.
@@ -105,14 +80,8 @@ struct Merged<'a> {
 }
 
 /// Merge three calendars and project all four onto the field model.
-fn run<'a>(
-    base: &'a [u8],
-    left: &'a [u8],
-    right: &'a [u8],
-    prefer: IcalMergeSide,
-    speaks_for: Option<&'a str>,
-) -> Option<Merged<'a>> {
-    let report = merge(base, left, right, prefer, speaks_for)?;
+fn run<'a>(base: &'a [u8], left: &'a [u8], right: &'a [u8]) -> Option<Merged<'a>> {
+    let report = merge(base, left, right)?;
 
     let base = IcalCst::parse(base).ok()?;
     let version = base.version();
@@ -436,7 +405,7 @@ mod model {
     }
 
     /// The fields the report names as contested, that is the ones a divergence
-    /// or an authority refusal was reported about.
+    /// was reported about.
     ///
     /// A recurrence conflict is deliberately not counted: it refuses nothing,
     /// so it can never be the reason a change failed to land.
@@ -514,25 +483,11 @@ mod model {
 /// diffs the field projection of each side against the base with plain set
 /// operations and reconciles by the documented rules: a field only one side
 /// touched is taken from that side, an update beats a removal whichever side it
-/// came from, the preference settles the rest, and a right-side change to
-/// something only the organiser may set is refused. Its only job is to disagree
-/// A second merge, written from the spec rather than from the implementation.
-///
-/// It knows nothing about bytes, folding, property order or line identity. It
-/// diffs the field projection of each side against the base with plain set
-/// operations and reconciles by the documented rules: a field only one side
-/// touched is taken from that side, an update beats a removal whichever side it
-/// came from, the preference settles the rest, and a right-side change to
-/// something only the organiser may set is refused. Its only job is to disagree
-/// with the real merge where the real merge is wrong.
+/// came from, and where both sides wrote a different value the left side's
+/// survives. Its only job is to disagree with the real merge where the real
+/// merge is wrong.
 mod reference {
     use std::collections::{BTreeMap, BTreeSet};
-
-    use ical::{
-        component::IcalComponentKind,
-        prop::{IcalPropKind, IcalPropName},
-        tree::merge::IcalMergeSide,
-    };
 
     use crate::model::{Address, FieldKey, FieldSlot, IcalModel};
 
@@ -540,7 +495,7 @@ mod reference {
     pub struct Reference {
         /// The merged fields.
         pub merged: IcalModel,
-        /// The addresses it reports as contested: a divergence or a refusal.
+        /// The addresses it reports as contested.
         pub contested: BTreeSet<Address>,
     }
 
@@ -615,17 +570,7 @@ mod reference {
     }
 
     /// Reconcile two field projections against their base.
-    ///
-    /// `organisers` maps a component path to the calendar address organising
-    /// it, read from the base and, failing that, from the left side.
-    pub fn merge(
-        base: &IcalModel,
-        left: &IcalModel,
-        right: &IcalModel,
-        prefer: IcalMergeSide,
-        speaks_for: Option<&str>,
-        organisers: &BTreeMap<Vec<(String, String)>, String>,
-    ) -> Reference {
+    pub fn merge(base: &IcalModel, left: &IcalModel, right: &IcalModel) -> Reference {
         let subtree = |model: &IcalModel, path: &[(String, String)]| {
             model
                 .iter()
@@ -642,8 +587,7 @@ mod reference {
 
         let mut merged = IcalModel::new();
         let mut contested = BTreeSet::new();
-        let mut wholesale: BTreeMap<Vec<(String, String)>, IcalMergeSide> = BTreeMap::new();
-        let mut guarded: BTreeSet<Vec<(String, String)>> = BTreeSet::new();
+        let mut wholesale: BTreeSet<Vec<(String, String)>> = BTreeSet::new();
 
         let mut paths: BTreeSet<&Vec<(String, String)>> = BTreeSet::new();
         paths.extend(&base.paths);
@@ -655,20 +599,7 @@ mod reference {
             let in_left = left.has_component(path);
             let in_right = right.has_component(path);
 
-            let refused = in_right != in_base && refuses(path, None, speaks_for, organisers);
-
-            if refused {
-                contested.insert((path.clone(), String::new(), String::new()));
-            }
-
-            // A component the right side had no authority to add or remove
-            // protects everything nested in it: the right side removing an
-            // event took its alarms with it, and refusing the removal has to
-            // give them back, or the refusal would keep an empty shell.
-            let protected = refused || guarded.iter().any(|held| path.starts_with(held));
-
             let alive = match (in_base, in_left, in_right) {
-                _ if protected => in_left,
                 (false, ..) => in_left || in_right,
                 (true, ..) => in_left && in_right,
             };
@@ -678,22 +609,12 @@ mod reference {
             }
 
             // Both sides added one component, so the whole subtree is the
-            // preferred side's rather than a field-by-field blend of two
-            // components that never shared an ancestor. Two sides that added
-            // the same component agreed, and agreement is not a collision.
-            if !in_base && in_left && in_right && !refused && !same(path) {
+            // left side's rather than a field-by-field blend of two components
+            // that never shared an ancestor. Two sides that added the same
+            // component agreed, and agreement is not a collision.
+            if !in_base && in_left && in_right && !same(path) {
                 contested.insert((path.clone(), String::new(), String::new()));
-                wholesale.insert(path.clone(), prefer);
-            }
-
-            // A right side with no authority over the component has said
-            // nothing about it, so the subtree is the left side's whole. Read
-            // field by field, a component the right side removed would take
-            // every property with it through the property rule, undoing the
-            // refusal the component rule just made.
-            if refused {
-                guarded.insert(path.clone());
-                wholesale.insert(path.clone(), IcalMergeSide::Left);
+                wholesale.insert(path.clone());
             }
 
             merged.insert(
@@ -706,10 +627,7 @@ mod reference {
                 String::new(),
             );
 
-            let source = wholesale
-                .iter()
-                .find(|(held, _)| path.starts_with(held))
-                .map(|(_, side)| *side);
+            let taken_whole = wholesale.iter().any(|held| path.starts_with(held));
 
             let mut props: BTreeSet<&(String, String)> = BTreeSet::new();
 
@@ -722,27 +640,13 @@ mod reference {
             for (name, at) in props {
                 let address = (path.clone(), name.clone(), at.clone());
 
-                let held = match source {
-                    Some(IcalMergeSide::Left) => &left,
-                    Some(IcalMergeSide::Right) => &right,
-                    None => {
-                        reconcile(
-                            &base,
-                            &left,
-                            &right,
-                            prefer,
-                            speaks_for,
-                            organisers,
-                            &address,
-                            &mut merged,
-                            &mut contested,
-                        );
+                if !taken_whole {
+                    reconcile(&base, &left, &right, &address, &mut merged, &mut contested);
 
-                        continue;
-                    }
-                };
+                    continue;
+                }
 
-                for (key, value) in held.fields(&address) {
+                for (key, value) in left.fields(&address) {
                     merged.insert(key.clone(), value.clone());
                 }
             }
@@ -752,14 +656,10 @@ mod reference {
     }
 
     /// Reconcile one property of one component, field by field.
-    #[allow(clippy::too_many_arguments)]
     fn reconcile(
         base: &Side,
         left: &Side,
         right: &Side,
-        prefer: IcalMergeSide,
-        speaks_for: Option<&str>,
-        organisers: &BTreeMap<Vec<(String, String)>, String>,
         address: &Address,
         merged: &mut IcalModel,
         contested: &mut BTreeSet<Address>,
@@ -770,19 +670,6 @@ mod reference {
 
         let changed_left = base.fields(address) != left.fields(address);
         let changed_right = base.fields(address) != right.fields(address);
-
-        let refused =
-            changed_right && refuses(&address.0, Some(&address.1), speaks_for, organisers);
-
-        if refused {
-            contested.insert(address.clone());
-
-            for (key, value) in left.fields(address) {
-                merged.insert(key.clone(), value.clone());
-            }
-
-            return;
-        }
 
         // A removal met an update: the update survives whichever side it came
         // from, and the line it survives as is the updating side's.
@@ -843,80 +730,16 @@ mod reference {
             } else {
                 contested.insert(address.clone());
 
-                if l.is_none() {
-                    r
-                } else if r.is_none() {
-                    l
-                } else if prefer == IcalMergeSide::Right {
-                    r
-                } else {
-                    l
-                }
+                // NOTE: The left side is git's ours, so where both sides wrote
+                // a different value the left one stands. A side holding no
+                // value removed the field, and an update beats a removal.
+                if l.is_none() { r } else { l }
             };
 
             if let Some(value) = winner {
                 merged.insert(key, value);
             }
         }
-    }
-
-    /// Whether a right-side change is the organiser's to make and the right
-    /// side does not speak for them (RFC 5546 3.2).
-    ///
-    /// A property name of `None` asks about the whole component.
-    fn refuses(
-        path: &[(String, String)],
-        name: Option<&str>,
-        speaks_for: Option<&str>,
-        organisers: &BTreeMap<Vec<(String, String)>, String>,
-    ) -> bool {
-        let Some(speaker) = speaks_for else {
-            return false;
-        };
-
-        let Some(organiser) = organisers.get(path) else {
-            return false;
-        };
-
-        if organiser == speaker {
-            return false;
-        }
-
-        match name {
-            None => whole_component_owned(path),
-            Some(name) => organiser_owned(path, name),
-        }
-    }
-
-    /// Whether a whole component is the organiser's to add or remove.
-    fn whole_component_owned(component: &[(String, String)]) -> bool {
-        !component
-            .last()
-            .is_some_and(|(name, _)| matches!(name.parse(), Ok(IcalComponentKind::VAlarm)))
-    }
-
-    /// Whether a property of a scheduled component is one only its organiser
-    /// may set (RFC 5546 3.2).
-    fn organiser_owned(component: &[(String, String)], prop: &str) -> bool {
-        let scheduled = component.last().is_some_and(|(name, _)| {
-            matches!(
-                name.parse(),
-                Ok(IcalComponentKind::VEvent
-                    | IcalComponentKind::VTodo
-                    | IcalComponentKind::VJournal)
-            )
-        });
-
-        let IcalPropName::Kind(kind) = IcalPropName::from(std::borrow::Cow::Owned(prop.to_owned()))
-        else {
-            return false;
-        };
-
-        scheduled
-            && !matches!(
-                kind,
-                IcalPropKind::Attendee | IcalPropKind::Transp | IcalPropKind::DtStamp
-            )
     }
 }
 
@@ -1811,23 +1634,6 @@ mod generator {
     }
 }
 
-/// The organiser of every component of a calendar, read from the base and,
-/// failing that, from the left side, which is what the merge does.
-fn organisers(base: &IcalCst<'_>, left: &IcalCst<'_>) -> BTreeMap<Vec<(String, String)>, String> {
-    let version = base.version();
-    let mut out = BTreeMap::new();
-
-    for source in [left, base] {
-        for (key, value) in model::of(source, version) {
-            if key.prop == "ORGANIZER" && key.slot == FieldSlot::Value {
-                out.insert(key.component.clone(), value);
-            }
-        }
-    }
-
-    out
-}
-
 /// A group of same-named properties of one component, or of same-named sibling
 /// components of one parent, whose members a positional index tells apart.
 type GroupKey = (Vec<(String, String)>, String);
@@ -2450,51 +2256,6 @@ fn agrees_on_conflicts(
     Ok(())
 }
 
-/// Whether a field is one only the organiser of its component may set, in a
-/// component someone else organises (RFC 5546 3.2).
-///
-/// This is the merge's own rule, restated so the authority law can be checked
-/// without going through the reference: an attendee owns their own `ATTENDEE`
-/// line, the transparency they show, their alarms and anything outside the
-/// vocabulary, and everything describing the meeting is the organiser's.
-fn refuses_for(
-    organisers: &BTreeMap<Vec<(String, String)>, String>,
-    speaker: &str,
-    key: &FieldKey,
-) -> bool {
-    let Some(organiser) = organisers.get(&key.component) else {
-        return false;
-    };
-
-    if organiser == speaker {
-        return false;
-    }
-
-    if key.slot == FieldSlot::Component {
-        return !key
-            .component
-            .last()
-            .is_some_and(|(name, _)| matches!(name.parse(), Ok(IcalComponentKind::VAlarm)));
-    }
-
-    let scheduled = key.component.last().is_some_and(|(name, _)| {
-        matches!(
-            name.parse(),
-            Ok(IcalComponentKind::VEvent | IcalComponentKind::VTodo | IcalComponentKind::VJournal)
-        )
-    });
-
-    let IcalPropName::Kind(kind) = IcalPropName::from(Cow::Owned(key.prop.clone())) else {
-        return false;
-    };
-
-    scheduled
-        && !matches!(
-            kind,
-            IcalPropKind::Attendee | IcalPropKind::Transp | IcalPropKind::DtStamp
-        )
-}
-
 /// The first field two projections disagree on, if any.
 ///
 /// A whole-model equality assertion prints two calendars, which nobody can
@@ -2520,13 +2281,11 @@ proptest! {
         let base = scenario.base_bytes();
         let left = scenario.left_bytes();
 
-        for prefer in PREFERENCES {
-            let Some(merged) = run(&base, &left, &left, prefer, None) else {
-                continue;
-            };
+        let Some(merged) = run(&base, &left, &left) else {
+            return Ok(());
+        };
 
-            prop_assert_eq!(bytes(&merged.report), left.clone());
-        }
+        prop_assert_eq!(bytes(&merged.report), left.clone());
     }
 
     /// A side that changed nothing yields the other side, and a base neither
@@ -2537,30 +2296,28 @@ proptest! {
         let left = scenario.left_bytes();
         let right = scenario.right_bytes();
 
-        for prefer in PREFERENCES {
-            let Some(only_right) = run(&base, &base, &right, prefer, None) else {
-                continue;
-            };
-            let Some(only_left) = merge(&base, &left, &base, prefer, None) else {
-                continue;
-            };
-            let Some(neither) = merge(&base, &base, &base, prefer, None) else {
-                continue;
-            };
+        let Some(only_right) = run(&base, &base, &right) else {
+            return Ok(());
+        };
+        let Some(only_left) = merge(&base, &left, &base) else {
+            return Ok(());
+        };
+        let Some(neither) = merge(&base, &base, &base) else {
+            return Ok(());
+        };
 
-            if let Some(why) = differs(&only_right.merged, &only_right.right) {
-                return Err(TestCaseError::fail(format!(
-                    "a side that changed nothing did not yield the other:\n{why}"
-                )));
-            }
-            prop_assert!(only_right.report.conflicts.is_empty());
-
-            prop_assert_eq!(bytes(&only_left), left.clone());
-            prop_assert!(only_left.conflicts.is_empty());
-
-            prop_assert_eq!(bytes(&neither), base.clone());
-            prop_assert!(neither.conflicts.is_empty());
+        if let Some(why) = differs(&only_right.merged, &only_right.right) {
+            return Err(TestCaseError::fail(format!(
+                "a side that changed nothing did not yield the other:\n{why}"
+            )));
         }
+        prop_assert!(only_right.report.conflicts.is_empty());
+
+        prop_assert_eq!(bytes(&only_left), left.clone());
+        prop_assert!(only_left.conflicts.is_empty());
+
+        prop_assert_eq!(bytes(&neither), base.clone());
+        prop_assert!(neither.conflicts.is_empty());
     }
 
     /// Swapping the two sides reports the same set of collided properties,
@@ -2571,23 +2328,21 @@ proptest! {
         let left = scenario.left_bytes();
         let right = scenario.right_bytes();
 
-        for prefer in PREFERENCES {
-            let Some(forward) = run(&base, &left, &right, prefer, None) else {
-                continue;
-            };
-            let Some(backward) = run(&base, &right, &left, prefer, None) else {
-                continue;
-            };
+        let Some(forward) = run(&base, &left, &right) else {
+            return Ok(());
+        };
+        let Some(backward) = run(&base, &right, &left) else {
+            return Ok(());
+        };
 
-            if !comparable(&forward) || !comparable(&backward) {
-                continue;
-            }
-
-            prop_assert_eq!(
-                model::contested_addresses(&forward.report),
-                model::contested_addresses(&backward.report)
-            );
+        if !comparable(&forward) || !comparable(&backward) {
+            return Ok(());
         }
+
+        prop_assert_eq!(
+            model::contested_addresses(&forward.report),
+            model::contested_addresses(&backward.report)
+        );
     }
 
     /// The merged calendar always parses again, to the same bytes.
@@ -2597,21 +2352,19 @@ proptest! {
         let left = scenario.left_bytes();
         let right = scenario.right_bytes();
 
-        for prefer in PREFERENCES {
-            let Some(report) = merge(&base, &left, &right, prefer, None) else {
-                continue;
-            };
+        let Some(report) = merge(&base, &left, &right) else {
+            return Ok(());
+        };
 
-            let merged = bytes(&report);
-            let reparsed = IcalCst::parse(&merged);
+        let merged = bytes(&report);
+        let reparsed = IcalCst::parse(&merged);
 
-            prop_assert!(
-                reparsed.is_ok(),
-                "the merged calendar does not parse: {}",
-                String::from_utf8_lossy(&merged)
-            );
-            prop_assert_eq!(reparsed.unwrap().to_bytes(), merged);
-        }
+        prop_assert!(
+            reparsed.is_ok(),
+            "the merged calendar does not parse: {}",
+            String::from_utf8_lossy(&merged)
+        );
+        prop_assert_eq!(reparsed.unwrap().to_bytes(), merged);
     }
 
     /// A line neither side touched comes out byte for byte, folds included.
@@ -2622,130 +2375,76 @@ proptest! {
         let right = scenario.right_bytes();
         let untouched = scenario.untouched_lines();
 
-        for prefer in PREFERENCES {
-            let Some(held) = run(&base, &left, &right, prefer, None) else {
-                continue;
-            };
-
-            // NOTE: A side that removed one of a group of sibling components
-            // iCalendar gives no identity to renumbers the survivors, and the
-            // merge then pairs the base's first with the side's first. See
-            // shifted_component_groups.
-            if !shifted_component_groups(&held).is_empty() {
-                continue;
-            }
-
-            let merged = String::from_utf8(bytes(&held.report)).expect("valid UTF-8");
-
-            for line in &untouched {
-                prop_assert!(
-                    merged.contains(line.as_str()),
-                    "an untouched line lost its bytes: {line:?}\nleft:\n{}\nright:\n{}\nmerged:\n{merged}",
-                    String::from_utf8_lossy(&left),
-                    String::from_utf8_lossy(&right)
-                );
-            }
-        }
-    }
-
-    /// The preference decides which value a both-sides-wrote collision
-    /// carries, and decides nothing else.
-    #[test]
-    fn the_preference_decides_only_a_both_wrote_collision(scenario in scenario()) {
-        let base = scenario.base_bytes();
-        let left = scenario.left_bytes();
-        let right = scenario.right_bytes();
-
-        let Some(with_left) = run(&base, &left, &right, IcalMergeSide::Left, None) else {
-            return Ok(());
-        };
-        let Some(with_right) = run(&base, &left, &right, IcalMergeSide::Right, None) else {
+        let Some(held) = run(&base, &left, &right) else {
             return Ok(());
         };
 
-        if !comparable(&with_left) || !comparable(&with_right) {
+        // NOTE: A side that removed one of a group of sibling components
+        // iCalendar gives no identity to renumbers the survivors, and the
+        // merge then pairs the base's first with the side's first. See
+        // shifted_component_groups.
+        if !shifted_component_groups(&held).is_empty() {
             return Ok(());
         }
 
-        for key in universe(&with_left) {
-            let b = with_left.base.get(&key);
-            let l = with_left.left.get(&key);
-            let r = with_left.right.get(&key);
+        let merged = String::from_utf8(bytes(&held.report)).expect("valid UTF-8");
 
-            // The one case the preference is allowed to decide: both sides
-            // wrote a value, and the two values differ.
-            if l != b && r != b && l != r && l.is_some() && r.is_some() {
-                continue;
-            }
-
-            prop_assert_eq!(
-                with_left.merged.get(&key),
-                with_right.merged.get(&key),
-                "the preference reached a field it does not decide: {:?}",
-                key
+        for line in &untouched {
+            prop_assert!(
+                merged.contains(line.as_str()),
+                "an untouched line lost its bytes: {line:?}\nleft:\n{}\nright:\n{}\nmerged:\n{merged}",
+                String::from_utf8_lossy(&left),
+                String::from_utf8_lossy(&right)
             );
         }
     }
 
-    /// Under the right preference a collision carries the right side's value,
-    /// under the left preference the left side's, and the report is the same
-    /// either way.
+    /// Where both sides wrote a different value into one field, the merged
+    /// calendar carries the left side's: the left side is git's `ours`.
     #[test]
-    fn the_preference_carries_the_preferred_value(scenario in scenario()) {
+    fn a_collision_carries_the_left_value(scenario in scenario()) {
         let base = scenario.base_bytes();
         let left = scenario.left_bytes();
         let right = scenario.right_bytes();
 
-        let Some(with_left) = run(&base, &left, &right, IcalMergeSide::Left, None) else {
-            return Ok(());
-        };
-        let Some(with_right) = run(&base, &left, &right, IcalMergeSide::Right, None) else {
+        let Some(merged) = run(&base, &left, &right) else {
             return Ok(());
         };
 
-        if !comparable(&with_left) || !comparable(&with_right) {
+        if !comparable(&merged) {
             return Ok(());
         }
 
-        prop_assert_eq!(
-            model::contested_addresses(&with_left.report),
-            model::contested_addresses(&with_right.report),
-            "the preference changed what is reported"
-        );
-
-        for key in universe(&with_left) {
-            let b = with_left.base.get(&key);
-            let l = with_left.left.get(&key);
-            let r = with_left.right.get(&key);
+        for key in universe(&merged) {
+            let b = merged.base.get(&key);
+            let l = merged.left.get(&key);
+            let r = merged.right.get(&key);
 
             if !(l != b && r != b && l != r && l.is_some() && r.is_some()) {
                 continue;
             }
 
-            prop_assert_eq!(with_left.merged.get(&key), l, "the left value did not win");
-            prop_assert_eq!(with_right.merged.get(&key), r, "the right value did not win");
+            prop_assert_eq!(merged.merged.get(&key), l, "the left value did not win");
         }
     }
 
-    /// The completeness law, over both preferences.
+    /// The completeness law.
     #[test]
     fn every_change_lands_or_is_reported(scenario in scenario()) {
         let base = scenario.base_bytes();
         let left = scenario.left_bytes();
         let right = scenario.right_bytes();
 
-        for prefer in PREFERENCES {
-            let Some(merged) = run(&base, &left, &right, prefer, None) else {
-                continue;
-            };
+        let Some(merged) = run(&base, &left, &right) else {
+            return Ok(());
+        };
 
-            if let Err(why) = completeness(&merged) {
-                return Err(TestCaseError::fail(why));
-            }
+        if let Err(why) = completeness(&merged) {
+            return Err(TestCaseError::fail(why));
+        }
 
-            if let Err(why) = completeness_of_records(&merged) {
-                return Err(TestCaseError::fail(why));
-            }
+        if let Err(why) = completeness_of_records(&merged) {
+            return Err(TestCaseError::fail(why));
         }
     }
 
@@ -2757,113 +2456,23 @@ proptest! {
         let left = scenario.left_bytes();
         let right = scenario.right_bytes();
 
-        for prefer in PREFERENCES {
-            let Some(merged) = run(&base, &left, &right, prefer, None) else {
-                continue;
-            };
+        let Some(merged) = run(&base, &left, &right) else {
+            return Ok(());
+        };
 
-            if !comparable(&merged) {
-                continue;
-            }
-
-            let reference = reference::merge(
-                &merged.base,
-                &merged.left,
-                &merged.right,
-                prefer,
-                None,
-                &BTreeMap::new(),
-            );
-
-            if let Some(why) = differs(&merged.merged, &reference.merged) {
-                return Err(TestCaseError::fail(format!(
-                    "the merged content differs from the reference:\n{why}"
-                )));
-            }
-            if let Err(why) = agrees_on_conflicts(&merged, &reference.contested) {
-                return Err(TestCaseError::fail(why));
-            }
+        if !comparable(&merged) {
+            return Ok(());
         }
-    }
 
-    /// With a speaker named, no organiser-owned property of a component
-    /// someone else organises ever changes, under either preference, and every
-    /// refusal is reported.
-    #[test]
-    fn an_attendee_never_rewrites_what_the_organiser_owns(scenario in scenario()) {
-        let base = scenario.base_bytes();
-        let left = scenario.left_bytes();
-        let right = scenario.right_bytes();
-        let speaker = "mailto:ada@example.com";
+        let reference = reference::merge(&merged.base, &merged.left, &merged.right);
 
-        for prefer in PREFERENCES {
-            let Some(merged) = run(&base, &left, &right, prefer, Some(speaker)) else {
-                continue;
-            };
-
-            let Some(parsed) = IcalCst::parse(&base).ok() else {
-                continue;
-            };
-            let Some(edited) = IcalCst::parse(&left).ok() else {
-                continue;
-            };
-
-            let organisers = organisers(&parsed, &edited);
-
-            // The law itself, said without the reference: a property the
-            // organiser owns, in a component someone else organises, comes
-            // out as the left side left it, and the refusal is reported.
-            let universe = universe(&merged);
-            let contested = model::contested_addresses(&merged.report);
-
-            for key in &universe {
-                if !refuses_for(&organisers, speaker, key) {
-                    continue;
-                }
-
-                let address = (key.component.clone(), key.prop.clone(), key.at.clone());
-
-                prop_assert_eq!(
-                    merged.merged.get(key),
-                    merged.left.get(key),
-                    "a change Ada has no authority over landed: {:?}",
-                    key
-                );
-
-                // NOTE: A refusal is reported against the action refused, which
-                // for a whole component names the component rather than each
-                // of its properties.
-                let reported = contested.contains(&address)
-                    || (0..=key.component.len()).any(|depth| {
-                        contested.contains(&(key.component[..depth].to_vec(), String::new(), String::new()))
-                    });
-
-                if merged.base.get(key) != merged.right.get(key) {
-                    prop_assert!(reported, "a refusal went unreported: {:?}", key);
-                }
-            }
-
-            if !comparable(&merged) {
-                continue;
-            }
-
-            let reference = reference::merge(
-                &merged.base,
-                &merged.left,
-                &merged.right,
-                prefer,
-                Some(speaker),
-                &organisers,
-            );
-
-            if let Some(why) = differs(&merged.merged, &reference.merged) {
-                return Err(TestCaseError::fail(format!(
-                    "a judged merge differs from the reference:\n{why}"
-                )));
-            }
-            if let Err(why) = agrees_on_conflicts(&merged, &reference.contested) {
-                return Err(TestCaseError::fail(why));
-            }
+        if let Some(why) = differs(&merged.merged, &reference.merged) {
+            return Err(TestCaseError::fail(format!(
+                "the merged content differs from the reference:\n{why}"
+            )));
+        }
+        if let Err(why) = agrees_on_conflicts(&merged, &reference.contested) {
+            return Err(TestCaseError::fail(why));
         }
     }
 }
@@ -2897,7 +2506,7 @@ fn the_generator_collides_often_enough() {
         let left = case.left_bytes();
         let right = case.right_bytes();
 
-        let Some(merged) = run(&base, &left, &right, IcalMergeSide::Left, None) else {
+        let Some(merged) = run(&base, &left, &right) else {
             continue;
         };
 
@@ -3163,77 +2772,67 @@ fn the_laws_hold_over_the_corpora() {
             let left = corpus::edited(&input, &blocks, &left, "-left");
             let right = corpus::edited(&input, &blocks, &right, "-right");
 
-            for prefer in PREFERENCES {
-                let Some(merged) = run(&input, &left, &right, prefer, None) else {
-                    panic!("{name} stopped parsing once edited");
-                };
+            let Some(merged) = run(&input, &left, &right) else {
+                panic!("{name} stopped parsing once edited");
+            };
 
-                merged_fixtures += 1;
+            merged_fixtures += 1;
 
-                if !merged.report.conflicts.is_empty() {
-                    collisions += 1;
-                }
+            if !merged.report.conflicts.is_empty() {
+                collisions += 1;
+            }
 
-                let bytes = bytes(&merged.report);
-                let reparsed = IcalCst::parse(&bytes).unwrap_or_else(|error| {
-                    panic!("{name} merged into something unreadable: {error}")
-                });
+            let bytes = bytes(&merged.report);
+            let reparsed = IcalCst::parse(&bytes)
+                .unwrap_or_else(|error| panic!("{name} merged into something unreadable: {error}"));
 
-                assert_eq!(
-                    reparsed.to_bytes(),
-                    bytes,
-                    "{name} merged into something that does not survive a reparse"
-                );
+            assert_eq!(
+                reparsed.to_bytes(),
+                bytes,
+                "{name} merged into something that does not survive a reparse"
+            );
 
-                if let Err(why) = completeness(&merged) {
-                    panic!("{name}, round {round}, preferring {prefer:?}: {why}");
-                }
+            if let Err(why) = completeness(&merged) {
+                panic!("{name}, round {round}: {why}");
+            }
 
-                if let Err(why) = completeness_of_records(&merged) {
-                    panic!("{name}, round {round}, preferring {prefer:?}: {why}");
-                }
+            if let Err(why) = completeness_of_records(&merged) {
+                panic!("{name}, round {round}: {why}");
+            }
 
-                // NOTE: A fixture the parser normalises rather than reproduces
-                // byte for byte has nothing to say about byte preservation:
-                // its own lines do not come back unchanged from a parse.
-                for (at, block) in blocks.iter().enumerate() {
-                    if !round_trips || at == shared || at == only_left || at == only_right {
-                        continue;
-                    }
-
-                    let held = &input[block.start..block.end];
-
-                    if !windows(&bytes, held) {
-                        panic!(
-                            "{name}, round {round}: an untouched line lost its bytes: {}",
-                            String::from_utf8_lossy(held)
-                        );
-                    }
-                }
-
-                if !comparable(&merged) {
+            // NOTE: A fixture the parser normalises rather than reproduces
+            // byte for byte has nothing to say about byte preservation:
+            // its own lines do not come back unchanged from a parse.
+            for (at, block) in blocks.iter().enumerate() {
+                if !round_trips || at == shared || at == only_left || at == only_right {
                     continue;
                 }
 
-                compared += 1;
+                let held = &input[block.start..block.end];
 
-                let reference = reference::merge(
-                    &merged.base,
-                    &merged.left,
-                    &merged.right,
-                    prefer,
-                    None,
-                    &BTreeMap::new(),
-                );
-
-                assert_eq!(
-                    merged.merged, reference.merged,
-                    "{name}, round {round}, preferring {prefer:?}: the merged content differs from the reference"
-                );
-
-                if let Err(why) = agrees_on_conflicts(&merged, &reference.contested) {
-                    panic!("{name}, round {round}, preferring {prefer:?}: {why}");
+                if !windows(&bytes, held) {
+                    panic!(
+                        "{name}, round {round}: an untouched line lost its bytes: {}",
+                        String::from_utf8_lossy(held)
+                    );
                 }
+            }
+
+            if !comparable(&merged) {
+                continue;
+            }
+
+            compared += 1;
+
+            let reference = reference::merge(&merged.base, &merged.left, &merged.right);
+
+            assert_eq!(
+                merged.merged, reference.merged,
+                "{name}, round {round}: the merged content differs from the reference"
+            );
+
+            if let Err(why) = agrees_on_conflicts(&merged, &reference.contested) {
+                panic!("{name}, round {round}: {why}");
             }
         }
     }
@@ -3274,58 +2873,39 @@ const TWO_ATTENDEES: &str = "BEGIN:VCALENDAR\r\n\
 
 /// Merge three calendars given as text, and hand back the merged text with the
 /// report.
-fn merged_text<'a>(
-    base: &'a str,
-    left: &'a str,
-    right: &'a str,
-    prefer: IcalMergeSide,
-) -> (String, IcalMergeReport<'a>) {
-    let report = merge(
-        base.as_bytes(),
-        left.as_bytes(),
-        right.as_bytes(),
-        prefer,
-        None,
-    )
-    .expect("three readable calendars");
+fn merged_text<'a>(base: &'a str, left: &'a str, right: &'a str) -> (String, IcalMergeReport<'a>) {
+    let report = merge(base.as_bytes(), left.as_bytes(), right.as_bytes())
+        .expect("three readable calendars");
     let merged = String::from_utf8(bytes(&report)).expect("valid UTF-8");
 
     (merged, report)
 }
 
-/// Where both sides add a property the base lacked, the preferred side's wins
-/// and replaces the one it beat, so the merged event holds one `LOCATION`
-/// whichever way the preference falls.
+/// Where both sides add a property the base lacked, the left side's wins and
+/// replaces the one it beat, so the merged event holds one `LOCATION`.
 ///
 /// Appending both would give a `VEVENT` two `LOCATION` lines, which RFC 5545
 /// 3.6.1 forbids and this crate's own `validate` refuses, and would make the
-/// merge non-idempotent under the right preference.
+/// merge non-idempotent.
 #[test]
-fn both_sides_adding_one_name_keeps_the_preferred_one() {
+fn both_sides_adding_one_name_keeps_the_left_one() {
     let base = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:e1\r\n\
                 SUMMARY:Sync\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
     let left = base.replace("SUMMARY:Sync\r\n", "SUMMARY:Sync\r\nLOCATION:Room A\r\n");
     let right = base.replace("SUMMARY:Sync\r\n", "SUMMARY:Sync\r\nLOCATION:Room B\r\n");
 
-    let (with_left, left_report) = merged_text(base, &left, &right, IcalMergeSide::Left);
-    let (with_right, right_report) = merged_text(base, &left, &right, IcalMergeSide::Right);
+    let (merged, report) = merged_text(base, &left, &right);
 
-    assert!(with_left.contains("LOCATION:Room A"));
-    assert!(!with_left.contains("LOCATION:Room B"));
-    assert_eq!(left_report.conflicts.len(), 1);
-
-    assert!(!with_right.contains("LOCATION:Room A"));
-    assert!(with_right.contains("LOCATION:Room B"));
-    assert_eq!(right_report.conflicts.len(), 1);
-
-    assert_eq!(with_left.matches("LOCATION:").count(), 1);
-    assert_eq!(with_right.matches("LOCATION:").count(), 1);
+    assert!(merged.contains("LOCATION:Room A"));
+    assert!(!merged.contains("LOCATION:Room B"));
+    assert_eq!(report.conflicts.len(), 1);
+    assert_eq!(merged.matches("LOCATION:").count(), 1);
 }
 
 /// The same for a whole component, which a `VALARM` addressed by its position
 /// makes the harder case.
 #[test]
-fn both_sides_adding_one_alarm_keeps_the_preferred_one() {
+fn both_sides_adding_one_alarm_keeps_the_left_one() {
     let base = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:e1\r\n\
                 SUMMARY:Sync\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
     let alarm = |trigger: &str, action: &str| {
@@ -3339,11 +2919,11 @@ fn both_sides_adding_one_alarm_keeps_the_preferred_one() {
     let left = alarm("-PT15M", "DISPLAY");
     let right = alarm("-PT30M", "AUDIO");
 
-    let (with_right, report) = merged_text(base, &left, &right, IcalMergeSide::Right);
+    let (merged, report) = merged_text(base, &left, &right);
 
     assert_eq!(report.conflicts.len(), 1);
-    assert_eq!(with_right.matches("BEGIN:VALARM").count(), 1);
-    assert!(with_right.contains("TRIGGER:-PT30M"));
+    assert_eq!(merged.matches("BEGIN:VALARM").count(), 1);
+    assert!(merged.contains("TRIGGER:-PT15M"));
 }
 
 /// A reply belongs to the person who wrote it, whatever the other side did to
@@ -3363,14 +2943,12 @@ fn a_reply_never_lands_on_another_attendee() {
     );
     let right = base.replace("PARTSTAT=NEEDS-ACTION;CN=Ada", "PARTSTAT=TENTATIVE;CN=Ada");
 
-    for prefer in PREFERENCES {
-        let (merged, _) = merged_text(base, &left, &right, prefer);
+    let (merged, _) = merged_text(base, &left, &right);
 
-        assert!(
-            !merged.contains("PARTSTAT=TENTATIVE;CN=Bob"),
-            "Ada's reply was written onto Bob:\n{merged}"
-        );
-    }
+    assert!(
+        !merged.contains("PARTSTAT=TENTATIVE;CN=Bob"),
+        "Ada's reply was written onto Bob:\n{merged}"
+    );
 }
 
 /// Matching normalises and writing is exact, so a calendar address written in
@@ -3385,7 +2963,7 @@ fn an_identity_meets_the_other_case_it_was_written_in() {
         .replace("MAILTO:Ada@Example.com", "mailto:ada@example.com")
         .replace("PARTSTAT=NEEDS-ACTION", "PARTSTAT=ACCEPTED");
 
-    let (merged, report) = merged_text(base, &left, &right, IcalMergeSide::Left);
+    let (merged, report) = merged_text(base, &left, &right);
 
     assert_eq!(
         merged.matches("ATTENDEE").count(),
@@ -3414,7 +2992,7 @@ fn a_removal_does_not_swallow_a_neighbours_collision() {
         .replace("PARTSTAT=NEEDS-ACTION;CN=Bob", "PARTSTAT=ACCEPTED;CN=Bob");
     let right = TWO_ATTENDEES.replace("PARTSTAT=NEEDS-ACTION;CN=Bob", "PARTSTAT=DECLINED;CN=Bob");
 
-    let (_, report) = merged_text(TWO_ATTENDEES, &left, &right, IcalMergeSide::Left);
+    let (_, report) = merged_text(TWO_ATTENDEES, &left, &right);
 
     assert_eq!(
         report.conflicts.len(),
@@ -3438,15 +3016,13 @@ fn a_removal_does_not_duplicate_a_neighbour() {
         .replace("PARTSTAT=NEEDS-ACTION;CN=Bob", "PARTSTAT=ACCEPTED;CN=Bob");
     let right = TWO_ATTENDEES.replace("PARTSTAT=NEEDS-ACTION;CN=Bob", "PARTSTAT=DECLINED;CN=Bob");
 
-    for prefer in PREFERENCES {
-        let (merged, _) = merged_text(TWO_ATTENDEES, &left, &right, prefer);
+    let (merged, _) = merged_text(TWO_ATTENDEES, &left, &right);
 
-        assert_eq!(
-            merged.matches("mailto:bob@example.com").count(),
-            1,
-            "Bob is in the merged calendar twice:\n{merged}"
-        );
-    }
+    assert_eq!(
+        merged.matches("mailto:bob@example.com").count(),
+        1,
+        "Bob is in the merged calendar twice:\n{merged}"
+    );
 }
 
 /// Removing a component does not quietly take the other side's work in its
@@ -3466,7 +3042,7 @@ fn a_removed_component_does_not_swallow_a_nested_edit() {
         "",
     );
 
-    let (_, report) = merged_text(base, &left, &right, IcalMergeSide::Left);
+    let (_, report) = merged_text(base, &left, &right);
 
     assert_eq!(
         report.conflicts.len(),
@@ -3491,7 +3067,7 @@ fn a_removal_and_a_parameter_edit_are_reported() {
         "",
     );
 
-    let (merged, report) = merged_text(base, &answered, &dropped, IcalMergeSide::Left);
+    let (merged, report) = merged_text(base, &answered, &dropped);
 
     assert!(
         merged.contains("PARTSTAT=ACCEPTED"),
@@ -3513,15 +3089,13 @@ fn merging_a_side_with_itself_reports_nothing() {
         .replace("SUMMARY:Sync", "SUMMARY:Sync moved")
         .replace("LOCATION:Room A\r\n", "");
 
-    for prefer in PREFERENCES {
-        let (_, report) = merged_text(base, &edited, &edited, prefer);
+    let (_, report) = merged_text(base, &edited, &edited);
 
-        assert!(
-            report.conflicts.is_empty(),
-            "two sides that agreed were reported as colliding: {:?}",
-            report.conflicts
-        );
-    }
+    assert!(
+        report.conflicts.is_empty(),
+        "two sides that agreed were reported as colliding: {:?}",
+        report.conflicts
+    );
 }
 
 /// A property carrying one parameter name twice does not make a merge report a
@@ -3535,25 +3109,23 @@ fn a_repeated_parameter_is_not_a_change() {
     let base = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\n\
                 SUMMARY;RSVP=TRUE;RSVP=FALSE:Planning\r\nEND:VCALENDAR\r\n";
 
-    for prefer in PREFERENCES {
-        let (merged, report) = merged_text(base, base, base, prefer);
+    let (merged, report) = merged_text(base, base, base);
 
-        assert_eq!(merged, base, "merging a calendar with itself changed it");
-        assert!(
-            report.left.is_empty(),
-            "a side that changed nothing was reported to have: {:?}",
-            report.left
-        );
-        assert!(
-            report.right.is_empty(),
-            "a side that changed nothing was reported to have: {:?}",
-            report.right
-        );
-        assert!(
-            report.conflicts.is_empty(),
-            "two sides that did nothing collided"
-        );
-    }
+    assert_eq!(merged, base, "merging a calendar with itself changed it");
+    assert!(
+        report.left.is_empty(),
+        "a side that changed nothing was reported to have: {:?}",
+        report.left
+    );
+    assert!(
+        report.right.is_empty(),
+        "a side that changed nothing was reported to have: {:?}",
+        report.right
+    );
+    assert!(
+        report.conflicts.is_empty(),
+        "two sides that did nothing collided"
+    );
 }
 
 /// Whatever the sides hold, the merged calendar can be read back.
@@ -3573,14 +3145,8 @@ fn a_merge_never_emits_a_calendar_that_cannot_be_read() {
         "VERSION:2.0\r\nEND:VCALENDAR\r\n",
         "VERSION:2.0\r\nSUMMARY:truncated",
     ] {
-        let report = merge(
-            base.as_bytes(),
-            base.as_bytes(),
-            bare.as_bytes(),
-            IcalMergeSide::Left,
-            None,
-        )
-        .expect("three readable calendars");
+        let report = merge(base.as_bytes(), base.as_bytes(), bare.as_bytes())
+            .expect("three readable calendars");
 
         let merged = bytes(&report);
         let reparsed = IcalCst::parse(&merged);
@@ -3614,15 +3180,13 @@ fn an_unchanged_side_yields_the_other_exactly() {
                  ATTENDEE;CN=Bob:mailto:bob@example.com\r\n\
                  END:VEVENT\r\nEND:VCALENDAR\r\n";
 
-    for prefer in PREFERENCES {
-        let (merged, _) = merged_text(base, base, right, prefer);
+    let (merged, _) = merged_text(base, base, right);
 
-        assert_eq!(merged, right, "the merged calendar is not the right side");
-        assert!(
-            !merged.contains("CN=Bob:mailto:zoe@example.com"),
-            "the merge invented an attendee: {merged}"
-        );
-    }
+    assert_eq!(merged, right, "the merged calendar is not the right side");
+    assert!(
+        !merged.contains("CN=Bob:mailto:zoe@example.com"),
+        "the merge invented an attendee: {merged}"
+    );
 }
 
 /// A calendar holding one `UID` twice merges with itself in silence.
@@ -3638,16 +3202,14 @@ fn a_uid_written_twice_is_two_components() {
                 END:VCALENDAR\r\n";
     let edited = base.replace("SUMMARY:First", "SUMMARY:Moved");
 
-    for prefer in PREFERENCES {
-        let (merged, report) = merged_text(base, &edited, &edited, prefer);
+    let (merged, report) = merged_text(base, &edited, &edited);
 
-        assert_eq!(merged, edited, "merging a side with itself changed it");
-        assert!(
-            report.conflicts.is_empty(),
-            "two sides that agreed collided: {:?}",
-            report.conflicts
-        );
-    }
+    assert_eq!(merged, edited, "merging a side with itself changed it");
+    assert!(
+        report.conflicts.is_empty(),
+        "two sides that agreed collided: {:?}",
+        report.conflicts
+    );
 }
 
 /// A calendar address written on two attendees tells neither of them apart, so
@@ -3663,14 +3225,12 @@ fn a_repeated_calendar_address_is_not_an_identity() {
                 END:VEVENT\r\nEND:VCALENDAR\r\n";
     let edited = base.replace("CN=Ada at home", "CN=Ada elsewhere");
 
-    for prefer in PREFERENCES {
-        let (merged, report) = merged_text(base, &edited, &edited, prefer);
+    let (merged, report) = merged_text(base, &edited, &edited);
 
-        assert_eq!(merged, edited, "merging a side with itself changed it");
-        assert!(
-            report.conflicts.is_empty(),
-            "two sides that agreed collided: {:?}",
-            report.conflicts
-        );
-    }
+    assert_eq!(merged, edited, "merging a side with itself changed it");
+    assert!(
+        report.conflicts.is_empty(),
+        "two sides that agreed collided: {:?}",
+        report.conflicts
+    );
 }

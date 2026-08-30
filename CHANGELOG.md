@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Removed
+
+- Removed the collision preference: the `prefer` field on `IcalMerge` and the `IcalMergeSide` enum. The left side is git's `ours` and always wins; the right side is `theirs`.
+
+  Splitting the winner from the baseline was justified by organiser authority, in as many words: a caller that needed its own edit judged had to put that edit on the replayed side, and without a separate preference that would have cost it every collision. Authority is gone, so the justification is gone, and every caller in the ecosystem was passing `Left` anyway. Hard-coding it also retires a mechanism that had quietly become unreachable: an addition could only displace the other side's while the right side could win, so the merged calendar now simply keeps the left side's addition and reports the collision. A caller wanting the other value still has it in the report, which is a better answer than a flag that picks silently.
+
+- Removed organiser authority from the merge: the `right_speaks_for` field, the `Authority` conflict reason, and the RFC 5546 section 3.2 refusal they drove.
+
+  The field named a side rather than a role, which forced the one caller that used it to put its local calendar on the right and ask for the right side to be preferred, while every other caller in the ecosystem puts local on the left. Removing it is what lets one convention hold everywhere: the left side is the one being merged into, its bytes are the merged bytes, and it wins a collision by default. The capability itself is worth having back, and the way back is a field that names its own side rather than a fixed one.
+
 ### Added
 
 - Added a property identity to the three-way merge, as a new `identity` field on `IcalPropPath`.
@@ -16,9 +26,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
   `prefer: IcalMergeSide` says which side's value the merged calendar carries where both sides changed one property to different things, apart from `left`, which now answers only whose untouched bytes survive. `IcalMergeSide::Left` is the default and the behaviour every merge had before. Every field of `IcalMerge` is public and callers build it as a struct literal, so the field has to be written out.
 
-  The preference decides that case and no other: an update still beats a removal whichever side it came from, a property one side alone touched is still taken from that side, an untouched line still comes out byte for byte, and organiser authority is still judged on the right side alone, so a refusal does not depend on the preference.
+  The preference decides that case and no other: an update still beats a removal whichever side it came from, a property one side alone touched is still taken from that side, an untouched line still comes out byte for byte.
 
 ### Fixed
+
+- Aligned the three-way merge with vcard-rs, fixing five defects a green suite was hiding.
+
+  The two crates state one merge contract and shared almost no implementation, and this side had drifted. A value was compared decoded rather than raw, and a text value decodes its first `;`-component alone, so `LOCATION:Room A;floor 2` edited to `floor 9` reported nothing and merged nothing. A list was diffed and replayed as a set rather than a multiset, so dropping one of two equal `CATEGORIES` items was invisible on the way in and took both on the way out. A replay target was corrected for the baseline side's removals but not for its additions, so a line that side inserted made every later edit land one property early, overwriting one and leaving the other stale. A property the baseline side removed and the other side edited twice came back once per edit rather than once. And a `VALUE` retyped on one side did not contest the other side's item edits, producing a property whose items contradict its own declared type (RFC 5545 section 3.8.5.2).
+
+- A URI value was truncated at its first `;`, and escaped on the way back out.
+
+- A URI value was truncated at its first `;`, and escaped on the way back out.
+
+  RFC 5545 section 3.3.13 gives a URI no structure and no escaping, but the codec read it as a structured value and kept only the first `;`-component, so `ATTACH:data:text/plain;base64,QUFB` decoded to `data:text/plain` and the payload was gone. Encoding then escaped the semicolon it had just used as a separator, so a value that did survive decoding did not survive its own round trip. A URI is now read whole and written back exactly as it is held. vcard-rs carried the identical defect and is fixed in the same breath, the two crates being deliberate twins.
+
 
 - Fixed a three-way merge reading one calendar address written in two cases as two people.
 
@@ -144,7 +165,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Added `IcalMerge`, a three-way merge of two divergent calendars against their common base.
 
-  Components are matched by UID plus RECURRENCE-ID, properties by name then equality then position, and the merged calendar keeps the left side's bytes. Every action and every collision is reported: a removal against an update keeps the update, and with `right_speaks_for` set, an attendee's change to an organiser-owned property is refused (RFC 5546 3.2).
+  Components are matched by UID plus RECURRENCE-ID, properties by name then equality then position, and the merged calendar keeps the left side's bytes. Every action and every collision is reported, and a removal against an update keeps the update.
 
 - Added opt-in content-decoding features, each backed by a `no_std` crate: `quoted-printable`, `base64` and `encoding`.
 

@@ -12,23 +12,18 @@
 //! side's actions are then replayed line by line, so every line the right side
 //! did not touch keeps its bytes too.
 //!
-//! ## The baseline side and the winning side
+//! ## Ours and theirs
 //!
-//! Which side supplies the baseline and which side wins a collision are two
-//! questions, and they are answered separately. The baseline is a question
-//! about bytes: it decides whose folding, whose parameter casing and whose
-//! property order come out untouched, so a caller answers it with the version
-//! it would rather not churn. The winner is a question about policy: it decides
-//! whose value survives where two people wrote different things into one field,
-//! so a caller answers it with what it knows about those two people.
-//! [`prefer`](IcalMerge::prefer) states the second, and left alone it keeps the
-//! left side winning, as a merge has always done.
+//! The left side is git's `ours` and the right side is git's `theirs`. The
+//! left side supplies the baseline, so its folding, its parameter casing and
+//! its property order come out untouched, and it keeps its own value where
+//! both sides wrote one into a single field.
 //!
-//! The two have to be separable because authority sits on the replayed side. A
-//! caller that wants its own edit refused where it exceeds an attendee's
-//! authority has to put that edit on the right, and were the winner implied by
-//! the baseline, that caller would lose every collision as the price of being
-//! judged.
+//! One side answers both questions on purpose. A caller reaches for a merge
+//! holding a version it is merging into, and that version is the one it would
+//! rather not churn and the one it means to keep. Every collision is reported
+//! either way, so a caller wanting the other value puts it to somebody rather
+//! than asking the merge to guess.
 //!
 //! ## What is matched with what
 //!
@@ -72,11 +67,9 @@
 //!
 //! ## The three ways a merge can conflict
 //!
-//! **Divergence.** Both sides changed the same field. The preferred side's
-//! outcome is kept, the left side's unless the caller says otherwise, except
-//! where a removal meets an update: there the update wins whichever side it
-//! came from and whatever the preference, because keeping data beats losing it
-//! silently.
+//! **Divergence.** Both sides changed the same field. The left side's outcome
+//! is kept, except where a removal meets an update: there the update wins
+//! whichever side it came from, because keeping data beats losing it silently.
 //!
 //! **Recurrence.** One side changed what defines the series (its `DTSTART`,
 //! `DTEND`, `DURATION`, `RRULE`, `RDATE` or `EXDATE`, or the series component
@@ -84,13 +77,6 @@
 //! both survive, but a rule that moved may have moved the ground the override
 //! stood on, so it is reported. A change to anything else the series carries
 //! cannot have moved an occurrence and is not reported against one.
-//!
-//! **Authority.** An attendee may not rewrite what the organiser owns (RFC 5546
-//! 3.2). Set [`right_speaks_for`](IcalMerge::right_speaks_for) to the calendar
-//! address the right side edits as, and a right-side change to an
-//! organiser-owned property of a component someone else organises is refused and
-//! reported. Left unset, no such claim is made and nothing is refused on this
-//! ground.
 
 use core::cmp::Reverse;
 
@@ -102,14 +88,13 @@ use alloc::{
 };
 
 use crate::{
-    component::IcalComponentKind,
     param::IcalParam,
     prop::{IcalPropKind, IcalPropName},
     tree::{
         cst::{IcalCst, IcalItem},
         leaf::IcalLeaf,
         line::IcalLine,
-        value::cursor::IcalValueCursor,
+        value::{cursor::IcalValueCursor, node::IcalValueNode},
     },
     value::IcalValue,
     version::IcalVersion,
@@ -117,41 +102,17 @@ use crate::{
 
 /// A three-way merge waiting to run.
 ///
-/// The three calendars, plus who the right side speaks for and which side wins
-/// a collision. See the module documentation for the matching, granularity and
-/// conflict rules.
+/// See the module documentation for the matching, granularity and conflict
+/// rules.
 pub struct IcalMerge<'m, 'a> {
     /// The common ancestor both sides were derived from.
     pub base: &'m IcalCst<'a>,
-    /// One side. Its bytes are the ones the merged calendar is built from,
-    /// which is a statement about bytes alone: which side wins a collision is
-    /// [`prefer`](Self::prefer).
+    /// The side being merged into, git's `ours`. The merged calendar is built
+    /// from its bytes, and a collision neither side settles keeps its value.
     pub left: &'m IcalCst<'a>,
-    /// The other side. Its changes are replayed onto the left's bytes, and it
-    /// is the only side judged for authority, whichever side is preferred.
+    /// The side being merged in, git's `theirs`. Its changes are replayed onto
+    /// the left's bytes.
     pub right: &'m IcalCst<'a>,
-    /// The calendar address the right side edits on behalf of, when it is an
-    /// attendee rather than the organiser of what it changed. Unset means no
-    /// claim, and no change is refused for want of authority.
-    pub right_speaks_for: Option<Cow<'a, str>>,
-    /// Whose value the merged calendar carries where both sides changed one
-    /// property to different things. The left side by default, which is what a
-    /// merge has always done. It decides that case and no other: a property one
-    /// side alone touched is still taken from that side, and an update still
-    /// beats a removal whichever side it came from.
-    pub prefer: IcalMergeSide,
-}
-
-/// One of the two sides of a merge.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum IcalMergeSide {
-    /// The side the merged calendar is built from, whose untouched bytes it
-    /// keeps.
-    #[default]
-    Left,
-    /// The side whose actions are replayed onto the merged calendar, and the
-    /// only side organiser authority is judged against.
-    Right,
 }
 
 impl<'a> IcalMerge<'_, 'a> {
@@ -171,10 +132,10 @@ impl<'a> IcalMerge<'_, 'a> {
         let mut applicable = Vec::new();
 
         for op in &right_ops {
-            let verdict = self.judge(op, &left_ops, &right_ops, &base, &left);
+            let verdict = self.judge(op, &left_ops, &right_ops);
 
             if verdict.applies {
-                applicable.push((op, verdict.displaces));
+                applicable.push(op);
             }
 
             if let Some(reason) = verdict.reason {
@@ -185,12 +146,13 @@ impl<'a> IcalMerge<'_, 'a> {
             }
         }
 
-        applicable.sort_by_key(|(op, _)| replay_order(op));
+        applicable.sort_by_key(|op| replay_order(op));
 
         let shift = Shift::of(&left_ops);
+        let mut restored = Vec::new();
 
-        for (op, displaces) in applicable {
-            apply(&mut merged, op, displaces, self.right, &shift);
+        for op in applicable {
+            apply(&mut merged, op, self.right, &shift, &mut restored);
         }
 
         IcalMergeReport {
@@ -202,43 +164,18 @@ impl<'a> IcalMerge<'_, 'a> {
     }
 
     /// Whether a right-side action applies, and what to report about it.
-    fn judge<'o>(
-        &self,
-        op: &Op<'a>,
-        left_ops: &'o [Op<'a>],
-        right_ops: &[Op<'a>],
-        base: &[Node<'_, 'a>],
-        left: &[Node<'_, 'a>],
-    ) -> Verdict<'o, 'a> {
-        if let Some(speaker) = &self.right_speaks_for
-            && op.organiser_owned
-            && organiser_of(op.path(), base, left).is_some_and(|held| held != *speaker)
-        {
-            return Verdict {
-                applies: false,
-                reason: Some(IcalMergeReason::Authority),
-                displaces: None,
-            };
-        }
-
+    fn judge(&self, op: &Op<'a>, left_ops: &[Op<'a>], right_ops: &[Op<'a>]) -> Verdict<'a> {
         if let Some(collision) = left_ops.iter().find(|left| self.collides(left, op)) {
-            // NOTE: A removal against an update is not a stand-off: one side
+            // NOTE: a removal against an update is not a stand-off: one side
             // says the data is gone and the other says what it now is. The
             // update survives whichever side it came from, since keeping data
-            // beats losing it silently, which is not the caller's to invert.
-            // The preference decides the rest, where both sides wrote a value.
-            let applies = if scraps(collision, op) {
-                true
-            } else if scraps(op, collision) {
-                false
-            } else {
-                self.prefer == IcalMergeSide::Right
-            };
-
+            // beats losing it silently. Where both wrote a value, the left
+            // side keeps its own, which is what a merge does everywhere: the
+            // side being merged into wins, and the collision is reported so
+            // the caller can put it to somebody.
             return Verdict {
-                applies,
+                applies: scraps(collision, op),
                 reason: Some(IcalMergeReason::Divergent(collision.action.clone())),
-                displaces: (applies && both_added(collision, op)).then_some(collision),
             };
         }
 
@@ -259,7 +196,6 @@ impl<'a> IcalMerge<'_, 'a> {
                         && !right_ops.iter().any(|held| self.agrees(left, held))
                 })
                 .map(|left| IcalMergeReason::Recurrence(left.action.clone())),
-            displaces: None,
         }
     }
 
@@ -285,6 +221,21 @@ impl<'a> IcalMerge<'_, 'a> {
             // cannot usefully edit, so a change to its value, to one of its
             // parameters or to one of its list items meets the removal.
             (Slot::Prop, _) | (_, Slot::Prop) => true,
+            // NOTE: one of the two values has to go, so a whole-value change on
+            // one side meets the other side's item edits rather than letting
+            // both land.
+            (Slot::Value, Slot::Items) | (Slot::Items, Slot::Value) => true,
+            // NOTE: `VALUE` declares what type the value is read as, so
+            // retyping it contests every value-level action the other side
+            // made: the items it wrote were written for the old type, and
+            // keeping both leaves a property whose items contradict its own
+            // declared type (RFC 5545 section 3.8.5.2 for `RDATE`).
+            (Slot::Param { name, .. }, Slot::Value | Slot::Items)
+            | (Slot::Value | Slot::Items, Slot::Param { name, .. })
+                if name == "VALUE" =>
+            {
+                true
+            }
             (Slot::Items, _) | (_, Slot::Items) => false,
             (
                 Slot::Param {
@@ -362,21 +313,6 @@ fn scraps(one: &Op<'_>, two: &Op<'_>) -> bool {
     }
 }
 
-/// Whether two colliding actions both add the same kind of thing, so the one
-/// that wins replaces the one it beat rather than joining it.
-fn both_added(left: &Op<'_>, right: &Op<'_>) -> bool {
-    matches!(
-        (&left.action, &right.action),
-        (
-            IcalMergeAction::PropAdded { .. },
-            IcalMergeAction::PropAdded { .. }
-        ) | (
-            IcalMergeAction::ComponentAdded { .. },
-            IcalMergeAction::ComponentAdded { .. }
-        )
-    )
-}
-
 /// Where an action sits in the order the replay applies them.
 ///
 /// A component and a property carrying no identity of its own are addressed by
@@ -400,44 +336,60 @@ fn replay_order(op: &Op<'_>) -> (u8, Reverse<usize>) {
 }
 
 /// What a merge decided about one right-side action.
-struct Verdict<'o, 'a> {
+struct Verdict<'a> {
     /// Whether the action lands in the merged calendar.
     applies: bool,
     /// What to report about it, if anything.
     reason: Option<IcalMergeReason<'a>>,
-    /// The left-side addition this one beat, whose property or component
-    /// leaves the merged calendar so the winner replaces it rather than
-    /// joining it.
-    displaces: Option<&'o Op<'a>>,
 }
 
 /// How many members the baseline side took out of each group of same-named
 /// properties, so a position measured in the base still names its own target
 /// in the merged calendar.
-struct Shift<'a>(Vec<(&'a IcalComponentPath<'a>, String, usize)>);
+struct Shift<'a> {
+    /// The base positions the baseline side took away.
+    removed: Vec<(&'a IcalComponentPath<'a>, String, usize)>,
+    /// The positions the baseline side's own additions occupy in it, which
+    /// every base-derived line at or after them is pushed down by.
+    added: Vec<(&'a IcalComponentPath<'a>, String, usize)>,
+}
 
 impl<'a> Shift<'a> {
-    /// Read it off the baseline side's own removals.
+    /// Read it off the baseline side's own removals and additions.
     fn of(ops: &'a [Op<'a>]) -> Self {
-        Self(
-            ops.iter()
-                .filter_map(|op| match &op.action {
-                    IcalMergeAction::PropRemoved { at, .. } => {
-                        Some((&at.component, at.name.to_ascii_uppercase(), at.index))
-                    }
-                    _ => None,
-                })
-                .collect(),
-        )
+        let mut removed = Vec::new();
+        let mut added = Vec::new();
+
+        for op in ops {
+            match &op.action {
+                IcalMergeAction::PropRemoved { at, .. } => {
+                    removed.push((&at.component, at.name.to_ascii_uppercase(), at.index));
+                }
+                IcalMergeAction::PropAdded { at, .. } => {
+                    added.push((&at.component, at.name.to_ascii_uppercase(), at.index));
+                }
+                _ => {}
+            }
+        }
+
+        added.sort_by_key(|(_, _, index)| *index);
+
+        Self { removed, added }
     }
 
     /// Where a base position sits in the merged calendar, or `None` where the
     /// baseline side removed the very property the position names.
+    ///
+    /// The merged calendar starts as the baseline side's own tree, so a base
+    /// position moves twice: up past everything that side removed below it,
+    /// then down past everything it added at or before where it lands. Reading
+    /// the removals alone made a left-side insertion address the line before
+    /// the one meant, which edited a property nobody had touched.
     fn translate(&self, at: &IcalPropPath<'_>) -> Option<usize> {
         let name = at.name.to_ascii_uppercase();
         let mut shift = 0;
 
-        for (component, held, index) in &self.0 {
+        for (component, held, index) in &self.removed {
             if **component != at.component || *held != name {
                 continue;
             }
@@ -451,7 +403,19 @@ impl<'a> Shift<'a> {
             }
         }
 
-        Some(at.index - shift)
+        let mut position = at.index - shift;
+
+        for (component, held, index) in &self.added {
+            if **component != at.component || *held != name {
+                continue;
+            }
+
+            if *index <= position {
+                position += 1;
+            }
+        }
+
+        Some(position)
     }
 }
 
@@ -481,9 +445,8 @@ pub struct IcalMergeConflict<'a> {
 /// Why a right-side action did not simply apply.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum IcalMergeReason<'a> {
-    /// Both sides changed the same field. The merged calendar holds the
-    /// preferred side's outcome, the left side's unless the caller said
-    /// otherwise, except where a removal met an update, in which case the
+    /// Both sides changed the same field. The merged calendar holds the left
+    /// side's outcome, except where a removal met an update, in which case the
     /// update was kept whichever side it came from. The action carried here is
     /// the left side's, beside the right side's on the conflict itself.
     Divergent(IcalMergeAction<'a>),
@@ -491,9 +454,6 @@ pub enum IcalMergeReason<'a> {
     /// Both survive in the merged calendar; a rule that moved may have moved
     /// the ground the override stood on, which is why this is said out loud.
     Recurrence(IcalMergeAction<'a>),
-    /// The right side does not speak for the organiser of the component, and
-    /// the property is the organiser's to set (RFC 5546 3.2).
-    Authority,
 }
 
 /// One component's address: the steps from the calendar root down to it.
@@ -631,8 +591,6 @@ struct Op<'a> {
     source: Option<IcalPropPath<'a>>,
     /// The field it occupies, at which two sides collide.
     slot: Slot,
-    /// Whether the property is one only the organiser may set.
-    organiser_owned: bool,
 }
 
 impl<'a> Op<'a> {
@@ -878,55 +836,6 @@ fn structural(line: &IcalLine<'_>) -> bool {
     name.eq_ignore_ascii_case("BEGIN") || name.eq_ignore_ascii_case("END")
 }
 
-/// The calendar address organising the component an action lands in, read from
-/// the base and, failing that, from the left side.
-fn organiser_of<'a>(
-    path: &IcalComponentPath<'a>,
-    base: &[Node<'_, 'a>],
-    left: &[Node<'_, 'a>],
-) -> Option<String> {
-    base.iter()
-        .chain(left)
-        .find(|node| node.path == *path)
-        .and_then(|node| raw(node.cst, IcalPropKind::Organizer))
-}
-
-/// Whether a whole component is the organiser's to add or remove.
-///
-/// An attendee sets their own alarms on a meeting they were invited to; the
-/// meeting itself is the organiser's.
-fn whole_component_owned(path: &IcalComponentPath<'_>) -> bool {
-    !path
-        .0
-        .last()
-        .is_some_and(|step| matches!(step.name.parse(), Ok(IcalComponentKind::VAlarm)))
-}
-
-/// Whether a property of a scheduled component is one only its organiser may
-/// set (RFC 5546 3.2).
-///
-/// An attendee owns their own `ATTENDEE` line, the transparency they show to
-/// others, their alarms, and anything outside the vocabulary. Everything that
-/// describes the meeting itself is the organiser's.
-fn organiser_owned(component: &IcalComponentPath<'_>, name: &IcalPropName<'_>) -> bool {
-    let scheduled = component.0.last().is_some_and(|step| {
-        matches!(
-            step.name.parse(),
-            Ok(IcalComponentKind::VEvent | IcalComponentKind::VTodo | IcalComponentKind::VJournal)
-        )
-    });
-
-    let IcalPropName::Kind(kind) = name else {
-        return false;
-    };
-
-    scheduled
-        && !matches!(
-            kind,
-            IcalPropKind::Attendee | IcalPropKind::Transp | IcalPropKind::DtStamp
-        )
-}
-
 /// Diff one side against the base: one op per observed change.
 fn diff<'a>(base: &[Node<'_, 'a>], side: &[Node<'_, 'a>], version: IcalVersion) -> Vec<Op<'a>> {
     let mut ops = Vec::new();
@@ -940,7 +849,6 @@ fn diff<'a>(base: &[Node<'_, 'a>], side: &[Node<'_, 'a>], version: IcalVersion) 
                 },
                 source: None,
                 slot: Slot::Component,
-                organiser_owned: whole_component_owned(&node.path),
             });
         }
     }
@@ -953,7 +861,6 @@ fn diff<'a>(base: &[Node<'_, 'a>], side: &[Node<'_, 'a>], version: IcalVersion) 
                 },
                 source: None,
                 slot: Slot::Component,
-                organiser_owned: whole_component_owned(&node.path),
             });
         }
     }
@@ -1096,7 +1003,6 @@ fn diff_component<'a>(
             let at = prop_path(&base.path, &base_props, index);
 
             ops.push(Op {
-                organiser_owned: organiser_owned(&base.path, &decode_name(line)),
                 action: IcalMergeAction::PropRemoved {
                     value: line.decode(version).value.into_owned(),
                     at,
@@ -1111,7 +1017,6 @@ fn diff_component<'a>(
             let at = prop_path(&side.path, &side_props, index);
 
             ops.push(Op {
-                organiser_owned: organiser_owned(&side.path, &decode_name(line)),
                 action: IcalMergeAction::PropAdded {
                     value: line.decode(version).value.into_owned(),
                     at: at.clone(),
@@ -1237,7 +1142,6 @@ fn diff_prop<'a>(
     let side = side_lines[side_at];
     let at = prop_path(component, lines, at);
     let source = prop_path(component, side_lines, side_at);
-    let owned = organiser_owned(component, &decode_name(base));
 
     let base_prop = base.decode(version);
     let side_prop = side.decode(version);
@@ -1264,7 +1168,6 @@ fn diff_prop<'a>(
             action,
             source: Some(source.clone()),
             slot: Slot::Param { name, at: ordinal },
-            organiser_owned: owned,
         });
     }
 
@@ -1283,14 +1186,15 @@ fn diff_prop<'a>(
             },
             source: Some(source.clone()),
             slot: Slot::Param { name, at: ordinal },
-            organiser_owned: owned,
         });
     }
 
-    // NOTE: The decoded values are what is compared, not the raw bytes: a line
-    // that was rewritten without changing what it says has not changed, and the
-    // merged calendar keeps the left side's spelling of it either way.
-    if base_prop.value == side_prop.value {
+    // NOTE: the raw nodes are what is compared, not the decoded values: a
+    // decoded value reads its own kind's shape, and a text value reads one
+    // component alone, so two lines differing past the first `;` decode alike
+    // and the edit is never seen. A line rewritten without changing what it
+    // says still compares equal, component by component.
+    if value_eq(&base.value, &side.value) {
         return;
     }
 
@@ -1298,10 +1202,10 @@ fn diff_prop<'a>(
         // NOTE: A list is a set: both sides' additions and both sides'
         // removals apply, so two sides editing one list never collide.
         (IcalValue::TextList(old), IcalValue::TextList(new)) => {
-            list_ops(&at, &source, &old.0, &new.0, owned, ops)
+            list_ops(&at, &source, &old.0, &new.0, ops)
         }
         (IcalValue::DateTimeList(old), IcalValue::DateTimeList(new)) => {
-            list_ops(&at, &source, &old.0, &new.0, owned, ops)
+            list_ops(&at, &source, &old.0, &new.0, ops)
         }
         (old, new) => ops.push(Op {
             action: IcalMergeAction::ValueChanged {
@@ -1311,9 +1215,74 @@ fn diff_prop<'a>(
             },
             source: Some(source),
             slot: Slot::Value,
-            organiser_owned: owned,
         }),
     }
+}
+
+/// Whether two raw value nodes say the same thing, component by component.
+///
+/// The comparison is on the nodes rather than on the decoded values: a decoded
+/// value reads its own kind's shape, and a text value reads one component
+/// alone, so two lines differing past the first `;` decode alike and the
+/// difference is never seen.
+fn value_eq(old: &IcalValueNode<'_>, new: &IcalValueNode<'_>) -> bool {
+    // NOTE: two calendars of different versions escape values by different
+    // rules, so they share no decoding to compare through. Only identical
+    // bytes are then certainly the same value.
+    if old.escaper != new.escaper {
+        return raw_value(old) == raw_value(new);
+    }
+
+    let count = old.component_count().max(new.component_count());
+
+    (0..count).all(|i| component_eq(&old.decode_at(i), &new.decode_at(i)))
+}
+
+/// The serialized bytes of a value node, for comparing across escaping modes.
+fn raw_value(node: &IcalValueNode<'_>) -> Vec<u8> {
+    let mut out = Vec::new();
+    node.write_bytes(&mut out);
+    out
+}
+
+/// Whether one component's values match, an all-empty component counting as
+/// equal to another all-empty one however many pieces each was written with.
+fn component_eq(old: &[Cow<'_, str>], new: &[Cow<'_, str>]) -> bool {
+    let eq = old.len() == new.len()
+        && old
+            .iter()
+            .zip(new)
+            .all(|(old, new)| old.as_ref() == new.as_ref());
+
+    eq || (old.iter().all(|value| value.is_empty()) && new.iter().all(|value| value.is_empty()))
+}
+
+/// Diff two value lists as multisets, so a repeated item is matched one for
+/// one rather than by mere membership.
+///
+/// Set membership loses a duplicate: dropping one `a` from `a,a,b` leaves an
+/// `a` in the new list, and a set diff then reports no removal at all.
+fn list_diff<'a>(
+    old: &[Cow<'a, str>],
+    new: &[Cow<'a, str>],
+) -> (Vec<Cow<'a, str>>, Vec<Cow<'a, str>>) {
+    let mut removed: Vec<Option<&Cow<'a, str>>> = old.iter().map(Some).collect();
+    let mut added = Vec::new();
+
+    for item in new {
+        let kept = removed
+            .iter()
+            .position(|old| old.is_some_and(|old| old.as_ref() == item.as_ref()));
+
+        match kept {
+            Some(i) => removed[i] = None,
+            None => added.push(item.clone()),
+        }
+    }
+
+    let removed = removed.into_iter().flatten().cloned().collect();
+
+    (added, removed)
 }
 
 /// The item-by-item difference between two list values.
@@ -1322,11 +1291,9 @@ fn list_ops<'a>(
     source: &IcalPropPath<'a>,
     old: &[Cow<'_, str>],
     new: &[Cow<'_, str>],
-    owned: bool,
     ops: &mut Vec<Op<'a>>,
 ) {
-    let removed = old.iter().filter(|item| !new.contains(item));
-    let added = new.iter().filter(|item| !old.contains(item));
+    let (added, removed) = list_diff(old, new);
 
     for item in removed {
         ops.push(Op {
@@ -1336,7 +1303,6 @@ fn list_ops<'a>(
             },
             source: Some(source.clone()),
             slot: Slot::Items,
-            organiser_owned: owned,
         });
     }
 
@@ -1348,7 +1314,6 @@ fn list_ops<'a>(
             },
             source: Some(source.clone()),
             slot: Slot::Items,
-            organiser_owned: owned,
         });
     }
 }
@@ -1388,9 +1353,9 @@ fn nth_param<'p, 'a>(
 fn apply<'a>(
     merged: &mut IcalCst<'a>,
     op: &Op<'a>,
-    displaces: Option<&Op<'a>>,
     right: &IcalCst<'a>,
     shift: &Shift<'_>,
+    restored: &mut Vec<(IcalComponentPath<'a>, String, usize)>,
 ) {
     match &op.action {
         IcalMergeAction::ComponentAdded { at } => {
@@ -1401,18 +1366,9 @@ fn apply<'a>(
                 return;
             };
 
-            let source = IcalItem::Component(alloc::boxed::Box::new(source));
-
-            // NOTE: The addition it beat is replaced where it stood, so the
-            // winner neither joins the loser nor renumbers the siblings a
-            // position addresses.
-            match displaces
-                .map(|op| op.path())
-                .and_then(|beaten| component_position(target, beaten))
-            {
-                Some(held) => target.items[held] = source,
-                None => target.items.push(source),
-            }
+            target
+                .items
+                .push(IcalItem::Component(alloc::boxed::Box::new(source)));
         }
         IcalMergeAction::ComponentRemoved { at } => {
             let Some(target) = find_mut(merged, &parent(at)) else {
@@ -1423,7 +1379,7 @@ fn apply<'a>(
                 target.items.remove(held);
             }
         }
-        _ => apply_to_line(merged, op, displaces, right, shift),
+        _ => apply_to_line(merged, op, right, shift, restored),
     }
 }
 
@@ -1451,9 +1407,9 @@ fn component_position(target: &IcalCst<'_>, at: &IcalComponentPath<'_>) -> Optio
 fn apply_to_line<'a>(
     merged: &mut IcalCst<'a>,
     op: &Op<'a>,
-    displaces: Option<&Op<'a>>,
     right: &IcalCst<'a>,
     shift: &Shift<'_>,
+    restored: &mut Vec<(IcalComponentPath<'a>, String, usize)>,
 ) {
     let action = &op.action;
 
@@ -1482,18 +1438,7 @@ fn apply_to_line<'a>(
             return;
         };
 
-        // NOTE: The addition it beat is replaced where it stood, so the winner
-        // neither joins the loser nor renumbers the lines after it.
-        let beaten = displaces.and_then(|op| op.prop()).and_then(|beaten| {
-            let ordinal = line_ordinal(component, beaten, Some(beaten.index))?;
-
-            line_position(component, &beaten.name, ordinal)
-        });
-
-        match beaten {
-            Some(held) => component.items[held] = IcalItem::Prop(source),
-            None => component.items.push(IcalItem::Prop(source)),
-        }
+        component.items.push(IcalItem::Prop(source));
 
         return;
     }
@@ -1512,11 +1457,20 @@ fn apply_to_line<'a>(
         return;
     };
 
-    // NOTE: The line may be gone because the left side removed it while the
+    // NOTE: the line may be gone because the left side removed it while the
     // right side updated it. The update is what survives that stand-off, so the
-    // line comes back rather than the update landing nowhere.
+    // line comes back rather than the update landing nowhere. It comes back
+    // once: the restored line is the right side's own, bytes and all, so every
+    // further action on that property is already in it, and pushing again
+    // would leave one copy per action.
     let Some(line) = target.and_then(|ordinal| nth_line_mut(component, &at.name, ordinal)) else {
-        component.items.push(IcalItem::Prop(source));
+        let key = (at.component.clone(), at.name.to_ascii_uppercase(), at.index);
+
+        if !restored.contains(&key) {
+            restored.push(key);
+            component.items.push(IcalItem::Prop(source));
+        }
+
         return;
     };
 
@@ -1534,7 +1488,13 @@ fn apply_to_line<'a>(
             set_list(line, &items);
         }
         IcalMergeAction::ValueItemRemoved { item, .. } => {
-            let kept: Vec<String> = list(line).into_iter().filter(|held| held != item).collect();
+            // NOTE: one item leaves, not every item equal to it. A list is a
+            // multiset, so `a,a,b` losing one `a` keeps the other.
+            let mut kept = list(line);
+
+            if let Some(held) = kept.iter().position(|held| held == item) {
+                kept.remove(held);
+            }
 
             set_list(line, &kept);
         }

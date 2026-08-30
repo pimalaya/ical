@@ -16,8 +16,14 @@ use std::borrow::Cow;
 
 use ical::{
     param::IcalParam,
-    tree::{component::vevent::VEVENT, cst::IcalCst, prop::description::DESCRIPTION},
-    value::{IcalValue, binary::IcalBinary},
+    tree::{
+        codec::{Codec, mode::Escaper},
+        component::vevent::VEVENT,
+        cst::{IcalCst, IcalItem},
+        line::IcalLine,
+        prop::description::DESCRIPTION,
+    },
+    value::{IcalValue, binary::IcalBinary, uri::IcalUri},
 };
 
 /// A calendar holding one event with the given property line.
@@ -240,4 +246,40 @@ fn resolves_octets_before_transcoding_them() {
     let value = event.prop_mut::<DESCRIPTION>().expect("the description");
 
     assert_eq!(value.charset(), "café");
+}
+
+/// A URI carries its own `;` and `,`: RFC 5545 section 3.3.13 gives the value
+/// no structure and no escaping, so reading one `;`-component alone would
+/// decode a data URI to its media type and throw the payload away.
+#[test]
+fn a_uri_keeps_everything_past_its_first_semicolon() {
+    let source = calendar("ATTACH:data:text/plain;base64,QUFB");
+    let cst = IcalCst::parse(&source).expect("a calendar");
+
+    let attach = lines(&cst)
+        .find(|line| line.name.get().eq_ignore_ascii_case("ATTACH"))
+        .map(|line| IcalUri::decode(&line.value))
+        .expect("an attachment");
+
+    assert_eq!(attach.0, "data:text/plain;base64,QUFB");
+    assert_eq!(cst.to_string(), source, "and the calendar round trips");
+}
+
+/// The encode side is the same promise read backwards: a URI written out is
+/// the reference it holds, not an escaped rendering of it.
+#[test]
+fn a_uri_is_written_back_without_escaping() {
+    let uri = IcalUri::from("data:text/plain;base64,QUFB");
+    let node = uri.encode(Escaper::Modern);
+
+    assert_eq!(IcalUri::decode(&node).0, "data:text/plain;base64,QUFB");
+}
+
+/// Every property line of a calendar, its nested components included.
+fn lines<'a>(cst: &'a IcalCst<'a>) -> impl Iterator<Item = &'a IcalLine<'a>> {
+    cst.items.iter().flat_map(|item| match item {
+        IcalItem::Prop(line) => vec![line],
+        IcalItem::Component(inner) => lines(inner).collect(),
+        IcalItem::Opaque(_) => Vec::new(),
+    })
 }
