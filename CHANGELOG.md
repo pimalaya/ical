@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.0] - 2026-08-30
 
 ### Added
 
@@ -60,7 +60,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Fixed parameter value encoding, which read RFC 5545 section 3.3.11 text escapes into a parameter that has none, and never wrote RFC 6868 at all.
 
-
   Section 3.2 gives a parameter value no backslash escapes, which is the whole reason RFC 6868 exists. So a backslash a parameter legitimately carried, a Windows path in an `ALTREP` or an `X-` parameter, was eaten on the way in and could not be written back, while a real `^n`, `^^` or `^'` from a conforming producer reached the caller with its encoding showing. A parameter is now decoded and encoded by RFC 6868 section 3.1: `^n` is a newline, `^^` a caret, `^'` a double quote, any other caret sequence stays literal as section 3.1 requires, and a backslash is content in both directions. RFC 6868 updates RFC 5545 and no earlier specification, so the rules apply to iCalendar 2.0 alone and a vCalendar 1.0 caret stays a caret; `Escaper::has_param_encoding` is the switch, and a parameter node now carries its calendar's `Escaper` the way a value node already did.
 
 - Fixed the merge reading two sides that wrote different bytes as one act, which dropped the difference without a word.
@@ -75,15 +74,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Fixed every value read that was silently truncating a value it had no business splitting.
 
-  RFC 5545 section 3.3.11 has a text value escape a `;` or a `,` it means literally, and section 3.3.13 gives a URI no escaping at all, so an unescaped separator is content. An `IcalText`, an `IcalTextList`, an `IcalDateTimeList`, an `IcalCalAddress`, an `IcalPeriod`, an `IcalBinary`, an `IcalBoolean`, an `IcalDate`, an `IcalDateTime`, an `IcalTime`, an `IcalDuration`, an `IcalFloat`, an `IcalInteger` and an `IcalUtcOffset` now keep everything past their first `;`, and a `REQUEST-STATUS` description and its extra data keep the commas inside them rather than being cut at the first one. The cursor's `text`, `bytes` and `list` read the whole value, and their setters replace it, so reading a value and writing it straight back no longer leaves the tail of the old one behind.
+  RFC 5545 section 3.3.11 has a text value escape a `;` or a `,` it means literally, and section 3.3.13 gives a URI no escaping at all, so an unescaped separator is content. An `IcalText`, an `IcalTextList`, an `IcalDateTimeList`, an `IcalCalAddress`, an `IcalPeriod`, an `IcalBinary`, an `IcalBoolean`, an `IcalDate`, an `IcalDateTime`, an `IcalTime`, an `IcalDuration`, an `IcalFloat`, an `IcalInteger`, an `IcalUri` and an `IcalUtcOffset` now keep everything past their first `;`, and a `REQUEST-STATUS` description and its extra data keep the commas inside them rather than being cut at the first one. The cursor's `text`, `bytes` and `list` read the whole value, and their setters replace it, so reading a value and writing it straight back no longer leaves the tail of the old one behind.
+
+  A URI was the worst of them, being cut on both sides: `ATTACH:data:text/plain;base64,QUFB` decoded to `data:text/plain` with the payload gone, and encoding then escaped the semicolon it had just used as a separator, so what did survive decoding did not survive its own round trip.
 
 - Fixed five defects a green suite was hiding, by aligning the three-way merge with vcard-rs.
 
   The two crates state one merge contract and shared almost no implementation, and this side had drifted. A value was compared decoded rather than raw, and a text value decodes its first `;`-component alone, so `LOCATION:Room A;floor 2` edited to `floor 9` reported nothing and merged nothing. A list was diffed and replayed as a set rather than a multiset, so dropping one of two equal `CATEGORIES` items was invisible on the way in and took both on the way out. A replay target was corrected for the baseline side's removals but not for its additions, so a line that side inserted made every later edit land one property early, overwriting one and leaving the other stale. A property the baseline side removed and the other side edited twice came back once per edit rather than once. And a `VALUE` retyped on one side did not contest the other side's item edits, producing a property whose items contradict its own declared type (RFC 5545 section 3.8.5.2).
-
-- Fixed a URI value being truncated at its first `;`, and escaped on the way back out.
-
-  RFC 5545 section 3.3.13 gives a URI no structure and no escaping, but the codec read it as a structured value and kept only the first `;`-component, so `ATTACH:data:text/plain;base64,QUFB` decoded to `data:text/plain` and the payload was gone. Encoding then escaped the semicolon it had just used as a separator, so a value that did survive decoding did not survive its own round trip. A URI is now read whole and written back exactly as it is held. vcard-rs carried the identical defect and is fixed in the same breath, the two crates being deliberate twins.
 
 - Fixed a three-way merge reading one calendar address written in two cases as two people.
 
@@ -227,6 +224,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Added 190 real-world fixtures from the libical, ical4j and ical.js suites, swept for round-trip fidelity and cross-checked against calcard.
 
-[unreleased]: https://github.com/pimalaya/ical/compare/v0.2.0..HEAD
+[unreleased]: https://github.com/pimalaya/ical/compare/v0.3.0..HEAD
+[0.3.0]: https://github.com/pimalaya/ical/compare/v0.2.0..v0.3.0
 [0.2.0]: https://github.com/pimalaya/ical/compare/v0.1.0..v0.2.0
 [0.1.0]: https://github.com/pimalaya/ical/compare/root..v0.1.0
