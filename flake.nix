@@ -1,9 +1,8 @@
 {
-  description = "iCalendar Rust library";
+  description = "iCalendar parser, validator, editor, merger and builder library for Rust";
 
   inputs = {
     nixpkgs = {
-      # until crates.io fix fully backported
       url = "github:nixos/nixpkgs/nixos-25.11";
     };
     fenix = {

@@ -1,6 +1,6 @@
 # 📅 ical-rs [![Documentation](https://img.shields.io/docsrs/ical-rs?style=flat&logo=docs.rs&logoColor=white)](https://docs.rs/ical-rs/latest/ical) [![Coverage](https://img.shields.io/codecov/c/github/pimalaya/ical/master?style=flat&logo=codecov&logoColor=white)](https://codecov.io/gh/pimalaya/ical) [![Matrix](https://img.shields.io/badge/chat-%23pimalaya-blue?style=flat&logo=matrix&logoColor=white)](https://matrix.to/#/#pimalaya:matrix.org) [![Mastodon](https://img.shields.io/badge/news-%40pimalaya-blue?style=flat&logo=mastodon&logoColor=white)](https://fosstodon.org/@pimalaya) [![Sponsor](https://img.shields.io/badge/sponsor-pink?style=flat&logo=github-sponsors&logoColor=white)](https://pimalaya.org/sponsor/)
 
-iCalendar parser, validator, editor and builder library for Rust
+iCalendar parser, validator, editor, merger and builder library for Rust
 
 ## Table of contents
 

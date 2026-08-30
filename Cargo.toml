@@ -1,6 +1,6 @@
 [package]
 name = "ical-rs"
-description = "iCalendar parser, validator, editor and builder library for Rust"
+description = "iCalendar parser, validator, editor, merger and builder library"
 version = "0.2.0"
 authors = ["Clément DOUIN (soywod) <pimalaya.org@posteo.net>"]
 rust-version = "1.88"

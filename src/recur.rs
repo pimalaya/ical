@@ -123,6 +123,7 @@ impl IcalRecurDateTime {
             16 if bytes[15] == b'Z' || bytes[15] == b'z' => &value[..15],
             _ => return Err(IcalRecurRuleError::DateTime),
         };
+
         if naive.len() == 15 && !matches!(naive.as_bytes()[8], b'T' | b't') {
             return Err(IcalRecurRuleError::DateTime);
         }
@@ -145,6 +146,7 @@ impl IcalRecurDateTime {
         let valid_date = (1..=12).contains(&parsed.month)
             && parsed.day >= 1
             && parsed.day <= civil::days_in_month(parsed.year, parsed.month);
+
         let valid_time = parsed.hour < 24 && parsed.minute < 60 && parsed.second < 61;
         if !valid_date || !valid_time {
             return Err(IcalRecurRuleError::DateTime);
