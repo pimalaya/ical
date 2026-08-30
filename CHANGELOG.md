@@ -6,29 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
-### Removed
-
-- Removed the collision preference: the `prefer` field on `IcalMerge` and the `IcalMergeSide` enum. The left side is git's `ours` and always wins; the right side is `theirs`.
-
-  Splitting the winner from the baseline was justified by organiser authority, in as many words: a caller that needed its own edit judged had to put that edit on the replayed side, and without a separate preference that would have cost it every collision. Authority is gone, so the justification is gone, and every caller in the ecosystem was passing `Left` anyway. Hard-coding it also retires a mechanism that had quietly become unreachable: an addition could only displace the other side's while the right side could win, so the merged calendar now simply keeps the left side's addition and reports the collision. A caller wanting the other value still has it in the report, which is a better answer than a flag that picks silently.
-
-- Removed organiser authority from the merge: the `right_speaks_for` field, the `Authority` conflict reason, and the RFC 5546 section 3.2 refusal they drove.
-
-  The field named a side rather than a role, which forced the one caller that used it to put its local calendar on the right and ask for the right side to be preferred, while every other caller in the ecosystem puts local on the left. Removing it is what lets one convention hold everywhere: the left side is the one being merged into, its bytes are the merged bytes, and it wins a collision by default. The capability itself is worth having back, and the way back is a field that names its own side rather than a fixed one.
-
 ### Added
+
+- Added `IcalUtcOffset::seconds`, `IcalDuration::seconds` and `IcalDuration::from_seconds`, so a caller holding one of those values can read it as a number.
+
+  Both kinds are kept as raw text, which is what byte-faithful round-tripping needs, and neither offered a way to read that text. Every consumer that needed one wrote its own parser instead: the time-zone layer, the JSCalendar import and the JSCalendar export each carried a private copy of one of the two grammars. Neither grammar carries a month or a year, so the answer is a plain number of seconds and no calendar is needed to reach it. The raw text is still the value.
 
 - Added a property identity to the three-way merge, as a new `identity` field on `IcalPropPath`.
 
   A property that may occur more than once and whose value names a thing outside the calendar is now addressed by that whole value rather than by its position: `ATTENDEE` by its calendar user address, `ATTACH` by its URI or inline binary, `RELATED-TO` by the `UID` it points at, `CONFERENCE` and `IMAGE` by their URI. Two properties carrying different identities are never matched with each other, so changing an attendee address reads as a person leaving and another arriving rather than as a rename. Every other property keeps a position, and the field is `None` for those, as it is for a value two same-named siblings share, which tells neither of them apart.
 
-- Added a collision preference to the three-way merge, as a breaking new field on `IcalMerge`.
-
-  `prefer: IcalMergeSide` says which side's value the merged calendar carries where both sides changed one property to different things, apart from `left`, which now answers only whose untouched bytes survive. `IcalMergeSide::Left` is the default and the behaviour every merge had before. Every field of `IcalMerge` is public and callers build it as a struct literal, so the field has to be written out.
-
-  The preference decides that case and no other: an update still beats a removal whichever side it came from, a property one side alone touched is still taken from that side, an untouched line still comes out byte for byte.
-
 ### Changed
+
+- Moved the property and component markers, with their specs, from the syntax layer to the decoded model. `ical::tree::prop::<name>::MARKER` is now `ical::prop::<name>::MARKER` and `ical::tree::component::<name>::MARKER` is `ical::component::<name>::MARKER`, with `IcalPropSpec`, `IcalPropCardinality` and the property vtable under `prop`, and `IcalComponentSpec` and the component vtable under `component`.
+
+  A marker carried two things at once: the RFC contract of its property or component, and the projection that reads and edits one line or subtree of a byte tree. Only the second is syntax, and gating both on `parser` put the whole strict-out layer behind a parser it never touches. `IcalPropLens`, the projection, stays under `tree::prop::<name>`.
+
+- Moved the strict-out layer to the crate root, following the contract it consults: `tree::ical::builder` is now `builder`, `tree::ical::validate` is `validator`, and `valid::IcalValid` moves into `validator` beside the check that mints it. `tree::ical` is gone.
+
+- Renamed the `timezone` module to `tz`, and `IcalTimezone`, `IcalObservance` and `IcalOffset` to `IcalTz`, `IcalTzObservance` and `IcalTzOffset`, so the layer is scoped by the same three letters the RFC gives every property it reads.
+
+  `IcalOffset` was the one that misled: it is not an offset but the answer to a resolution, which may be one offset, a gap the clock jumped over or a fold it repeated, and it sat beside `IcalUtcOffset`, which is the wire value. "Observance" stays, being RFC 5545 section 3.6.5's own word for one such rule.
+
+- Changed the `jcal` feature to stop implying `parser`. Validation, the builder, jCal and JSCalendar are now all reachable with default features off, so `--no-default-features --features jscalendar` builds and pulls in `serde_json` alone.
 
 - Changed the parameter codec to carry an escaping mode, which the parameter side never had.
 
@@ -38,9 +38,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
   Reading component zero looks like reading the value and is not: it stops at the first unescaped `;`. Almost every call site passed `0`, and that one shape produced four separate defects in two days across three crates. `decode`, `decode_list` and `decode_bytes` now read the whole value; `decode_component` and `decode_component_list` read one `;`-component and always spell out which. `decode_scalar_at` and `decode_bytes_at` are gone, having cut twice, at a `;` and then at a `,`, which no caller wanted. `set` and `set_bytes` replace the whole value, `set_component` and `set_component_bytes` name their slot, so a read and the write that follows it address the same thing. `IcalValueCursor` follows the same split: `text`, `bytes`, `list` and their setters address the whole value, `component` and `set_component` one slot.
 
+### Removed
+
+- Removed `IcalComponentLens`, an empty marker trait whose whole content was its `IcalComponentSpec` supertrait. `IcalCst::component`, `component_mut` and `components` bound on the spec directly.
+
+- Removed organiser authority from the merge: the `right_speaks_for` field, the `Authority` conflict reason, and the RFC 5546 section 3.2 refusal they drove.
+
+  The field named a side rather than a role, which forced the one caller that used it to put its local calendar on the right, while every other caller in the ecosystem puts local on the left. Removing it is what lets one convention hold everywhere: the left side is the one being merged into, its bytes are the merged bytes, and it wins a collision by default. The capability itself is worth having back, and the way back is a field that names its own side rather than a fixed one.
+
 ### Fixed
 
+- Fixed a parameter value reading back with the double quotes RFC 5545 section 3.1 wraps it in.
+
+  They are the grammar's delimiters, not content, so `ALTREP="cid:part1.0001@example.org"` now decodes to `cid:part1.0001@example.org`, in a lens read, in the decoded model, and in the jCal and JSCalendar exports. Encoding puts a pair back around a value carrying a `,`, a `;` or a `:`, so a parameter that needed quoting still gets it, and vCalendar 1.0, whose grammar has none, is unaffected. A calendar's own bytes are untouched: the quotes live on the syntax leaf, which round-tripping never reads through the codec.
+
+  The merge no longer reports a change when one side merely re-quoted a parameter it left alone.
+
+  **Breaking** for a caller that built a parameter with its own quotes: `IcalParam::AltRep(Cow::Borrowed("\"cid:...\""))` now means a value whose text starts and ends with a double quote, and goes out as `ALTREP="^'cid:...^'"`. Pass the value without them.
+
+- Fixed the two structural parse errors calling a component a card, which is vCard's word and not this crate's.
+
 - Fixed parameter value encoding, which read RFC 5545 section 3.3.11 text escapes into a parameter that has none, and never wrote RFC 6868 at all.
+
 
   Section 3.2 gives a parameter value no backslash escapes, which is the whole reason RFC 6868 exists. So a backslash a parameter legitimately carried, a Windows path in an `ALTREP` or an `X-` parameter, was eaten on the way in and could not be written back, while a real `^n`, `^^` or `^'` from a conforming producer reached the caller with its encoding showing. A parameter is now decoded and encoded by RFC 6868 section 3.1: `^n` is a newline, `^^` a caret, `^'` a double quote, any other caret sequence stays literal as section 3.1 requires, and a backslash is content in both directions. RFC 6868 updates RFC 5545 and no earlier specification, so the rules apply to iCalendar 2.0 alone and a vCalendar 1.0 caret stays a caret; `Escaper::has_param_encoding` is the switch, and a parameter node now carries its calendar's `Escaper` the way a value node already did.
 
@@ -58,14 +77,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
   RFC 5545 section 3.3.11 has a text value escape a `;` or a `,` it means literally, and section 3.3.13 gives a URI no escaping at all, so an unescaped separator is content. An `IcalText`, an `IcalTextList`, an `IcalDateTimeList`, an `IcalCalAddress`, an `IcalPeriod`, an `IcalBinary`, an `IcalBoolean`, an `IcalDate`, an `IcalDateTime`, an `IcalTime`, an `IcalDuration`, an `IcalFloat`, an `IcalInteger` and an `IcalUtcOffset` now keep everything past their first `;`, and a `REQUEST-STATUS` description and its extra data keep the commas inside them rather than being cut at the first one. The cursor's `text`, `bytes` and `list` read the whole value, and their setters replace it, so reading a value and writing it straight back no longer leaves the tail of the old one behind.
 
-- Aligned the three-way merge with vcard-rs, fixing five defects a green suite was hiding.
+- Fixed five defects a green suite was hiding, by aligning the three-way merge with vcard-rs.
 
   The two crates state one merge contract and shared almost no implementation, and this side had drifted. A value was compared decoded rather than raw, and a text value decodes its first `;`-component alone, so `LOCATION:Room A;floor 2` edited to `floor 9` reported nothing and merged nothing. A list was diffed and replayed as a set rather than a multiset, so dropping one of two equal `CATEGORIES` items was invisible on the way in and took both on the way out. A replay target was corrected for the baseline side's removals but not for its additions, so a line that side inserted made every later edit land one property early, overwriting one and leaving the other stale. A property the baseline side removed and the other side edited twice came back once per edit rather than once. And a `VALUE` retyped on one side did not contest the other side's item edits, producing a property whose items contradict its own declared type (RFC 5545 section 3.8.5.2).
 
-- A URI value was truncated at its first `;`, and escaped on the way back out.
+- Fixed a URI value being truncated at its first `;`, and escaped on the way back out.
 
   RFC 5545 section 3.3.13 gives a URI no structure and no escaping, but the codec read it as a structured value and kept only the first `;`-component, so `ATTACH:data:text/plain;base64,QUFB` decoded to `data:text/plain` and the payload was gone. Encoding then escaped the semicolon it had just used as a separator, so a value that did survive decoding did not survive its own round trip. A URI is now read whole and written back exactly as it is held. vcard-rs carried the identical defect and is fixed in the same breath, the two crates being deliberate twins.
-
 
 - Fixed a three-way merge reading one calendar address written in two cases as two people.
 
@@ -93,7 +111,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Fixed two sides that made the same change being reported as diverging.
 
-  Collisions compared the field two actions occupied and never the values they carried, so `merge(base, x, x)` reported a conflict for every change `x` made, naming the same action on both sides. Two identical actions are now no collision, and merging two identical sides returns them unchanged and reports nothing under either preference.
+  Collisions compared the field two actions occupied and never the values they carried, so `merge(base, x, x)` reported a conflict for every change `x` made, naming the same action on both sides. Two identical actions are now no collision, and merging two identical sides returns them unchanged and reports nothing.
 
 - Fixed a calendar holding one `UID` twice, or one calendar address on two attendees, colliding with itself.
 
@@ -101,7 +119,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Fixed both sides adding one property or component leaving two of them in the merged calendar.
 
-  Under the right preference the winner was appended beside the loser rather than replacing it, so a `VEVENT` could come out with two `LOCATION` lines, which RFC 5545 forbids and this crate's own `validate` refuses. The winner now replaces the addition it beat, where it stood.
+  The right side's addition was appended beside the left side's rather than losing to it, so a `VEVENT` could come out with two `LOCATION` lines, which RFC 5545 forbids and this crate's own `validate` refuses. The merged calendar now holds the left side's alone and reports the collision.
 
 - Fixed a property carrying one parameter name twice being reported as changed when nothing had changed.
 

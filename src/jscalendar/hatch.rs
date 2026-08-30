@@ -31,10 +31,6 @@ use serde_json::{Map, Value};
 
 use crate::{
     component::IcalComponent,
-    jcal::{
-        component_from_jcal, component_to_jcal, param_from_jcal, param_to_jcal, prop_from_jcal,
-        prop_to_jcal, type_slot,
-    },
     param::{IcalParam, IcalParamKind},
     prop::IcalProp,
     version::IcalVersion,
@@ -65,7 +61,7 @@ impl IcalHatch {
 
     /// Keep a property whole, because nothing in JSCalendar holds it.
     pub(crate) fn keep(&mut self, prop: &IcalProp<'_>) {
-        self.properties.push(prop_to_jcal(prop));
+        self.properties.push(prop.to_jcal());
     }
 
     /// Keep a property already written as a jCal array.
@@ -75,7 +71,7 @@ impl IcalHatch {
 
     /// Keep a subcomponent whole, for the same reason.
     pub(crate) fn keep_component(&mut self, component: &IcalComponent<'_>) {
-        self.components.push(component_to_jcal(component));
+        self.components.push(component.to_jcal());
     }
 
     /// Record what a converted member came from, if that is not what a reader
@@ -96,7 +92,7 @@ impl IcalHatch {
                 continue;
             }
 
-            let (name, value) = param_to_jcal(param);
+            let (name, value) = param.to_jcal();
             params.insert(name, value);
         }
 
@@ -121,7 +117,7 @@ impl IcalHatch {
         record.insert("name".to_owned(), Value::String(name));
 
         if declared {
-            record.insert("valueType".to_owned(), Value::String(type_slot(prop)));
+            record.insert("valueType".to_owned(), Value::String(prop.type_slot()));
         }
 
         if !params.is_empty() {
@@ -184,7 +180,7 @@ pub(crate) fn kept_props<'a>(
 
     entries
         .iter()
-        .map(|entry| prop_from_jcal(entry, version))
+        .map(|entry| IcalProp::from_jcal(entry, version))
         .collect()
 }
 
@@ -202,7 +198,7 @@ pub(crate) fn kept_components<'a>(
 
     entries
         .iter()
-        .map(|entry| component_from_jcal(entry, version))
+        .map(|entry| IcalComponent::from_jcal(entry, version))
         .collect()
 }
 
@@ -253,7 +249,7 @@ pub(crate) fn converted<'a>(
         .map(|params| {
             params
                 .iter()
-                .map(|(name, value)| param_from_jcal(name, value))
+                .map(|(name, value)| IcalParam::from_jcal(name, value))
                 .collect()
         })
         .unwrap_or_default();

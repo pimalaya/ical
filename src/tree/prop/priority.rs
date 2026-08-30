@@ -1,22 +1,15 @@
 //! # PRIORITY lens
 //!
-//! The `PRIORITY` property lens.
+//! Reading and editing the `PRIORITY` property in place: it decodes as an
+//! [`IcalInteger`] and edits through the generic [`IcalValueCursor`].
+//!
+//! Its RFC contract sits on the marker, [`PRIORITY`].
 
 use crate::{
-    prop::IcalPropKind,
-    tree::{
-        line::IcalLine,
-        prop::{cardinality::IcalPropCardinality, lens::IcalPropLens, spec::IcalPropSpec},
-        value::cursor::IcalValueCursor,
-    },
-    value::IcalValueKind,
+    prop::priority::PRIORITY,
+    tree::{line::IcalLine, prop::lens::IcalPropLens, value::cursor::IcalValueCursor},
     value::integer::IcalInteger,
-    version::IcalVersion,
 };
-
-/// The `PRIORITY` property lens.
-#[allow(non_camel_case_types)]
-pub struct PRIORITY;
 
 impl IcalPropLens for PRIORITY {
     type Target<'v> = IcalInteger<'v>;
@@ -28,17 +21,5 @@ impl IcalPropLens for PRIORITY {
 
     fn cursor<'c, 'a>(line: &'c mut IcalLine<'a>) -> IcalValueCursor<'c, 'a> {
         IcalValueCursor { line }
-    }
-}
-
-impl IcalPropSpec for PRIORITY {
-    const KIND: IcalPropKind = IcalPropKind::Priority;
-
-    fn cardinality(_version: IcalVersion) -> IcalPropCardinality {
-        IcalPropCardinality::AtMostOne
-    }
-
-    fn allowed_values(_version: IcalVersion) -> &'static [IcalValueKind] {
-        &[IcalValueKind::Integer]
     }
 }

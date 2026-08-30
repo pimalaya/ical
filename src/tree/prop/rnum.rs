@@ -1,22 +1,15 @@
 //! # RNUM lens
 //!
-//! The `RNUM` property lens.
+//! Reading and editing the `RNUM` property in place: it decodes as an
+//! [`IcalInteger`] and edits through the generic [`IcalValueCursor`].
+//!
+//! Its RFC contract sits on the marker, [`RNUM`].
 
 use crate::{
-    prop::IcalPropKind,
-    tree::{
-        line::IcalLine,
-        prop::{lens::IcalPropLens, spec::IcalPropSpec},
-        value::cursor::IcalValueCursor,
-    },
-    value::IcalValueKind,
+    prop::rnum::RNUM,
+    tree::{line::IcalLine, prop::lens::IcalPropLens, value::cursor::IcalValueCursor},
     value::integer::IcalInteger,
-    version::IcalVersion,
 };
-
-/// The `RNUM` property lens.
-#[allow(non_camel_case_types)]
-pub struct RNUM;
 
 impl IcalPropLens for RNUM {
     type Target<'v> = IcalInteger<'v>;
@@ -28,17 +21,5 @@ impl IcalPropLens for RNUM {
 
     fn cursor<'c, 'a>(line: &'c mut IcalLine<'a>) -> IcalValueCursor<'c, 'a> {
         IcalValueCursor { line }
-    }
-}
-
-impl IcalPropSpec for RNUM {
-    const KIND: IcalPropKind = IcalPropKind::RNum;
-
-    fn allowed_versions() -> &'static [IcalVersion] {
-        &[IcalVersion::V1_0]
-    }
-
-    fn allowed_values(_version: IcalVersion) -> &'static [IcalValueKind] {
-        &[IcalValueKind::Integer]
     }
 }

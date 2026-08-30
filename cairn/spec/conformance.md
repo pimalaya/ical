@@ -6,7 +6,9 @@ status: current
 
 # Conformance
 
-Strictness on the way out, as two runtime steps over one source of truth. Each property carries an `IcalPropSpec` on its lens marker (the versions it lives in, its cardinality, the value types and parameters it may take per version), and each component carries an `IcalComponentSpec` (the children it may nest and the properties it requires). A single vtable dispatch bridges the open kinds back to those static specs, so the decoder, the validator and the builder all read the same table.
+Strictness on the way out, as two runtime steps over one source of truth. Each property carries an `IcalPropSpec` on the marker it defines in `prop`, and each component an `IcalComponentSpec` on the marker it defines in `component`. A single vtable dispatch bridges the open kinds back to those static specs, so the decoder, the validator and the builder all read the same table.
+
+A contract is what the RFC allows, so it is model rather than syntax: neither the markers, the vtable, the validator nor the builder requires the `parser` feature, and only the read-and-edit lens on a property marker sits under `tree`.
 
 ### Requirement: Validation is a runtime predicate
 
@@ -57,7 +59,7 @@ The runtime bridge from a property kind to its static spec SHALL carry the kind 
 Every property SHALL allow at least one value kind, and the kind in force with nothing declared SHALL be one of those it allows.
 
 #### Scenario: A marker under the wrong arm
-- GIVEN the dispatch from a property kind to its lens marker
+- GIVEN the dispatch from a property kind to its marker
 - WHEN a marker's `KIND` does not match the arm it sits in
 - THEN the mismatch is reported
 
@@ -73,3 +75,12 @@ A calendar that passes validation SHALL earn an `IcalValid<Ical>` marker that on
 - GIVEN a builder for a property whose spec excludes `LANGUAGE`
 - WHEN `LANGUAGE` is set
 - THEN the builder returns an error rather than the property
+
+### Requirement: The contract is reachable without a parser
+
+The property and component markers, their specs, the vtable dispatching the open kinds onto them, `Ical::validate` and `IcalPropBuilder` SHALL all be available with default features off. None of them parses anything, so none SHALL depend on the parser.
+
+#### Scenario: A build with no parser
+- GIVEN default features off
+- WHEN a calendar built by hand is validated
+- THEN it validates, and the crate pulls in no dependency

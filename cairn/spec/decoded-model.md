@@ -72,7 +72,11 @@ A parameter value SHALL be decoded and encoded by RFC 6868 section 3.1: `^n` rea
 
 RFC 6868 updates RFC 5545 and no earlier specification, so the rules SHALL apply to iCalendar 2.0 alone. A vCalendar 1.0 parameter carries its caret literally, and a parameter node SHALL therefore carry the escaping mode of the calendar it was parsed from, stamped once `VERSION` is known, as a value node already does.
 
-A value the wire spelled inside its own double quotes SHALL keep that pair on the way out, only what they enclose being encoded. The decoded model holds a parameter exactly as it was written, delimiters included, so encoding the surrounding pair would strip the quoting off every quoted URI.
+The double quotes RFC 5545 section 3.1 wraps a `param-value` in SHALL be delimiters rather than content: decoding a parameter SHALL strip a balanced surrounding pair before resolving the carets, and encoding one SHALL wrap the encoded text in a pair when it carries a `,`, a `;` or a `:`, the delimiters a bare `paramtext` may not hold. A double quote cannot reach that test, the caret encoding having already spelled it `^'`.
+
+The `quoted-string` production is iCalendar 2.0's, so `Escaper` SHALL answer for it separately from the caret encoding: a vCalendar 1.0 parameter has no quoting and its double quote is content.
+
+An unbalanced quote SHALL be content, so a value the wire left open decodes as it stands rather than losing a delimiter it never closed.
 
 #### Scenario: The three sequences
 - GIVEN `CN=a^nb^^c^'d` in a 2.0 calendar
@@ -96,8 +100,28 @@ A value the wire spelled inside its own double quotes SHALL keep that pair on th
 
 #### Scenario: A quoted parameter through a round trip
 - GIVEN `ALTREP="cid:part1.0001@example.org"`
+- WHEN it is decoded
+- THEN it reads `cid:part1.0001@example.org`, and encoding it again puts the quotes back, the value carrying a `:`
+
+#### Scenario: A quoted value needing no quotes
+- GIVEN `PARTSTAT="ACCEPTED"`
 - WHEN it is decoded and encoded again
-- THEN the bytes are the ones it arrived as
+- THEN it reads `ACCEPTED` and comes back as `PARTSTAT=ACCEPTED`, the quotes having nothing to protect
+
+#### Scenario: A double quote inside a 2.0 parameter
+- GIVEN a decoded `CN` reading `say "hi", then go`
+- WHEN it is encoded
+- THEN it comes back as `CN="say ^'hi^', then go"`, the quote encoded and the pair added for the comma
+
+#### Scenario: A quote a vCalendar 1.0 calendar wrote
+- GIVEN `X-FOO="bar"` in a 1.0 calendar
+- WHEN it is decoded
+- THEN it reads `"bar"`, the version having no quoting for the pair to delimit
+
+#### Scenario: An unbalanced quote
+- GIVEN `PARTSTAT="ACCEPTED` in a 2.0 calendar
+- WHEN it is decoded
+- THEN it reads `"ACCEPTED`, the pair being unbalanced
 
 ### Requirement: A declared VALUE decides the kind, known name or not
 
@@ -138,3 +162,16 @@ The core SHALL transform no content. A transfer encoding (`QUOTED-PRINTABLE`, `B
 - GIVEN an inline `BASE64` value and the `base64` feature off
 - WHEN the calendar is decoded
 - THEN the value is the raw base64 text, with its `ENCODING` parameter kept
+
+### Requirement: A duration and a UTC offset read as numbers
+
+`IcalUtcOffset::seconds` SHALL return the offset in seconds east of UTC, and `IcalDuration::seconds` the duration in seconds, a week counting as seven days. Both SHALL return nothing for text outside their RFC 5545 grammar (3.3.14 and 3.3.6), parsing being liberal enough elsewhere to let one through.
+
+`IcalDuration::from_seconds` SHALL write a number of seconds back as a duration, such that reading it returns the number written. Neither grammar carries a month or a year, so no calendar is needed to answer.
+
+Both types SHALL keep their raw text as the value, so byte-faithful round-tripping is unaffected.
+
+#### Scenario: A duration through a number and back
+- GIVEN a number of seconds
+- WHEN it is written as a duration and read back
+- THEN the number returned is the number written

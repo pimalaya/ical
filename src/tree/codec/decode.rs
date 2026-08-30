@@ -21,13 +21,12 @@ use crate::{
     component::{IcalComponent, IcalComponentName},
     ical::Ical,
     param::{IcalParam, IcalParamKind},
-    prop::{IcalProp, IcalPropKind, IcalPropName},
+    prop::{IcalProp, IcalPropKind, IcalPropName, spec::prop_spec},
     tree::{
         codec::{Codec, unescape::unescape_param},
         cst::{IcalCst, IcalItem},
         line::IcalLine,
         param::node::IcalParamNode,
-        prop::prop_spec,
         value::node::IcalValueNode,
     },
     value::{
@@ -309,8 +308,6 @@ mod tests {
         let cst = IcalCst::parse(input).unwrap();
         let cal = cst.decode();
 
-        // NOTE: VERSION is the indicator; PRODID is the only calendar-level
-        // prop.
         assert_eq!(cal.version, IcalVersion::V2_0);
         assert_eq!(cal.props.len(), 1);
         assert_eq!(&*cal.props[0].name, "PRODID");

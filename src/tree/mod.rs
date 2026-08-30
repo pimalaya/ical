@@ -7,23 +7,23 @@
 //! ([`line`](mod@line), [`param`], [`value`], [`leaf`], with each line's wire
 //! layout on [`wire`]) that round-trips the wire bytes exactly.
 //!
-//! On top of it sit the per-name lens markers in [`prop`] / [`param`] /
-//! [`component`], each carrying its lens contract (and, for a property or a
-//! component, its spec), and the in-place edit cursor in [`value`].
+//! On top of it sit the read-and-edit lenses: one per property in [`prop`],
+//! one per parameter in [`param`], and the in-place edit cursor in [`value`].
+//! A property lens is implemented on the marker its property defines in
+//! [`crate::prop`], so the RFC contract and the syntax projection meet on one
+//! type without the contract needing a parser.
 //!
-//! Around them, [`codec`] projects between tree and decoded model, [`ical`]
-//! is the strict-out layer (the spec-driven builder and validation), and the
+//! Around them, [`codec`] projects between tree and decoded model, and the
 //! three-way [`merge`](mod@merge) reconciles two divergent edits against
 //! their common base.
 //!
 //! Parsing is the only fallible step, so its [`error`] type lives here too.
 //! This whole layer is gated behind the `parser` feature, so the decoded
 //! model can be depended on without it.
+
 pub mod codec;
-pub mod component;
 pub mod cst;
 pub mod error;
-pub mod ical;
 pub mod leaf;
 pub mod line;
 pub mod merge;

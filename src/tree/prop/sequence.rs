@@ -1,22 +1,15 @@
 //! # SEQUENCE lens
 //!
-//! The `SEQUENCE` property lens.
+//! Reading and editing the `SEQUENCE` property in place: it decodes as an
+//! [`IcalInteger`] and edits through the generic [`IcalValueCursor`].
+//!
+//! Its RFC contract sits on the marker, [`SEQUENCE`].
 
 use crate::{
-    prop::IcalPropKind,
-    tree::{
-        line::IcalLine,
-        prop::{cardinality::IcalPropCardinality, lens::IcalPropLens, spec::IcalPropSpec},
-        value::cursor::IcalValueCursor,
-    },
-    value::IcalValueKind,
+    prop::sequence::SEQUENCE,
+    tree::{line::IcalLine, prop::lens::IcalPropLens, value::cursor::IcalValueCursor},
     value::integer::IcalInteger,
-    version::IcalVersion,
 };
-
-/// The `SEQUENCE` property lens.
-#[allow(non_camel_case_types)]
-pub struct SEQUENCE;
 
 impl IcalPropLens for SEQUENCE {
     type Target<'v> = IcalInteger<'v>;
@@ -28,17 +21,5 @@ impl IcalPropLens for SEQUENCE {
 
     fn cursor<'c, 'a>(line: &'c mut IcalLine<'a>) -> IcalValueCursor<'c, 'a> {
         IcalValueCursor { line }
-    }
-}
-
-impl IcalPropSpec for SEQUENCE {
-    const KIND: IcalPropKind = IcalPropKind::Sequence;
-
-    fn cardinality(_version: IcalVersion) -> IcalPropCardinality {
-        IcalPropCardinality::AtMostOne
-    }
-
-    fn allowed_values(_version: IcalVersion) -> &'static [IcalValueKind] {
-        &[IcalValueKind::Integer]
     }
 }

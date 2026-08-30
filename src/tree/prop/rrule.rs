@@ -1,22 +1,15 @@
 //! # RRULE lens
 //!
-//! The `RRULE` property lens.
+//! Reading and editing the `RRULE` property in place: it decodes as an
+//! [`IcalRecur`] and edits through the generic [`IcalValueCursor`].
+//!
+//! Its RFC contract sits on the marker, [`RRULE`].
 
 use crate::{
-    prop::IcalPropKind,
-    tree::{
-        line::IcalLine,
-        prop::{lens::IcalPropLens, spec::IcalPropSpec},
-        value::cursor::IcalValueCursor,
-    },
-    value::IcalValueKind,
+    prop::rrule::RRULE,
+    tree::{line::IcalLine, prop::lens::IcalPropLens, value::cursor::IcalValueCursor},
     value::recur::IcalRecur,
-    version::IcalVersion,
 };
-
-/// The `RRULE` property lens.
-#[allow(non_camel_case_types)]
-pub struct RRULE;
 
 impl IcalPropLens for RRULE {
     type Target<'v> = IcalRecur<'v>;
@@ -28,13 +21,5 @@ impl IcalPropLens for RRULE {
 
     fn cursor<'c, 'a>(line: &'c mut IcalLine<'a>) -> IcalValueCursor<'c, 'a> {
         IcalValueCursor { line }
-    }
-}
-
-impl IcalPropSpec for RRULE {
-    const KIND: IcalPropKind = IcalPropKind::RRule;
-
-    fn allowed_values(_version: IcalVersion) -> &'static [IcalValueKind] {
-        &[IcalValueKind::Recur]
     }
 }

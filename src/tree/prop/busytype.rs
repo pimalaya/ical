@@ -1,21 +1,15 @@
 //! # BUSYTYPE lens
 //!
-//! The `BUSYTYPE` property lens.
+//! Reading and editing the `BUSYTYPE` property in place: it decodes as an
+//! [`IcalText`] and edits through the generic [`IcalValueCursor`].
+//!
+//! Its RFC contract sits on the marker, [`BUSYTYPE`].
 
 use crate::{
-    prop::IcalPropKind,
-    tree::{
-        line::IcalLine,
-        prop::{lens::IcalPropLens, spec::IcalPropSpec},
-        value::cursor::IcalValueCursor,
-    },
+    prop::busytype::BUSYTYPE,
+    tree::{line::IcalLine, prop::lens::IcalPropLens, value::cursor::IcalValueCursor},
     value::text::IcalText,
-    version::IcalVersion,
 };
-
-/// The `BUSYTYPE` property lens.
-#[allow(non_camel_case_types)]
-pub struct BUSYTYPE;
 
 impl IcalPropLens for BUSYTYPE {
     type Target<'v> = IcalText<'v>;
@@ -27,13 +21,5 @@ impl IcalPropLens for BUSYTYPE {
 
     fn cursor<'c, 'a>(line: &'c mut IcalLine<'a>) -> IcalValueCursor<'c, 'a> {
         IcalValueCursor { line }
-    }
-}
-
-impl IcalPropSpec for BUSYTYPE {
-    const KIND: IcalPropKind = IcalPropKind::BusyType;
-
-    fn allowed_versions() -> &'static [IcalVersion] {
-        &[IcalVersion::V2_0]
     }
 }

@@ -1,22 +1,15 @@
 //! # REFRESH-INTERVAL lens
 //!
-//! The `REFRESH-INTERVAL` property lens.
+//! Reading and editing the `REFRESH-INTERVAL` property in place: it decodes as
+//! an [`IcalDuration`] and edits through the generic [`IcalValueCursor`].
+//!
+//! Its RFC contract sits on the marker, [`REFRESH_INTERVAL`].
 
 use crate::{
-    prop::IcalPropKind,
-    tree::{
-        line::IcalLine,
-        prop::{cardinality::IcalPropCardinality, lens::IcalPropLens, spec::IcalPropSpec},
-        value::cursor::IcalValueCursor,
-    },
-    value::IcalValueKind,
+    prop::refresh_interval::REFRESH_INTERVAL,
+    tree::{line::IcalLine, prop::lens::IcalPropLens, value::cursor::IcalValueCursor},
     value::duration::IcalDuration,
-    version::IcalVersion,
 };
-
-/// The `REFRESH-INTERVAL` property lens.
-#[allow(non_camel_case_types)]
-pub struct REFRESH_INTERVAL;
 
 impl IcalPropLens for REFRESH_INTERVAL {
     type Target<'v> = IcalDuration<'v>;
@@ -28,21 +21,5 @@ impl IcalPropLens for REFRESH_INTERVAL {
 
     fn cursor<'c, 'a>(line: &'c mut IcalLine<'a>) -> IcalValueCursor<'c, 'a> {
         IcalValueCursor { line }
-    }
-}
-
-impl IcalPropSpec for REFRESH_INTERVAL {
-    const KIND: IcalPropKind = IcalPropKind::RefreshInterval;
-
-    fn allowed_versions() -> &'static [IcalVersion] {
-        &[IcalVersion::V2_0]
-    }
-
-    fn cardinality(_version: IcalVersion) -> IcalPropCardinality {
-        IcalPropCardinality::AtMostOne
-    }
-
-    fn allowed_values(_version: IcalVersion) -> &'static [IcalValueKind] {
-        &[IcalValueKind::Duration]
     }
 }

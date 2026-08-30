@@ -85,3 +85,7 @@ Ordering inside a component is lost, since a JSCalendar object is a set of membe
 - GIVEN `DTSTART;TZID=Europe/Berlin` and `DTEND;TZID=Europe/Berlin` an hour and a half later
 - WHEN the event is converted
 - THEN it states `PT1H30M` and the zone once
+
+### Requirement: JSCalendar needs no parser
+
+The `jscalendar` feature SHALL imply `jcal`, whose syntax carries the escape hatch, and neither SHALL imply `parser`. A JMAP client that never reads an iCalendar byte SHALL be able to depend on this crate for the conversion alone.

@@ -1,21 +1,15 @@
 //! # ACTION lens
 //!
-//! The `ACTION` property lens.
+//! Reading and editing the `ACTION` property in place: it decodes as an
+//! [`IcalText`] and edits through the generic [`IcalValueCursor`].
+//!
+//! Its RFC contract sits on the marker, [`ACTION`].
 
 use crate::{
-    prop::IcalPropKind,
-    tree::{
-        line::IcalLine,
-        prop::{cardinality::IcalPropCardinality, lens::IcalPropLens, spec::IcalPropSpec},
-        value::cursor::IcalValueCursor,
-    },
+    prop::action::ACTION,
+    tree::{line::IcalLine, prop::lens::IcalPropLens, value::cursor::IcalValueCursor},
     value::text::IcalText,
-    version::IcalVersion,
 };
-
-/// The `ACTION` property lens.
-#[allow(non_camel_case_types)]
-pub struct ACTION;
 
 impl IcalPropLens for ACTION {
     type Target<'v> = IcalText<'v>;
@@ -27,17 +21,5 @@ impl IcalPropLens for ACTION {
 
     fn cursor<'c, 'a>(line: &'c mut IcalLine<'a>) -> IcalValueCursor<'c, 'a> {
         IcalValueCursor { line }
-    }
-}
-
-impl IcalPropSpec for ACTION {
-    const KIND: IcalPropKind = IcalPropKind::Action;
-
-    fn allowed_versions() -> &'static [IcalVersion] {
-        &[IcalVersion::V2_0]
-    }
-
-    fn cardinality(_version: IcalVersion) -> IcalPropCardinality {
-        IcalPropCardinality::AtMostOne
     }
 }

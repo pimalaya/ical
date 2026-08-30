@@ -216,6 +216,20 @@ fn tells_a_quoted_parameter_apart_from_the_value_behind_it() {
 }
 
 #[test]
+fn requoting_a_parameter_is_not_a_change() {
+    // NOTE: The quotes RFC 5545 section 3.1 wraps a parameter value in are the
+    // grammar's, not the value's, so a server that adds or drops a pair around
+    // an unchanged value has changed nothing to report or collide over.
+    let left = edited("PARTSTAT=NEEDS-ACTION", "PARTSTAT=\"NEEDS-ACTION\"");
+
+    let report = merge(BASE, &left, BASE);
+
+    assert_eq!(bytes(&report), left);
+    assert!(report.conflicts.is_empty());
+    assert!(report.right.is_empty());
+}
+
+#[test]
 fn matches_an_override_by_its_recurrence_id_rather_than_its_position() {
     let series = "BEGIN:VCALENDAR\r\n\
          VERSION:2.0\r\n\

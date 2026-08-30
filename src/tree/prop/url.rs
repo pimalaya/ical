@@ -1,22 +1,15 @@
 //! # URL lens
 //!
-//! The `URL` property lens.
+//! Reading and editing the `URL` property in place: it decodes as an
+//! [`IcalUri`] and edits through the generic [`IcalValueCursor`].
+//!
+//! Its RFC contract sits on the marker, [`URL`].
 
 use crate::{
-    prop::IcalPropKind,
-    tree::{
-        line::IcalLine,
-        prop::{cardinality::IcalPropCardinality, lens::IcalPropLens, spec::IcalPropSpec},
-        value::cursor::IcalValueCursor,
-    },
-    value::IcalValueKind,
+    prop::url::URL,
+    tree::{line::IcalLine, prop::lens::IcalPropLens, value::cursor::IcalValueCursor},
     value::uri::IcalUri,
-    version::IcalVersion,
 };
-
-/// The `URL` property lens.
-#[allow(non_camel_case_types)]
-pub struct URL;
 
 impl IcalPropLens for URL {
     type Target<'v> = IcalUri<'v>;
@@ -28,17 +21,5 @@ impl IcalPropLens for URL {
 
     fn cursor<'c, 'a>(line: &'c mut IcalLine<'a>) -> IcalValueCursor<'c, 'a> {
         IcalValueCursor { line }
-    }
-}
-
-impl IcalPropSpec for URL {
-    const KIND: IcalPropKind = IcalPropKind::Url;
-
-    fn cardinality(_version: IcalVersion) -> IcalPropCardinality {
-        IcalPropCardinality::AtMostOne
-    }
-
-    fn allowed_values(_version: IcalVersion) -> &'static [IcalValueKind] {
-        &[IcalValueKind::Uri]
     }
 }

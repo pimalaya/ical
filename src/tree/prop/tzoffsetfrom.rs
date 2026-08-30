@@ -1,22 +1,15 @@
 //! # TZOFFSETFROM lens
 //!
-//! The `TZOFFSETFROM` property lens.
+//! Reading and editing the `TZOFFSETFROM` property in place: it decodes as an
+//! [`IcalUtcOffset`] and edits through the generic [`IcalValueCursor`].
+//!
+//! Its RFC contract sits on the marker, [`TZOFFSETFROM`].
 
 use crate::{
-    prop::IcalPropKind,
-    tree::{
-        line::IcalLine,
-        prop::{cardinality::IcalPropCardinality, lens::IcalPropLens, spec::IcalPropSpec},
-        value::cursor::IcalValueCursor,
-    },
-    value::IcalValueKind,
+    prop::tzoffsetfrom::TZOFFSETFROM,
+    tree::{line::IcalLine, prop::lens::IcalPropLens, value::cursor::IcalValueCursor},
     value::utc_offset::IcalUtcOffset,
-    version::IcalVersion,
 };
-
-/// The `TZOFFSETFROM` property lens.
-#[allow(non_camel_case_types)]
-pub struct TZOFFSETFROM;
 
 impl IcalPropLens for TZOFFSETFROM {
     type Target<'v> = IcalUtcOffset<'v>;
@@ -28,21 +21,5 @@ impl IcalPropLens for TZOFFSETFROM {
 
     fn cursor<'c, 'a>(line: &'c mut IcalLine<'a>) -> IcalValueCursor<'c, 'a> {
         IcalValueCursor { line }
-    }
-}
-
-impl IcalPropSpec for TZOFFSETFROM {
-    const KIND: IcalPropKind = IcalPropKind::TzOffsetFrom;
-
-    fn allowed_versions() -> &'static [IcalVersion] {
-        &[IcalVersion::V2_0]
-    }
-
-    fn cardinality(_version: IcalVersion) -> IcalPropCardinality {
-        IcalPropCardinality::AtMostOne
-    }
-
-    fn allowed_values(_version: IcalVersion) -> &'static [IcalValueKind] {
-        &[IcalValueKind::UtcOffset]
     }
 }

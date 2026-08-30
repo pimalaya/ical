@@ -31,8 +31,9 @@ pub(crate) fn unescape_bytes(bytes: &[u8], escaper: Escaper) -> Cow<'_, [u8]> {
     }
 }
 
-/// Resolve the RFC 6868 3.1 parameter value encoding: `^n` is a newline, `^^`
-/// a caret and `^'` a double quote.
+/// Strip the RFC 5545 3.1 delimiters off a parameter value, then resolve the
+/// RFC 6868 3.1 encoding: `^n` is a newline, `^^` a caret and `^'` a double
+/// quote.
 ///
 /// A caret before anything else, and a trailing one, stay literal: section 3.1
 /// forbids reading either as an error. No backslash is touched in any mode,
@@ -40,9 +41,22 @@ pub(crate) fn unescape_bytes(bytes: &[u8], escaper: Escaper) -> Cow<'_, [u8]> {
 /// forbidding the backslash ones.
 ///
 /// Borrows when there is nothing to resolve, which is nearly every parameter.
-/// A version predating RFC 6868 keeps its carets: see
-/// [`Escaper::has_param_encoding`].
+/// A version predating RFC 6868 keeps its carets, and one predating the
+/// `quoted-string` production its double quotes: see
+/// [`Escaper::has_param_encoding`] and [`Escaper::has_param_quoting`].
 pub(crate) fn unescape_param(text: &str, escaper: Escaper) -> Cow<'_, str> {
+    // NOTE: RFC 5545 3.1 wraps a value carrying `,`, `;` or `:` in double
+    // quotes. The pair is the production's own, never part of what it
+    // encloses, so it comes off before the carets are read. An unbalanced one
+    // closed nothing and is therefore content.
+    let text = match escaper.has_param_quoting() {
+        true => text
+            .strip_prefix('"')
+            .and_then(|inner| inner.strip_suffix('"'))
+            .unwrap_or(text),
+        false => text,
+    };
+
     if !escaper.has_param_encoding() || !text.contains('^') {
         return Cow::Borrowed(text);
     }
@@ -186,6 +200,35 @@ mod tests {
             unescape_param(r"C:\temp\note", Escaper::Modern),
             r"C:\temp\note",
         );
+    }
+
+    /// RFC 5545 section 3.1 makes the double quotes the `quoted-string`
+    /// production's own delimiter, so what comes back is what they enclose.
+    #[test]
+    fn strips_the_parameter_value_delimiters() {
+        use crate::tree::codec::mode::Escaper;
+
+        assert!(matches!(
+            unescape_param("\"cid:part1.0001.org\"", Escaper::Modern),
+            Cow::Borrowed("cid:part1.0001.org")
+        ));
+        assert_eq!(unescape_param("\"a^'b\"", Escaper::Modern), "a\"b");
+    }
+
+    /// A quote that closes nothing is content, and vCalendar 1.0 has no
+    /// quoting at all, so both keep every character they were written with.
+    #[test]
+    fn keeps_a_quote_that_delimits_nothing() {
+        use crate::tree::codec::mode::Escaper;
+
+        assert!(matches!(
+            unescape_param("\"CHAIR", Escaper::Modern),
+            Cow::Borrowed("\"CHAIR")
+        ));
+        assert!(matches!(
+            unescape_param("\"a,b\"", Escaper::V1_0),
+            Cow::Borrowed("\"a,b\"")
+        ));
     }
 
     #[test]

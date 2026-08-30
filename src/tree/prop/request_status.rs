@@ -1,22 +1,15 @@
 //! # REQUEST-STATUS lens
 //!
-//! The `REQUEST-STATUS` property lens.
+//! Reading and editing the `REQUEST-STATUS` property in place: it decodes as an
+//! [`IcalRequestStatus`] and edits through the generic [`IcalValueCursor`].
+//!
+//! Its RFC contract sits on the marker, [`REQUEST_STATUS`].
 
 use crate::{
-    prop::IcalPropKind,
-    tree::{
-        line::IcalLine,
-        prop::{lens::IcalPropLens, spec::IcalPropSpec},
-        value::cursor::IcalValueCursor,
-    },
-    value::IcalValueKind,
+    prop::request_status::REQUEST_STATUS,
+    tree::{line::IcalLine, prop::lens::IcalPropLens, value::cursor::IcalValueCursor},
     value::request_status::IcalRequestStatus,
-    version::IcalVersion,
 };
-
-/// The `REQUEST-STATUS` property lens.
-#[allow(non_camel_case_types)]
-pub struct REQUEST_STATUS;
 
 impl IcalPropLens for REQUEST_STATUS {
     type Target<'v> = IcalRequestStatus<'v>;
@@ -28,17 +21,5 @@ impl IcalPropLens for REQUEST_STATUS {
 
     fn cursor<'c, 'a>(line: &'c mut IcalLine<'a>) -> IcalValueCursor<'c, 'a> {
         IcalValueCursor { line }
-    }
-}
-
-impl IcalPropSpec for REQUEST_STATUS {
-    const KIND: IcalPropKind = IcalPropKind::RequestStatus;
-
-    fn allowed_versions() -> &'static [IcalVersion] {
-        &[IcalVersion::V2_0]
-    }
-
-    fn allowed_values(_version: IcalVersion) -> &'static [IcalValueKind] {
-        &[IcalValueKind::RequestStatus]
     }
 }

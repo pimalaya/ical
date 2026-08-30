@@ -1,22 +1,15 @@
 //! # CATEGORIES lens
 //!
-//! The `CATEGORIES` property lens.
+//! Reading and editing the `CATEGORIES` property in place: it decodes as an
+//! [`IcalTextList`] and edits through the generic [`IcalValueCursor`].
+//!
+//! Its RFC contract sits on the marker, [`CATEGORIES`].
 
 use crate::{
-    prop::IcalPropKind,
-    tree::{
-        line::IcalLine,
-        prop::{lens::IcalPropLens, spec::IcalPropSpec},
-        value::cursor::IcalValueCursor,
-    },
-    value::IcalValueKind,
+    prop::categories::CATEGORIES,
+    tree::{line::IcalLine, prop::lens::IcalPropLens, value::cursor::IcalValueCursor},
     value::text::IcalTextList,
-    version::IcalVersion,
 };
-
-/// The `CATEGORIES` property lens.
-#[allow(non_camel_case_types)]
-pub struct CATEGORIES;
 
 impl IcalPropLens for CATEGORIES {
     type Target<'v> = IcalTextList<'v>;
@@ -28,19 +21,5 @@ impl IcalPropLens for CATEGORIES {
 
     fn cursor<'c, 'a>(line: &'c mut IcalLine<'a>) -> IcalValueCursor<'c, 'a> {
         IcalValueCursor { line }
-    }
-}
-
-impl IcalPropSpec for CATEGORIES {
-    const KIND: IcalPropKind = IcalPropKind::Categories;
-
-    fn allowed_values(_version: IcalVersion) -> &'static [IcalValueKind] {
-        &[IcalValueKind::TextList]
-    }
-
-    /// A list whatever `VALUE` declares: `TEXT` describes each item, not the
-    /// value as a whole.
-    fn value(_version: IcalVersion, _declared: Option<IcalValueKind>) -> IcalValueKind {
-        IcalValueKind::TextList
     }
 }

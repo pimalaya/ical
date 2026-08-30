@@ -22,10 +22,11 @@ iCalendar parser, validator, editor, merger and builder library for Rust
 - **Forgiving parser**: accept any real calendar, with a recovering mode for the ones a strict reading would throw away whole.
 - **Strict building and validation**: construct calendars checked against the standard, with an escape hatch to step outside it.
 - **Recurrence and time zones**: expand a rule or a whole recurrence set, and resolve an offset from the calendar's own rules.
-- **Small and portable**: no_std compatible, with an allocation-only core that pulls in no dependencies.
-- **Optional content decoding**: quoted-printable text, inline base64 binary and foreign character sets, each behind its own feature.
 - **Three-way merge**: reconcile two divergent edits against their common base, every action and conflict reported.
-- **Optional JSON**: read and write a calendar as jCal, or convert it to and from the JSCalendar model a JMAP server exchanges.
+- **Small and portable**: no_std compatible, with an allocation-only core that pulls in no dependencies; the parser itself is optional.
+- **Optional content decoding**: quoted-printable text, inline base64 binary and foreign character sets, each behind its own feature.
+- **Optional jCal**: read and write a calendar as JSON.
+- **Optional JSCalendar**: convert a calendar to and from the object model exchanged over JMAP.
 
 > [!TIP]
 > ical-rs uses [cargo features](https://doc.rust-lang.org/cargo/reference/features.html) to gate optional support. The default feature set is declared in [Cargo.toml](./Cargo.toml) or on [docs.rs](https://docs.rs/crate/ical-rs/latest/features).

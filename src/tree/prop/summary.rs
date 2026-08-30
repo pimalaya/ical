@@ -1,21 +1,15 @@
 //! # SUMMARY lens
 //!
-//! The `SUMMARY` property lens.
+//! Reading and editing the `SUMMARY` property in place: it decodes as an
+//! [`IcalText`] and edits through the generic [`IcalValueCursor`].
+//!
+//! Its RFC contract sits on the marker, [`SUMMARY`].
 
 use crate::{
-    prop::IcalPropKind,
-    tree::{
-        line::IcalLine,
-        prop::{cardinality::IcalPropCardinality, lens::IcalPropLens, spec::IcalPropSpec},
-        value::cursor::IcalValueCursor,
-    },
+    prop::summary::SUMMARY,
+    tree::{line::IcalLine, prop::lens::IcalPropLens, value::cursor::IcalValueCursor},
     value::text::IcalText,
-    version::IcalVersion,
 };
-
-/// The `SUMMARY` property lens.
-#[allow(non_camel_case_types)]
-pub struct SUMMARY;
 
 impl IcalPropLens for SUMMARY {
     type Target<'v> = IcalText<'v>;
@@ -27,13 +21,5 @@ impl IcalPropLens for SUMMARY {
 
     fn cursor<'c, 'a>(line: &'c mut IcalLine<'a>) -> IcalValueCursor<'c, 'a> {
         IcalValueCursor { line }
-    }
-}
-
-impl IcalPropSpec for SUMMARY {
-    const KIND: IcalPropKind = IcalPropKind::Summary;
-
-    fn cardinality(_version: IcalVersion) -> IcalPropCardinality {
-        IcalPropCardinality::AtMostOne
     }
 }

@@ -1,22 +1,15 @@
 //! # EXRULE lens
 //!
-//! The `EXRULE` property lens.
+//! Reading and editing the `EXRULE` property in place: it decodes as an
+//! [`IcalRecur`] and edits through the generic [`IcalValueCursor`].
+//!
+//! Its RFC contract sits on the marker, [`EXRULE`].
 
 use crate::{
-    prop::IcalPropKind,
-    tree::{
-        line::IcalLine,
-        prop::{lens::IcalPropLens, spec::IcalPropSpec},
-        value::cursor::IcalValueCursor,
-    },
-    value::IcalValueKind,
+    prop::exrule::EXRULE,
+    tree::{line::IcalLine, prop::lens::IcalPropLens, value::cursor::IcalValueCursor},
     value::recur::IcalRecur,
-    version::IcalVersion,
 };
-
-/// The `EXRULE` property lens.
-#[allow(non_camel_case_types)]
-pub struct EXRULE;
 
 impl IcalPropLens for EXRULE {
     type Target<'v> = IcalRecur<'v>;
@@ -28,13 +21,5 @@ impl IcalPropLens for EXRULE {
 
     fn cursor<'c, 'a>(line: &'c mut IcalLine<'a>) -> IcalValueCursor<'c, 'a> {
         IcalValueCursor { line }
-    }
-}
-
-impl IcalPropSpec for EXRULE {
-    const KIND: IcalPropKind = IcalPropKind::ExRule;
-
-    fn allowed_values(_version: IcalVersion) -> &'static [IcalValueKind] {
-        &[IcalValueKind::Recur]
     }
 }

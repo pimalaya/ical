@@ -1,21 +1,15 @@
 //! # TRANSP lens
 //!
-//! The `TRANSP` property lens.
+//! Reading and editing the `TRANSP` property in place: it decodes as an
+//! [`IcalText`] and edits through the generic [`IcalValueCursor`].
+//!
+//! Its RFC contract sits on the marker, [`TRANSP`].
 
 use crate::{
-    prop::IcalPropKind,
-    tree::{
-        line::IcalLine,
-        prop::{cardinality::IcalPropCardinality, lens::IcalPropLens, spec::IcalPropSpec},
-        value::cursor::IcalValueCursor,
-    },
+    prop::transp::TRANSP,
+    tree::{line::IcalLine, prop::lens::IcalPropLens, value::cursor::IcalValueCursor},
     value::text::IcalText,
-    version::IcalVersion,
 };
-
-/// The `TRANSP` property lens.
-#[allow(non_camel_case_types)]
-pub struct TRANSP;
 
 impl IcalPropLens for TRANSP {
     type Target<'v> = IcalText<'v>;
@@ -27,13 +21,5 @@ impl IcalPropLens for TRANSP {
 
     fn cursor<'c, 'a>(line: &'c mut IcalLine<'a>) -> IcalValueCursor<'c, 'a> {
         IcalValueCursor { line }
-    }
-}
-
-impl IcalPropSpec for TRANSP {
-    const KIND: IcalPropKind = IcalPropKind::Transp;
-
-    fn cardinality(_version: IcalVersion) -> IcalPropCardinality {
-        IcalPropCardinality::AtMostOne
     }
 }

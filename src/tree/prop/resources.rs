@@ -1,22 +1,15 @@
 //! # RESOURCES lens
 //!
-//! The `RESOURCES` property lens.
+//! Reading and editing the `RESOURCES` property in place: it decodes as an
+//! [`IcalTextList`] and edits through the generic [`IcalValueCursor`].
+//!
+//! Its RFC contract sits on the marker, [`RESOURCES`].
 
 use crate::{
-    prop::IcalPropKind,
-    tree::{
-        line::IcalLine,
-        prop::{lens::IcalPropLens, spec::IcalPropSpec},
-        value::cursor::IcalValueCursor,
-    },
-    value::IcalValueKind,
+    prop::resources::RESOURCES,
+    tree::{line::IcalLine, prop::lens::IcalPropLens, value::cursor::IcalValueCursor},
     value::text::IcalTextList,
-    version::IcalVersion,
 };
-
-/// The `RESOURCES` property lens.
-#[allow(non_camel_case_types)]
-pub struct RESOURCES;
 
 impl IcalPropLens for RESOURCES {
     type Target<'v> = IcalTextList<'v>;
@@ -28,19 +21,5 @@ impl IcalPropLens for RESOURCES {
 
     fn cursor<'c, 'a>(line: &'c mut IcalLine<'a>) -> IcalValueCursor<'c, 'a> {
         IcalValueCursor { line }
-    }
-}
-
-impl IcalPropSpec for RESOURCES {
-    const KIND: IcalPropKind = IcalPropKind::Resources;
-
-    fn allowed_values(_version: IcalVersion) -> &'static [IcalValueKind] {
-        &[IcalValueKind::TextList]
-    }
-
-    /// A list whatever `VALUE` declares: `TEXT` describes each item, not the
-    /// value as a whole.
-    fn value(_version: IcalVersion, _declared: Option<IcalValueKind>) -> IcalValueKind {
-        IcalValueKind::TextList
     }
 }

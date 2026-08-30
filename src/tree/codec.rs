@@ -23,16 +23,16 @@
 //! value type under [`crate::tree::value`], mirroring the model's `value/`;
 //! both the structural dispatch and the per-property lenses go through it.
 
-use crate::{
-    tree::{codec::mode::Escaper, value::node::IcalValueNode},
-    value::{IcalUnknownValue, IcalValue},
-};
-
 pub mod decode;
 pub mod encode;
 pub mod escape;
 pub mod mode;
 pub mod unescape;
+
+use crate::{
+    tree::{codec::mode::Escaper, value::node::IcalValueNode},
+    value::{IcalUnknownValue, IcalValue},
+};
 
 /// How a decoded value type projects to and from a syntax node.
 ///

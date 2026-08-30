@@ -1,23 +1,15 @@
 //! # ATTENDEE lens
 //!
-//! The `ATTENDEE` property lens.
+//! Reading and editing the `ATTENDEE` property in place: it decodes as an
+//! [`IcalCalAddress`] and edits through the generic [`IcalValueCursor`].
+//!
+//! Its RFC contract sits on the marker, [`ATTENDEE`].
 
 use crate::{
-    param::IcalParamKind,
-    prop::IcalPropKind,
-    tree::{
-        line::IcalLine,
-        prop::{lens::IcalPropLens, spec::IcalPropSpec},
-        value::cursor::IcalValueCursor,
-    },
-    value::IcalValueKind,
+    prop::attendee::ATTENDEE,
+    tree::{line::IcalLine, prop::lens::IcalPropLens, value::cursor::IcalValueCursor},
     value::cal_address::IcalCalAddress,
-    version::IcalVersion,
 };
-
-/// The `ATTENDEE` property lens.
-#[allow(non_camel_case_types)]
-pub struct ATTENDEE;
 
 impl IcalPropLens for ATTENDEE {
     type Target<'v> = IcalCalAddress<'v>;
@@ -29,36 +21,5 @@ impl IcalPropLens for ATTENDEE {
 
     fn cursor<'c, 'a>(line: &'c mut IcalLine<'a>) -> IcalValueCursor<'c, 'a> {
         IcalValueCursor { line }
-    }
-}
-
-impl IcalPropSpec for ATTENDEE {
-    const KIND: IcalPropKind = IcalPropKind::Attendee;
-
-    fn allowed_values(_version: IcalVersion) -> &'static [IcalValueKind] {
-        &[IcalValueKind::CalAddress]
-    }
-
-    /// The scheduling parameters a CalDAV server reads and writes here
-    /// (RFC 6638 7) sit beside the RFC 5545 ones.
-    fn allowed_params(_version: IcalVersion) -> &'static [IcalParamKind] {
-        &[
-            IcalParamKind::Language,
-            IcalParamKind::Cn,
-            IcalParamKind::CuType,
-            IcalParamKind::DelegatedFrom,
-            IcalParamKind::DelegatedTo,
-            IcalParamKind::Dir,
-            IcalParamKind::Member,
-            IcalParamKind::PartStat,
-            IcalParamKind::Role,
-            IcalParamKind::Rsvp,
-            IcalParamKind::SentBy,
-            IcalParamKind::Email,
-            IcalParamKind::Value,
-            IcalParamKind::ScheduleAgent,
-            IcalParamKind::ScheduleForceSend,
-            IcalParamKind::ScheduleStatus,
-        ]
     }
 }

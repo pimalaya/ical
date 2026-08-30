@@ -60,8 +60,8 @@
 //! digits are carried across unshifted.
 //!
 //! That is exact for a floating or UTC object, and off by that zone's offset
-//! for any other. The whole of [`timezone`](crate::timezone) is available to
-//! a caller that wants to shift it from the calendar's own `VTIMEZONE`.
+//! for any other. The whole of [`tz`](crate::tz) is available to a caller
+//! that wants to shift it from the calendar's own `VTIMEZONE`.
 //!
 //! A `DTEND` becomes a duration, so an event that ended in another time zone
 //! than it started in comes back with the start's zone on both ends.
@@ -73,6 +73,11 @@
 //!
 //! [the conversion draft]: https://datatracker.ietf.org/doc/draft-ietf-calext-jscalendar-icalendar/
 
+mod export;
+mod hatch;
+mod import;
+mod patch;
+
 use core::{error, fmt};
 
 use alloc::string::{String, ToString};
@@ -80,11 +85,6 @@ use alloc::string::{String, ToString};
 use serde_json::Value;
 
 use crate::ical::Ical;
-
-mod export;
-mod hatch;
-mod import;
-mod patch;
 
 /// What a JSCalendar value cannot be read as.
 ///
@@ -140,5 +140,66 @@ impl<'a> Ical<'a> {
             Some("Event" | "Task") => Ok(import::of_entry(jscalendar)),
             Some(kind) => Err(IcalJscalendarError::NotAGroup(kind.to_string())),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::{borrow::Cow, vec};
+
+    use crate::{
+        component::{IcalComponent, IcalComponentKind},
+        ical::Ical,
+        jscalendar::IcalJscalendarError,
+        prop::{IcalProp, IcalPropKind},
+        value::{IcalValue, datetime::IcalDateTime, text::IcalText},
+        version::IcalVersion,
+    };
+
+    /// A hand-built calendar, so the conversion is exercised with no parser.
+    fn calendar() -> Ical<'static> {
+        Ical {
+            version: IcalVersion::V2_0,
+            props: vec![],
+            components: vec![IcalComponent {
+                name: IcalComponentKind::VEvent.into(),
+                props: vec![
+                    IcalProp {
+                        name: IcalPropKind::Uid.into(),
+                        params: vec![],
+                        value: IcalValue::Text(IcalText(Cow::Borrowed("42@example.com"))),
+                    },
+                    IcalProp {
+                        name: IcalPropKind::DtStart.into(),
+                        params: vec![],
+                        value: IcalValue::DateTime(IcalDateTime(Cow::Borrowed("20260102T120000Z"))),
+                    },
+                    IcalProp {
+                        name: IcalPropKind::Summary.into(),
+                        params: vec![],
+                        value: IcalValue::Text(IcalText(Cow::Borrowed("Lunch"))),
+                    },
+                ],
+                components: vec![],
+            }],
+        }
+    }
+
+    #[test]
+    fn a_group_survives_a_conversion_with_no_parser() {
+        let group = calendar().to_jscalendar();
+        let back = Ical::from_jscalendar(&group).expect("a Group");
+
+        assert_eq!(back.to_jscalendar(), group);
+    }
+
+    #[test]
+    fn refuses_an_object_that_is_no_calendar_of_ours() {
+        let value = serde_json::json!({ "@type": "Alert" });
+
+        assert_eq!(
+            Ical::from_jscalendar(&value),
+            Err(IcalJscalendarError::NotAGroup("Alert".into()))
+        );
     }
 }

@@ -1,22 +1,15 @@
 //! # CONFERENCE lens
 //!
-//! The `CONFERENCE` property lens.
+//! Reading and editing the `CONFERENCE` property in place: it decodes as an
+//! [`IcalUri`] and edits through the generic [`IcalValueCursor`].
+//!
+//! Its RFC contract sits on the marker, [`CONFERENCE`].
 
 use crate::{
-    prop::IcalPropKind,
-    tree::{
-        line::IcalLine,
-        prop::{lens::IcalPropLens, spec::IcalPropSpec},
-        value::cursor::IcalValueCursor,
-    },
-    value::IcalValueKind,
+    prop::conference::CONFERENCE,
+    tree::{line::IcalLine, prop::lens::IcalPropLens, value::cursor::IcalValueCursor},
     value::uri::IcalUri,
-    version::IcalVersion,
 };
-
-/// The `CONFERENCE` property lens.
-#[allow(non_camel_case_types)]
-pub struct CONFERENCE;
 
 impl IcalPropLens for CONFERENCE {
     type Target<'v> = IcalUri<'v>;
@@ -28,17 +21,5 @@ impl IcalPropLens for CONFERENCE {
 
     fn cursor<'c, 'a>(line: &'c mut IcalLine<'a>) -> IcalValueCursor<'c, 'a> {
         IcalValueCursor { line }
-    }
-}
-
-impl IcalPropSpec for CONFERENCE {
-    const KIND: IcalPropKind = IcalPropKind::Conference;
-
-    fn allowed_versions() -> &'static [IcalVersion] {
-        &[IcalVersion::V2_0]
-    }
-
-    fn allowed_values(_version: IcalVersion) -> &'static [IcalValueKind] {
-        &[IcalValueKind::Uri]
     }
 }

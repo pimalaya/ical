@@ -45,10 +45,10 @@ impl fmt::Display for IcalParseError {
                 )
             }
             Self::ExpectedBegin(data) => {
-                write!(f, "Card does not open with a BEGIN line: {data}")
+                write!(f, "Component does not open with a BEGIN line: {data}")
             }
             Self::MissingEnd(data) => {
-                write!(f, "Card is left open by a missing END line: {data}")
+                write!(f, "Component is left open by a missing END line: {data}")
             }
         }
     }

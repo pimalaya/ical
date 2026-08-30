@@ -1,21 +1,15 @@
 //! # LOCATION lens
 //!
-//! The `LOCATION` property lens.
+//! Reading and editing the `LOCATION` property in place: it decodes as an
+//! [`IcalText`] and edits through the generic [`IcalValueCursor`].
+//!
+//! Its RFC contract sits on the marker, [`LOCATION`].
 
 use crate::{
-    prop::IcalPropKind,
-    tree::{
-        line::IcalLine,
-        prop::{cardinality::IcalPropCardinality, lens::IcalPropLens, spec::IcalPropSpec},
-        value::cursor::IcalValueCursor,
-    },
+    prop::location::LOCATION,
+    tree::{line::IcalLine, prop::lens::IcalPropLens, value::cursor::IcalValueCursor},
     value::text::IcalText,
-    version::IcalVersion,
 };
-
-/// The `LOCATION` property lens.
-#[allow(non_camel_case_types)]
-pub struct LOCATION;
 
 impl IcalPropLens for LOCATION {
     type Target<'v> = IcalText<'v>;
@@ -27,13 +21,5 @@ impl IcalPropLens for LOCATION {
 
     fn cursor<'c, 'a>(line: &'c mut IcalLine<'a>) -> IcalValueCursor<'c, 'a> {
         IcalValueCursor { line }
-    }
-}
-
-impl IcalPropSpec for LOCATION {
-    const KIND: IcalPropKind = IcalPropKind::Location;
-
-    fn cardinality(_version: IcalVersion) -> IcalPropCardinality {
-        IcalPropCardinality::AtMostOne
     }
 }

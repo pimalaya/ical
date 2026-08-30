@@ -42,7 +42,7 @@ pub(crate) const fn days_in_year(year: i32) -> u16 {
 
 /// The days from 1970-01-01 to the date, negative before the epoch.
 ///
-/// NOTE: Hinnant's constants. An era is the 400 years the calendar repeats
+/// Hinnant's constants. An era is the 400 years the calendar repeats
 /// over (146097 days), 719468 its 0000-03-01 start to the epoch. Starting the
 /// year in March puts the leap day last, so 153/5 needs no leap-year term.
 pub(crate) const fn days_from_civil(year: i32, month: u8, day: u8) -> i64 {
@@ -78,7 +78,7 @@ pub(crate) const fn civil_from_days(days: i64) -> (i32, u8, u8) {
 /// The numbering matches [`IcalRecurWeekday`](crate::recur::IcalRecurWeekday),
 /// so a weekday is a cast and never a lookup.
 ///
-/// NOTE: day zero, 1970-01-01, was a Thursday, hence the shift by four.
+/// Day zero, 1970-01-01, was a Thursday, hence the shift by four.
 pub(crate) const fn weekday(year: i32, month: u8, day: u8) -> u8 {
     (days_from_civil(year, month, day) + 4).rem_euclid(7) as u8
 }
@@ -95,7 +95,7 @@ pub(crate) const fn day_of_year(year: i32, month: u8, day: u8) -> u16 {
 /// [`weekday`]) and week one is the first holding four days of the year, so
 /// the year returned can differ from the calendar one around January 1.
 ///
-/// NOTE: a week belongs to the year of its fourth day, holding that day and
+/// A week belongs to the year of its fourth day, holding that day and
 /// holding four days of a year being one condition; for week one that day
 /// falls in the first seven of January, making the week its day of the year
 /// divided by seven.

@@ -1,21 +1,15 @@
 //! # PRODID lens
 //!
-//! The `PRODID` property lens.
+//! Reading and editing the `PRODID` property in place: it decodes as an
+//! [`IcalText`] and edits through the generic [`IcalValueCursor`].
+//!
+//! Its RFC contract sits on the marker, [`PRODID`].
 
 use crate::{
-    prop::IcalPropKind,
-    tree::{
-        line::IcalLine,
-        prop::{cardinality::IcalPropCardinality, lens::IcalPropLens, spec::IcalPropSpec},
-        value::cursor::IcalValueCursor,
-    },
+    prop::prodid::PRODID,
+    tree::{line::IcalLine, prop::lens::IcalPropLens, value::cursor::IcalValueCursor},
     value::text::IcalText,
-    version::IcalVersion,
 };
-
-/// The `PRODID` property lens.
-#[allow(non_camel_case_types)]
-pub struct PRODID;
 
 impl IcalPropLens for PRODID {
     type Target<'v> = IcalText<'v>;
@@ -27,13 +21,5 @@ impl IcalPropLens for PRODID {
 
     fn cursor<'c, 'a>(line: &'c mut IcalLine<'a>) -> IcalValueCursor<'c, 'a> {
         IcalValueCursor { line }
-    }
-}
-
-impl IcalPropSpec for PRODID {
-    const KIND: IcalPropKind = IcalPropKind::ProdId;
-
-    fn cardinality(_version: IcalVersion) -> IcalPropCardinality {
-        IcalPropCardinality::AtMostOne
     }
 }

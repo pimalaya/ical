@@ -435,9 +435,16 @@ fn an_unknown_name_keeps_its_own_spelling() {
 /// The wire name is spelled out here rather than taken from the lens' own
 /// `KIND`, so a marker pointing at the wrong kind (the copy-paste hazard of
 /// thirty-odd near-identical modules) has somewhere to fail.
+///
+/// A fourth argument gives the wire spelling where it differs from the decoded
+/// value, which is where RFC 5545 section 3.1 wraps the value in its
+/// `quoted-string` delimiters.
 macro_rules! assert_scalar_lens {
-    ($lens:ty, $name:literal, $sample:literal) => {{
-        let wire = concat!($name, "=", $sample);
+    ($lens:ty, $name:literal, $sample:literal) => {
+        assert_scalar_lens!($lens, $name, $sample, $sample)
+    };
+    ($lens:ty, $name:literal, $sample:literal, $written:literal) => {{
+        let wire = concat!($name, "=", $written);
 
         let node = IcalParamNode::parse(wire);
         assert_eq!(<$lens>::decode(&node), $sample, "{wire} does not decode");
@@ -453,10 +460,13 @@ macro_rules! assert_scalar_lens {
 }
 
 /// The list counterpart: the values split on the commas outside quotes, and
-/// join back into one parameter.
+/// join back into one parameter, each element carrying its own delimiters.
 macro_rules! assert_list_lens {
-    ($lens:ty, $name:literal, $sample:literal) => {{
-        let wire = concat!($name, "=", $sample);
+    ($lens:ty, $name:literal, $sample:literal) => {
+        assert_list_lens!($lens, $name, $sample, $sample)
+    };
+    ($lens:ty, $name:literal, $sample:literal, $written:literal) => {{
+        let wire = concat!($name, "=", $written);
         let expected: Vec<Cow<'_, str>> = $sample.split(',').map(Cow::Borrowed).collect();
 
         let node = IcalParamNode::parse(wire);
@@ -474,12 +484,17 @@ macro_rules! assert_list_lens {
 
 #[test]
 fn every_scalar_parameter_lens_round_trips_under_its_own_name() {
-    assert_scalar_lens!(ALTREP, "ALTREP", "cid:part1.msg@example.com");
+    assert_scalar_lens!(
+        ALTREP,
+        "ALTREP",
+        "cid:part1.msg@example.com",
+        "\"cid:part1.msg@example.com\""
+    );
     assert_scalar_lens!(CHARSET, "CHARSET", "UTF-8");
     assert_scalar_lens!(CN, "CN", "Jane");
     assert_scalar_lens!(CUTYPE, "CUTYPE", "GROUP");
     assert_scalar_lens!(DERIVED, "DERIVED", "TRUE");
-    assert_scalar_lens!(DIR, "DIR", "ldap://example.com");
+    assert_scalar_lens!(DIR, "DIR", "ldap://example.com", "\"ldap://example.com\"");
     assert_scalar_lens!(DISPLAY, "DISPLAY", "BADGE");
     assert_scalar_lens!(EMAIL, "EMAIL", "jane@example.com");
     assert_scalar_lens!(ENCODING, "ENCODING", "BASE64");
@@ -499,22 +514,43 @@ fn every_scalar_parameter_lens_round_trips_under_its_own_name() {
     assert_scalar_lens!(SCHEDULE_AGENT, "SCHEDULE-AGENT", "SERVER");
     assert_scalar_lens!(SCHEDULE_FORCE_SEND, "SCHEDULE-FORCE-SEND", "REQUEST");
     assert_scalar_lens!(SCHEDULE_STATUS, "SCHEDULE-STATUS", "2.0");
-    assert_scalar_lens!(SCHEMA, "SCHEMA", "https://schema.org/Event");
-    assert_scalar_lens!(SENT_BY, "SENT-BY", "mailto:sec@example.com");
+    assert_scalar_lens!(
+        SCHEMA,
+        "SCHEMA",
+        "https://schema.org/Event",
+        "\"https://schema.org/Event\""
+    );
+    assert_scalar_lens!(
+        SENT_BY,
+        "SENT-BY",
+        "mailto:sec@example.com",
+        "\"mailto:sec@example.com\""
+    );
     assert_scalar_lens!(TZID, "TZID", "Europe/Paris");
     assert_scalar_lens!(VALUE, "VALUE", "DATE-TIME");
 }
 
 #[test]
 fn every_list_parameter_lens_round_trips_under_its_own_name() {
-    assert_list_lens!(DELEGATED_FROM, "DELEGATED-FROM", "mailto:a@example.com");
+    assert_list_lens!(
+        DELEGATED_FROM,
+        "DELEGATED-FROM",
+        "mailto:a@example.com",
+        "\"mailto:a@example.com\""
+    );
     assert_list_lens!(
         DELEGATED_TO,
         "DELEGATED-TO",
-        "mailto:a@example.com,mailto:b@example.com"
+        "mailto:a@example.com,mailto:b@example.com",
+        "\"mailto:a@example.com\",\"mailto:b@example.com\""
     );
     assert_list_lens!(FEATURE, "FEATURE", "AUDIO,VIDEO");
-    assert_list_lens!(MEMBER, "MEMBER", "mailto:team@example.com");
+    assert_list_lens!(
+        MEMBER,
+        "MEMBER",
+        "mailto:team@example.com",
+        "\"mailto:team@example.com\""
+    );
 }
 
 /// Each structural failure is reported as its own variant, naming the text it
@@ -556,4 +592,42 @@ fn every_structural_failure_is_classified_and_quoted() {
     let missing_end = IcalCst::parse("BEGIN:VCALENDAR\r\nSUMMARY:x\r\n").unwrap_err();
     assert!(matches!(missing_end, IcalParseError::MissingEnd(_)));
     assert!(missing_end.to_string().contains("VCALENDAR"));
+}
+
+/// RFC 5545 section 3.1 wraps a parameter value carrying a `:` or a `,` in
+/// double quotes, section 3.2.1 writing its own `ALTREP` that way. The pair is
+/// the grammar's, so a lens reads what it encloses, and the decoded calendar
+/// puts it back where the value still needs it.
+#[test]
+fn a_quoted_parameter_reads_without_its_delimiters_and_writes_them_back() {
+    use ical::component::vevent::VEVENT;
+    use ical::prop::description::DESCRIPTION;
+    use ical::tree::param::{altrep::ALTREP, language::LANGUAGE};
+
+    let raw = concat!(
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\n",
+        "BEGIN:VEVENT\r\nUID:1\r\nDTSTAMP:20260101T000000Z\r\n",
+        "DESCRIPTION;ALTREP=\"cid:part1.0001@example.org\";LANGUAGE=en:Meeting notes\r\n",
+        "END:VEVENT\r\nEND:VCALENDAR\r\n",
+    );
+    let mut cst = IcalCst::parse(raw).unwrap();
+
+    {
+        let event = cst.component_mut::<VEVENT>().expect("the event");
+        let value = event.prop_mut::<DESCRIPTION>().expect("the description");
+
+        assert_eq!(
+            value.param::<ALTREP>().as_deref(),
+            Some("cid:part1.0001@example.org"),
+        );
+        assert_eq!(value.param::<LANGUAGE>().as_deref(), Some("en"));
+    }
+
+    // The syntax tree never reads through the codec, so the calendar it was
+    // parsed from comes back byte for byte.
+    assert_eq!(cst.to_string(), raw);
+
+    // And the canonical projection quotes the one that needs it: the URI
+    // carries a `:`, the language tag carries nothing a bare value may not.
+    assert_eq!(IcalCst::from(cst.decode()).to_string(), raw);
 }

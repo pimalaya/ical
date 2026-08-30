@@ -139,7 +139,7 @@ mod tests {
         vec,
     };
 
-    use crate::tree::{cst::IcalCst, prop::summary::SUMMARY};
+    use crate::{prop::summary::SUMMARY, tree::cst::IcalCst};
 
     const HEAD: &str = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//x//EN\r\n";
     const TAIL: &str = "END:VCALENDAR\r\n";
@@ -170,7 +170,7 @@ mod tests {
 
     #[test]
     fn writes_and_reads_a_foreign_charset_value_as_raw_bytes() {
-        use crate::tree::prop::description::DESCRIPTION;
+        use crate::prop::description::DESCRIPTION;
 
         let raw = cal("DESCRIPTION;CHARSET=ISO-8859-1:x");
         let mut c = IcalCst::parse(&raw).unwrap();
@@ -189,7 +189,7 @@ mod tests {
     #[cfg(feature = "quoted-printable")]
     #[test]
     fn quoted_printable_helper_resolves_octets() {
-        use crate::tree::prop::description::DESCRIPTION;
+        use crate::prop::description::DESCRIPTION;
 
         let raw = cal("DESCRIPTION;CHARSET=ISO-8859-1;ENCODING=QUOTED-PRINTABLE:caf=E9");
         let mut c = IcalCst::parse(&raw).unwrap();
@@ -203,7 +203,7 @@ mod tests {
     #[cfg(all(feature = "encoding", feature = "quoted-printable"))]
     #[test]
     fn charset_helper_transcodes_to_utf8() {
-        use crate::tree::prop::description::DESCRIPTION;
+        use crate::prop::description::DESCRIPTION;
 
         let raw = cal("DESCRIPTION;CHARSET=ISO-8859-1;ENCODING=QUOTED-PRINTABLE:caf=E9");
         let mut c = IcalCst::parse(&raw).unwrap();
@@ -213,7 +213,7 @@ mod tests {
 
     #[test]
     fn edits_one_structured_component_preserving_the_rest() {
-        use crate::tree::prop::geo::GEO;
+        use crate::prop::geo::GEO;
 
         let raw = cal("GEO:37.0;-122.0");
         let mut c = IcalCst::parse(&raw).unwrap();
@@ -228,7 +228,7 @@ mod tests {
     /// first component left the rest behind: read then write changed it.
     #[test]
     fn reads_and_writes_the_whole_value_not_its_first_component() {
-        use crate::tree::prop::description::DESCRIPTION;
+        use crate::prop::description::DESCRIPTION;
 
         let raw = cal("DESCRIPTION:a;b");
         let mut c = IcalCst::parse(&raw).unwrap();
@@ -250,7 +250,7 @@ mod tests {
     /// A structured value read through its lens keeps its components' commas.
     #[test]
     fn reads_a_structured_component_past_its_first_comma() {
-        use crate::tree::prop::request_status::REQUEST_STATUS;
+        use crate::prop::request_status::REQUEST_STATUS;
 
         let raw = cal("REQUEST-STATUS:2.0;ok;rcpt,two");
         let c = IcalCst::parse(&raw).unwrap();
@@ -262,7 +262,7 @@ mod tests {
 
     #[test]
     fn exercises_every_generic_accessor() {
-        use crate::tree::prop::categories::CATEGORIES;
+        use crate::prop::categories::CATEGORIES;
 
         let raw = cal("CATEGORIES:a,b");
         let mut c = IcalCst::parse(&raw).unwrap();

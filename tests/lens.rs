@@ -3,10 +3,10 @@
 
 #![cfg(feature = "parser")]
 
-use ical::tree::{
+use ical::{
     component::{valarm::VALARM, vevent::VEVENT},
-    cst::IcalCst,
     prop::{description::DESCRIPTION, summary::SUMMARY},
+    tree::cst::IcalCst,
 };
 
 const CAL: &str = concat!(

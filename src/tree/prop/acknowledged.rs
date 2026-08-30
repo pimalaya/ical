@@ -1,22 +1,15 @@
 //! # ACKNOWLEDGED lens
 //!
-//! The `ACKNOWLEDGED` property lens.
+//! Reading and editing the `ACKNOWLEDGED` property in place: it decodes as an
+//! [`IcalDateTime`] and edits through the generic [`IcalValueCursor`].
+//!
+//! Its RFC contract sits on the marker, [`ACKNOWLEDGED`].
 
 use crate::{
-    prop::IcalPropKind,
-    tree::{
-        line::IcalLine,
-        prop::{cardinality::IcalPropCardinality, lens::IcalPropLens, spec::IcalPropSpec},
-        value::cursor::IcalValueCursor,
-    },
-    value::IcalValueKind,
+    prop::acknowledged::ACKNOWLEDGED,
+    tree::{line::IcalLine, prop::lens::IcalPropLens, value::cursor::IcalValueCursor},
     value::datetime::IcalDateTime,
-    version::IcalVersion,
 };
-
-/// The `ACKNOWLEDGED` property lens.
-#[allow(non_camel_case_types)]
-pub struct ACKNOWLEDGED;
 
 impl IcalPropLens for ACKNOWLEDGED {
     type Target<'v> = IcalDateTime<'v>;
@@ -28,21 +21,5 @@ impl IcalPropLens for ACKNOWLEDGED {
 
     fn cursor<'c, 'a>(line: &'c mut IcalLine<'a>) -> IcalValueCursor<'c, 'a> {
         IcalValueCursor { line }
-    }
-}
-
-impl IcalPropSpec for ACKNOWLEDGED {
-    const KIND: IcalPropKind = IcalPropKind::Acknowledged;
-
-    fn allowed_versions() -> &'static [IcalVersion] {
-        &[IcalVersion::V2_0]
-    }
-
-    fn cardinality(_version: IcalVersion) -> IcalPropCardinality {
-        IcalPropCardinality::AtMostOne
-    }
-
-    fn allowed_values(_version: IcalVersion) -> &'static [IcalValueKind] {
-        &[IcalValueKind::DateTime]
     }
 }

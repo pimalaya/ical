@@ -1,22 +1,15 @@
 //! # IMAGE lens
 //!
-//! The `IMAGE` property lens.
+//! Reading and editing the `IMAGE` property in place: it decodes as an
+//! [`IcalUri`] and edits through the generic [`IcalValueCursor`].
+//!
+//! Its RFC contract sits on the marker, [`IMAGE`].
 
 use crate::{
-    prop::IcalPropKind,
-    tree::{
-        line::IcalLine,
-        prop::{lens::IcalPropLens, spec::IcalPropSpec},
-        value::cursor::IcalValueCursor,
-    },
-    value::IcalValueKind,
+    prop::image::IMAGE,
+    tree::{line::IcalLine, prop::lens::IcalPropLens, value::cursor::IcalValueCursor},
     value::uri::IcalUri,
-    version::IcalVersion,
 };
-
-/// The `IMAGE` property lens.
-#[allow(non_camel_case_types)]
-pub struct IMAGE;
 
 impl IcalPropLens for IMAGE {
     type Target<'v> = IcalUri<'v>;
@@ -28,17 +21,5 @@ impl IcalPropLens for IMAGE {
 
     fn cursor<'c, 'a>(line: &'c mut IcalLine<'a>) -> IcalValueCursor<'c, 'a> {
         IcalValueCursor { line }
-    }
-}
-
-impl IcalPropSpec for IMAGE {
-    const KIND: IcalPropKind = IcalPropKind::Image;
-
-    fn allowed_versions() -> &'static [IcalVersion] {
-        &[IcalVersion::V2_0]
-    }
-
-    fn allowed_values(_version: IcalVersion) -> &'static [IcalValueKind] {
-        &[IcalValueKind::Uri]
     }
 }

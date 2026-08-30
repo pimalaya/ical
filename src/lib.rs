@@ -29,15 +29,17 @@
 //! included, and an `Unknown` arm on every open vocabulary carries that
 //! openness into the model.
 //!
-//! Strictness lives on the way out: the builder refuses to construct a
-//! property the spec forbids, and [`validate`](tree::ical::validate) checks a
-//! decoded calendar against its version's RFC contract.
+//! Strictness lives on the way out: the [`builder`] refuses to construct a
+//! property the spec forbids, and the [`validator`] checks a decoded calendar
+//! against its version's RFC contract. Neither needs the parser.
 //!
 //! ## The two layers
 //!
 //! The decoded model ([`ical`], [`component`], [`version`], [`prop`],
 //! [`param`], [`value`]) is pure data with no dependency on the syntax side,
-//! so it can be depended on alone.
+//! so it can be depended on alone, and so can everything reading it: the
+//! [`builder`], the [`validator`], [`recur`], [`tz`] and both JSON
+//! representations.
 //!
 //! Component, property and parameter names and value types are closed
 //! identity enums ([`IcalComponentKind`], [`IcalPropKind`],
@@ -73,24 +75,28 @@
 //! [`decode`] projects a CST onto the decoded [`Ical`], and `encode` (with
 //! `From<Ical>`) projects the model back to a canonical CST.
 //!
-//! Per-property and per-component lens markers ([`IcalPropLens`],
-//! [`IcalComponentLens`]) read or edit one line or subtree through the
+//! A per-property lens ([`IcalPropLens`], implemented on the marker the
+//! property defines in [`prop`]) reads or edits one line through the
 //! byte-preserving [`cursor`]s, so editing one property leaves every other
-//! byte intact.
+//! byte intact. A component marker keys the same access over a whole subtree.
 //!
 //! ## The spec layer
 //!
-//! Each property carries an [`IcalPropSpec`] on its lens marker (the versions
-//! it lives in, its cardinality, the value types and parameters it may take
-//! per version), and each component an [`IcalComponentSpec`] (the children it
-//! may nest and the properties it requires).
+//! Each property carries an [`IcalPropSpec`] on its marker (the versions it
+//! lives in, its cardinality, the value types and parameters it may take per
+//! version), and each component an [`IcalComponentSpec`] (the children it may
+//! nest and the properties it requires).
+//!
+//! A contract is what the RFC allows, so it is model rather than syntax: the
+//! markers live in [`prop`] and [`component`], and only their read-and-edit
+//! lens sits under [`tree`].
 //!
 //! One vtable dispatch bridges the open kinds back to those static specs, so
-//! the decoder, [`validate`](tree::ical::validate) and the builder all
-//! consult one source of truth.
+//! the decoder, the [`validator`] and the [`builder`] all consult one source
+//! of truth.
 //!
-//! A calendar that passes earns an [`IcalValid`](valid::IcalValid) proof, and
-//! both `Ical` and `IcalValid<Ical>` convert back into an [`IcalCst`].
+//! A calendar that passes earns an [`IcalValid`](validator::IcalValid) proof,
+//! and both `Ical` and `IcalValid<Ical>` convert back into an [`IcalCst`].
 //!
 //! ## Recurrence and time zones
 //!
@@ -103,7 +109,7 @@
 //! wall-clock time of `DTSTART`, so no offset is ever needed and none is ever
 //! resolved.
 //!
-//! [`timezone`] is the step after, turning a civil occurrence into a UTC
+//! [`tz`] is the step after, turning a civil occurrence into a UTC
 //! offset from the `VTIMEZONE` the calendar carries, and reporting the
 //! spring-forward gap and the fall-back fold rather than guessing.
 //!
@@ -136,17 +142,17 @@
 //!
 //! `parser` (default) brings the byte-faithful [`tree`] and its codec, via
 //! the `memchr` crate. Everything under [`tree`] is gated on it; the decoded
-//! model, the recurrence layer and the time zones are always available.
+//! model, the builder, the validator, the recurrence layer, the time zones
+//! and both JSON representations are always available.
 //!
 //! Three content decoders are default too, one small crate each:
 //! `quoted-printable` decodes `QUOTED-PRINTABLE` value octets, `base64`
 //! decodes inline `BASE64` binary values, and `encoding` transcodes a foreign
 //! `CHARSET` to text through `encoding_rs` (the WHATWG Encoding Standard).
 //!
-//! `jcal` adds the RFC 7265 JSON representation, via the `serde_json` crate,
-//! and implies `parser` for the property specs. `jscalendar` adds the RFC
-//! 8984 JSON data model, implies `jcal`, whose syntax carries the escape
-//! hatch, and pulls no crate of its own.
+//! `jcal` adds the RFC 7265 JSON representation, via the `serde_json` crate.
+//! `jscalendar` adds the RFC 8984 JSON data model, implies `jcal`, whose
+//! syntax carries the escape hatch, and pulls no crate of its own.
 //!
 //! [`IcalComponentKind`]: component::IcalComponentKind
 //! [`IcalPropKind`]: prop::IcalPropKind
@@ -164,23 +170,23 @@
 //! [`parse_recovering`]: tree::cst::IcalCst::parse_recovering
 //! [`decode`]: tree::cst::IcalCst::decode
 //! [`IcalPropLens`]: tree::prop::lens::IcalPropLens
-//! [`IcalComponentLens`]: tree::component::lens::IcalComponentLens
 //! [`cursor`]: tree::value::cursor::IcalValueCursor
-//! [`IcalPropSpec`]: tree::prop::spec::IcalPropSpec
-//! [`IcalComponentSpec`]: tree::component::spec::IcalComponentSpec
+//! [`IcalPropSpec`]: prop::spec::IcalPropSpec
+//! [`IcalComponentSpec`]: component::spec::IcalComponentSpec
 //! [`IcalRecurExpand`]: recur::expand::IcalRecurExpand
 //! [`IcalRecurSet`]: recur::set::IcalRecurSet
 //! [`IcalMerge`]: tree::merge::IcalMerge
 
 extern crate alloc;
 
+pub mod builder;
 pub mod component;
 pub mod ical;
 pub mod param;
 pub mod prop;
 pub mod recur;
-pub mod timezone;
-pub mod valid;
+pub mod tz;
+pub mod validator;
 pub mod value;
 pub mod version;
 

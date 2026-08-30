@@ -15,13 +15,13 @@
 use std::borrow::Cow;
 
 use ical::{
+    component::vevent::VEVENT,
     param::IcalParam,
+    prop::description::DESCRIPTION,
     tree::{
         codec::{Codec, mode::Escaper},
-        component::vevent::VEVENT,
         cst::{IcalCst, IcalItem},
         line::IcalLine,
-        prop::description::DESCRIPTION,
     },
     value::{IcalValue, binary::IcalBinary, uri::IcalUri},
 };

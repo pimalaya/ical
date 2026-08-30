@@ -10,6 +10,11 @@
 //! its JSON, located by a `JSPTR` parameter, which is the mirror hatch the
 //! conversion draft defines (4.1.2, 4.2.2).
 
+mod alert;
+mod participant;
+mod place;
+mod temporal;
+
 use alloc::{
     borrow::{Cow, ToOwned},
     format,
@@ -23,19 +28,20 @@ use serde_json::{Map, Value};
 use crate::{
     component::{IcalComponent, IcalComponentKind, IcalComponentName},
     ical::Ical,
-    jcal::datetime_from_json,
     jscalendar::{
         hatch::{IcalConverted, converted, hatch_of, kept_components, kept_props},
+        import::{
+            alert::alarm,
+            participant::participant,
+            place::{conference, link, location},
+            temporal::{basic, ends, occurrence, rule_from_json, temporal},
+        },
         patch,
     },
     param::IcalParam,
     prop::{IcalProp, IcalPropKind, IcalPropName},
-    recur::IcalRecurDateTime,
     value::{
         IcalValue,
-        cal_address::IcalCalAddress,
-        datetime::{IcalDate, IcalDateTime},
-        geo::IcalGeo,
         integer::IcalInteger,
         recur::IcalRecur,
         request_status::IcalRequestStatus,
@@ -507,435 +513,8 @@ fn all_day(object: &Map<String, Value>) -> bool {
     object.get("showWithoutTime") == Some(&Value::Bool(true))
 }
 
-/// A Link as the property it came from (`ATTACH` unless recorded otherwise).
-fn link(
-    hatch: Option<&Map<String, Value>>,
-    component: &str,
-    key: &str,
-    link: &Value,
-) -> IcalProp<'static> {
-    let pointer = format!("links/{key}");
-    let href = link.get("href").and_then(Value::as_str).unwrap_or_default();
-
-    let mut prop = text_prop(
-        named(hatch, component, &pointer, IcalPropKind::Attach),
-        href.to_owned(),
-    );
-
-    prop.value = IcalValue::Uri(IcalUri(Cow::Owned(href.to_owned())));
-
-    if let Some(media) = link.get("contentType").and_then(Value::as_str) {
-        prop.params
-            .push(IcalParam::FmtType(Cow::Owned(media.to_owned())));
-    }
-
-    if let Some(display) = link.get("display").and_then(Value::as_str) {
-        prop.params
-            .push(IcalParam::Display(Cow::Owned(display.to_ascii_uppercase())));
-    }
-
-    if let Some(title) = link.get("title").and_then(Value::as_str) {
-        prop.params
-            .push(IcalParam::Label(Cow::Owned(title.to_owned())));
-    }
-
-    // NOTE: Only a LINK words its relation; an IMAGE's is always `icon` and an
-    // ATTACH has none, so writing one back would invent a parameter.
-    if let Some(rel) = link.get("rel").and_then(Value::as_str)
-        && prop.name.eq_ignore_ascii_case("LINK")
-    {
-        prop.params
-            .push(IcalParam::LinkRel(Cow::Owned(rel.to_ascii_uppercase())));
-    }
-
-    keyed(prop, key)
-}
-
-/// A Location as a `LOCATION` or `GEO` property, or as the `VLOCATION`
-/// component it came from when it says more than one property can carry.
-fn location(
-    hatch: Option<&Map<String, Value>>,
-    component: &str,
-    key: &str,
-    location: &Value,
-) -> Result<IcalProp<'static>, IcalComponent<'static>> {
-    let name = location.get("name").and_then(Value::as_str);
-    let coordinates = location.get("coordinates").and_then(Value::as_str);
-    let described =
-        location.get("description").is_some() || location.get("locationTypes").is_some();
-
-    if described || (name.is_some() && coordinates.is_some()) {
-        return Err(vlocation(location, name, coordinates));
-    }
-
-    if let Some(coordinates) = coordinates {
-        let pointer = format!("locations/{key}/coordinates");
-        let mut prop = text_prop(
-            named(hatch, component, &pointer, IcalPropKind::Geo),
-            coordinates.to_owned(),
-        );
-
-        let pair = coordinates.trim_start_matches("geo:");
-        let (latitude, longitude) = pair.split_once(',').unwrap_or((pair, ""));
-
-        prop.value = IcalValue::Geo(IcalGeo {
-            latitude: Cow::Owned(latitude.to_owned()),
-            longitude: Cow::Owned(longitude.to_owned()),
-        });
-
-        return Ok(keyed(prop, key));
-    }
-
-    let pointer = format!("locations/{key}");
-    let prop = text_prop(
-        named(hatch, component, &pointer, IcalPropKind::Location),
-        name.unwrap_or_default().to_owned(),
-    );
-
-    Ok(keyed(prop, key))
-}
-
-/// A Location that says more than a `LOCATION` line can, as a `VLOCATION`.
-fn vlocation(
-    location: &Value,
-    name: Option<&str>,
-    coordinates: Option<&str>,
-) -> IcalComponent<'static> {
-    let mut props = Vec::new();
-
-    if let Some(name) = name {
-        props.push(plain(IcalPropKind::Name, name.to_owned()));
-    }
-
-    if let Some(description) = location.get("description").and_then(Value::as_str) {
-        props.push(plain(IcalPropKind::Description, description.to_owned()));
-    }
-
-    if let Some(coordinates) = coordinates {
-        props.push(plain(IcalPropKind::Url, coordinates.to_owned()));
-    }
-
-    let types: Vec<Cow<'static, str>> = keys(location.get("locationTypes").unwrap_or(&Value::Null))
-        .map(Cow::Owned)
-        .collect();
-
-    if !types.is_empty() {
-        let mut prop = plain(IcalPropKind::LocationType, String::new());
-        prop.value = IcalValue::TextList(IcalTextList(types));
-        props.push(prop);
-    }
-
-    IcalComponent {
-        name: IcalComponentName::Kind(IcalComponentKind::VLocation),
-        props,
-        components: Vec::new(),
-    }
-}
-
-/// A VirtualLocation as a `CONFERENCE` property.
-fn conference(
-    hatch: Option<&Map<String, Value>>,
-    component: &str,
-    key: &str,
-    location: &Value,
-) -> IcalProp<'static> {
-    let pointer = format!("virtualLocations/{key}");
-    let uri = location
-        .get("uri")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-
-    let mut prop = text_prop(
-        named(hatch, component, &pointer, IcalPropKind::Conference),
-        uri.to_owned(),
-    );
-
-    prop.value = IcalValue::Uri(IcalUri(Cow::Owned(uri.to_owned())));
-
-    if let Some(name) = location.get("name").and_then(Value::as_str) {
-        prop.params
-            .push(IcalParam::Label(Cow::Owned(name.to_owned())));
-    }
-
-    let features: Vec<Cow<'static, str>> = keys(location.get("features").unwrap_or(&Value::Null))
-        .map(|feature| Cow::Owned(feature.to_ascii_uppercase()))
-        .collect();
-
-    if !features.is_empty() {
-        prop.params.push(IcalParam::Feature(features));
-    }
-
-    keyed(prop, key)
-}
-
-/// A Participant as an `ATTENDEE` or `ORGANIZER` property, or as the
-/// `PARTICIPANT` component it came from when it owns a hatch of its own.
-fn participant(
-    hatch: Option<&Map<String, Value>>,
-    component: &str,
-    key: &str,
-    participant: &Value,
-) -> Result<IcalProp<'static>, IcalComponent<'static>> {
-    let address = participant
-        .get("sendTo")
-        .and_then(|to| to.get("imip"))
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-
-    if participant.get("iCalendar").is_some() {
-        return Err(vparticipant(participant, address));
-    }
-
-    let owner = participant
-        .get("roles")
-        .and_then(Value::as_object)
-        .is_some_and(|roles| roles.contains_key("owner"));
-
-    // NOTE: An owning participant is the ORGANIZER, and that is where the
-    // export recorded its leftovers: under the reply address it also wrote, not
-    // under the participant.
-    let (pointer, fallback) = match owner {
-        true => ("replyTo/imip".to_owned(), IcalPropKind::Organizer),
-        false => (format!("participants/{key}"), IcalPropKind::Attendee),
-    };
-
-    let mut prop = text_prop(
-        named(hatch, component, &pointer, fallback),
-        address.to_owned(),
-    );
-    prop.value = IcalValue::CalAddress(IcalCalAddress(Cow::Owned(address.to_owned())));
-
-    let scalars = [
-        ("name", 0usize),
-        ("email", 1),
-        ("language", 2),
-        ("participationStatus", 3),
-        ("kind", 4),
-        ("scheduleAgent", 5),
-        ("scheduleStatus", 6),
-    ];
-
-    for (member, slot) in scalars {
-        let Some(text) = participant.get(member).and_then(Value::as_str) else {
-            continue;
-        };
-
-        let upper = Cow::Owned(text.to_ascii_uppercase());
-
-        prop.params.push(match slot {
-            0 => IcalParam::Cn(Cow::Owned(text.to_owned())),
-            1 => IcalParam::Email(Cow::Owned(text.to_owned())),
-            2 => IcalParam::Language(Cow::Owned(text.to_owned())),
-            3 => IcalParam::PartStat(upper),
-            4 => IcalParam::CuType(match text {
-                "location" => Cow::Borrowed("ROOM"),
-                _ => upper,
-            }),
-            5 => IcalParam::ScheduleAgent(upper),
-            _ => IcalParam::ScheduleStatus(Cow::Owned(text.to_owned())),
-        });
-    }
-
-    let flags = [("expectReply", false), ("scheduleForceSend", true)];
-
-    for (member, forced) in flags {
-        let Some(flag) = participant.get(member).and_then(Value::as_bool) else {
-            continue;
-        };
-
-        let text = match flag {
-            true => Cow::Borrowed("TRUE"),
-            false => Cow::Borrowed("FALSE"),
-        };
-
-        prop.params.push(match forced {
-            true => IcalParam::ScheduleForceSend(text),
-            false => IcalParam::Rsvp(text),
-        });
-    }
-
-    let roles: Vec<String> = keys(participant.get("roles").unwrap_or(&Value::Null)).collect();
-
-    if let Some(role) = role(&roles) {
-        prop.params.push(IcalParam::Role(Cow::Owned(role)));
-    }
-
-    let sets = [
-        ("delegatedFrom", 0usize),
-        ("delegatedTo", 1),
-        ("memberOf", 2),
-    ];
-
-    for (member, slot) in sets {
-        let addresses: Vec<Cow<'static, str>> =
-            keys(participant.get(member).unwrap_or(&Value::Null))
-                .map(Cow::Owned)
-                .collect();
-
-        if addresses.is_empty() {
-            continue;
-        }
-
-        prop.params.push(match slot {
-            0 => IcalParam::DelegatedFrom(addresses),
-            1 => IcalParam::DelegatedTo(addresses),
-            _ => IcalParam::Member(addresses),
-        });
-    }
-
-    Ok(keyed(prop, key))
-}
-
-/// A Participant that carries its own escape hatch, as a `PARTICIPANT`
-/// component.
-fn vparticipant(participant: &Value, address: &str) -> IcalComponent<'static> {
-    let hatch = participant.as_object().and_then(hatch_of);
-
-    let mut props = vec![plain(IcalPropKind::CalendarAddress, address.to_owned())];
-
-    if let Some(name) = participant.get("name").and_then(Value::as_str) {
-        props.push(plain(IcalPropKind::Summary, name.to_owned()));
-    }
-
-    if let Some(description) = participant.get("description").and_then(Value::as_str) {
-        props.push(plain(IcalPropKind::Description, description.to_owned()));
-    }
-
-    for role in keys(participant.get("roles").unwrap_or(&Value::Null)) {
-        props.push(plain(
-            IcalPropKind::ParticipantType,
-            role.to_ascii_uppercase(),
-        ));
-    }
-
-    props.extend(
-        kept_props(hatch, IcalVersion::V2_0)
-            .into_iter()
-            .map(IcalProp::into_owned),
-    );
-
-    IcalComponent {
-        name: IcalComponentName::Kind(IcalComponentKind::Participant),
-        props,
-        components: kept_components(hatch, IcalVersion::V2_0)
-            .into_iter()
-            .map(IcalComponent::into_owned)
-            .collect(),
-    }
-}
-
-/// An Alert as the `VALARM` it came from.
-fn alarm(key: &str, alert: &Value) -> IcalComponent<'static> {
-    let hatch = alert.as_object().and_then(hatch_of);
-    let mut props = Vec::new();
-
-    if let Some(trigger) = alert.get("trigger") {
-        props.push(trigger_prop(trigger));
-    }
-
-    if let Some(action) = alert.get("action").and_then(Value::as_str) {
-        props.push(plain(IcalPropKind::Action, action.to_ascii_uppercase()));
-    }
-
-    if let Some(at) = alert.get("acknowledged").and_then(Value::as_str) {
-        props.push(plain(IcalPropKind::Acknowledged, basic(at)));
-    }
-
-    let kept = kept_props(hatch, IcalVersion::V2_0);
-
-    // NOTE: An alarm names itself with its UID where the hatch kept one, so a
-    // JSID is needed only when the key says something the UID does not (draft
-    // 2.2.2, 4.1.1).
-    let named = kept.iter().any(|prop| {
-        prop.name.eq_ignore_ascii_case("UID")
-            && matches!(&prop.value, IcalValue::Text(text) if text.0 == key)
-    });
-
-    props.extend(kept.into_iter().map(IcalProp::into_owned));
-
-    if !named {
-        props.push(IcalProp {
-            name: IcalPropName::Unknown(Cow::Owned("JSID".to_owned())),
-            params: Vec::new(),
-            value: IcalValue::Text(IcalText(Cow::Owned(key.to_owned()))),
-        });
-    }
-
-    IcalComponent {
-        name: IcalComponentName::Kind(IcalComponentKind::VAlarm),
-        props,
-        components: kept_components(hatch, IcalVersion::V2_0)
-            .into_iter()
-            .map(IcalComponent::into_owned)
-            .collect(),
-    }
-}
-
-/// A trigger object as the `TRIGGER` property it came from.
-fn trigger_prop(trigger: &Value) -> IcalProp<'static> {
-    if let Some(when) = trigger.get("when").and_then(Value::as_str) {
-        let mut prop = plain(IcalPropKind::Trigger, basic(when));
-        prop.value = IcalValue::DateTime(IcalDateTime(match &prop.value {
-            IcalValue::Text(text) => text.0.clone(),
-            _ => Cow::Borrowed(""),
-        }));
-        prop.params
-            .push(IcalParam::Value(Cow::Borrowed("DATE-TIME")));
-        return prop;
-    }
-
-    let offset = trigger
-        .get("offset")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    let mut prop = plain(IcalPropKind::Trigger, offset.to_owned());
-
-    if trigger.get("relativeTo").and_then(Value::as_str) == Some("end") {
-        prop.params.push(IcalParam::Related(Cow::Borrowed("END")));
-    }
-
-    prop
-}
-
-/// A RecurrenceRule object back in the `RECUR` spelling.
-fn rule_from_json(rule: &Value, zone: Option<&str>) -> String {
-    let Some(object) = rule.as_object() else {
-        return rule.as_str().unwrap_or_default().to_owned();
-    };
-
-    let mut parts: Vec<String> = Vec::new();
-
-    for name in RULE_ORDER {
-        let Some(value) = object.get(rule_member(name).unwrap_or(name)) else {
-            continue;
-        };
-
-        let text = match (name, value) {
-            ("UNTIL", Value::String(until)) => {
-                let basic = basic(until);
-
-                // NOTE: RFC 5545 states UNTIL in UTC whenever DTSTART is; a
-                // floating or UTC object is the only case this can restore
-                // exactly, which is the one normalisation the mapping makes.
-                match zone.is_none() || zone == Some("Etc/UTC") {
-                    true => format!("{basic}Z"),
-                    false => basic,
-                }
-            }
-            ("BYDAY", Value::Array(days)) => days.iter().map(weekday).collect::<Vec<_>>().join(","),
-            (_, Value::Array(items)) => items.iter().map(scalar).collect::<Vec<_>>().join(","),
-            ("FREQ" | "WKST" | "RSCALE" | "SKIP", Value::String(text)) => text.to_ascii_uppercase(),
-            (_, value) => scalar(value),
-        };
-
-        parts.push(format!("{name}={text}"));
-    }
-
-    parts.join(";")
-}
-
 /// The `RECUR` parts in the order RFC 5545 3.3.10 states them.
-const RULE_ORDER: [&str; 16] = [
+pub(super) const RULE_ORDER: [&str; 16] = [
     "FREQ",
     "UNTIL",
     "COUNT",
@@ -954,62 +533,6 @@ const RULE_ORDER: [&str; 16] = [
     "SKIP",
 ];
 
-/// The RecurrenceRule member a `RECUR` part is held in.
-fn rule_member(part: &str) -> Option<&'static str> {
-    let member = match part {
-        "FREQ" => "frequency",
-        "UNTIL" => "until",
-        "COUNT" => "count",
-        "INTERVAL" => "interval",
-        "BYSECOND" => "bySecond",
-        "BYMINUTE" => "byMinute",
-        "BYHOUR" => "byHour",
-        "BYDAY" => "byDay",
-        "BYMONTHDAY" => "byMonthDay",
-        "BYYEARDAY" => "byYearDay",
-        "BYWEEKNO" => "byWeekNo",
-        "BYMONTH" => "byMonth",
-        "BYSETPOS" => "bySetPosition",
-        "WKST" => "firstDayOfWeek",
-        "RSCALE" => "rscale",
-        "SKIP" => "skip",
-        _ => return None,
-    };
-
-    Some(member)
-}
-
-/// One NDay object back in the `BYDAY` spelling.
-fn weekday(day: &Value) -> String {
-    let name = day
-        .get("day")
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_ascii_uppercase();
-
-    match day.get("nthOfPeriod").and_then(Value::as_i64) {
-        Some(nth) => format!("{nth}{name}"),
-        None => name,
-    }
-}
-
-/// The `ROLE` one set of JSCalendar roles states, if iCalendar has a word for
-/// it (draft 2.3.4).
-fn role(roles: &[String]) -> Option<String> {
-    let has = |role: &str| roles.iter().any(|held| held == role);
-
-    let role = match (has("chair"), has("optional"), has("informational")) {
-        (true, _, _) => "CHAIR",
-        (_, true, _) => "OPT-PARTICIPANT",
-        (_, _, true) => "NON-PARTICIPANT",
-        // NOTE: `attendee` alone is the default role, which iCalendar leaves
-        // unwritten; `owner` is carried by ORGANIZER rather than by ROLE.
-        _ => return None,
-    };
-
-    Some(role.to_owned())
-}
-
 /// A member with no iCalendar counterpart, as the `JSPROP` property that
 /// carries its JSON (draft 4.1.2).
 fn jsprop(member: &str, value: &Value) -> IcalProp<'static> {
@@ -1024,7 +547,7 @@ fn jsprop(member: &str, value: &Value) -> IcalProp<'static> {
 }
 
 /// A property under the name and parameters the hatch recorded for a member.
-fn text_prop(record: IcalConverted<'_>, text: String) -> IcalProp<'static> {
+pub(super) fn text_prop(record: IcalConverted<'_>, text: String) -> IcalProp<'static> {
     let mut params: Vec<IcalParam<'static>> = record
         .params
         .into_iter()
@@ -1043,7 +566,7 @@ fn text_prop(record: IcalConverted<'_>, text: String) -> IcalProp<'static> {
 }
 
 /// A property under a name the mapping fixes, with no recorded leftovers.
-fn plain(kind: IcalPropKind, text: String) -> IcalProp<'static> {
+pub(super) fn plain(kind: IcalPropKind, text: String) -> IcalProp<'static> {
     IcalProp {
         name: IcalPropName::Kind(kind),
         params: Vec::new(),
@@ -1051,128 +574,9 @@ fn plain(kind: IcalPropKind, text: String) -> IcalProp<'static> {
     }
 }
 
-/// A temporal property, as a `DATE` when the object is shown without a time
-/// and a `DATE-TIME` otherwise.
-fn temporal(
-    record: IcalConverted<'_>,
-    text: &str,
-    zone: Option<&str>,
-    date_only: bool,
-) -> IcalProp<'static> {
-    let mut prop = text_prop(record, basic(text));
-    let basic = match &prop.value {
-        IcalValue::Text(text) => text.0.clone(),
-        _ => Cow::Borrowed(""),
-    };
-
-    let declared = prop
-        .params
-        .iter()
-        .any(|param| matches!(param, IcalParam::Value(_)));
-
-    let date = date_only
-        || (declared
-            && prop.params.iter().any(|param| {
-                matches!(param, IcalParam::Value(slot) if slot.eq_ignore_ascii_case("DATE"))
-            }));
-
-    match date {
-        true => {
-            let day = basic.split('T').next().unwrap_or_default().to_owned();
-            prop.value = IcalValue::Date(IcalDate(Cow::Owned(day)));
-
-            if !declared {
-                prop.params.push(IcalParam::Value(Cow::Borrowed("DATE")));
-            }
-        }
-        // NOTE: A UTC date-time says its zone in its own Z; no zone at all is
-        // floating time (RFC 8984 4.7.1), a value with neither a Z nor a TZID.
-        false if zone == Some("Etc/UTC") => {
-            prop.value = IcalValue::DateTime(IcalDateTime(Cow::Owned(format!("{basic}Z"))))
-        }
-        false => prop.value = IcalValue::DateTime(IcalDateTime(basic)),
-    }
-
-    // NOTE: RFC 5545 gives a DATE no time zone to be in, but a calendar that
-    // wrote one on a date is where the object's own zone came from, so it goes
-    // back where it was found.
-    if let Some(zone) = zone.filter(|zone| *zone != "Etc/UTC") {
-        prop.params
-            .push(IcalParam::TzId(Cow::Owned(zone.to_owned())));
-    }
-
-    prop
-}
-
-/// A `RDATE`, `EXDATE` or `RECURRENCE-ID` naming one occurrence, in the time
-/// zone of the series it belongs to.
-fn occurrence(
-    kind: IcalPropKind,
-    id: &str,
-    zone: Option<&str>,
-    date_only: bool,
-) -> IcalProp<'static> {
-    let record = IcalConverted {
-        name: Cow::Owned((*kind).to_owned()),
-        value_type: None,
-        params: Vec::new(),
-    };
-
-    temporal(record, id, zone, date_only)
-}
-
-/// The date-time a start and a duration end at, in the JSCalendar spelling.
-fn ends(start: &str, span: &str) -> Option<String> {
-    let start = IcalRecurDateTime::parse(&basic(start)).ok()?;
-    let end = IcalRecurDateTime::from_seconds(start.seconds() + seconds(span)?);
-
-    Some(format!(
-        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}",
-        end.year, end.month, end.day, end.hour, end.minute, end.second
-    ))
-}
-
-/// An RFC 5545 duration in seconds, `None` when it is not one.
-fn seconds(span: &str) -> Option<i64> {
-    let (sign, span) = match span.strip_prefix('-') {
-        Some(span) => (-1, span),
-        None => (1, span.strip_prefix('+').unwrap_or(span)),
-    };
-
-    let mut total: i64 = 0;
-    let mut amount = String::new();
-
-    for character in span.strip_prefix('P')?.chars() {
-        if character.is_ascii_digit() {
-            amount.push(character);
-            continue;
-        }
-
-        // NOTE: The T only separates the date part from the time part; every
-        // other letter closes the number before it.
-        if character == 'T' {
-            continue;
-        }
-
-        let unit = match character {
-            'W' => 604_800,
-            'D' => 86_400,
-            'H' => 3_600,
-            'M' => 60,
-            'S' => 1,
-            _ => return None,
-        };
-
-        total += amount.parse::<i64>().ok()? * unit;
-        amount.clear();
-    }
-
-    Some(sign * total)
-}
-
 /// Tag a property with the JSCalendar key it converts back from, so the key
 /// survives a further conversion (draft 4.2.1).
-fn keyed(mut prop: IcalProp<'static>, key: &str) -> IcalProp<'static> {
+pub(super) fn keyed(mut prop: IcalProp<'static>, key: &str) -> IcalProp<'static> {
     prop.params.push(IcalParam::Unknown {
         name: Cow::Owned("JSID".to_owned()),
         values: vec![Cow::Owned(key.to_owned())],
@@ -1182,7 +586,7 @@ fn keyed(mut prop: IcalProp<'static>, key: &str) -> IcalProp<'static> {
 }
 
 /// The record a hatch holds for a member, or the property the mapping assumes.
-fn named<'a>(
+pub(super) fn named<'a>(
     hatch: Option<&'a Map<String, Value>>,
     component: &str,
     pointer: &str,
@@ -1196,7 +600,7 @@ fn named<'a>(
 }
 
 /// The keys of a JSCalendar set, in order.
-fn keys(value: &Value) -> impl Iterator<Item = String> + '_ {
+pub(super) fn keys(value: &Value) -> impl Iterator<Item = String> + '_ {
     value
         .as_object()
         .into_iter()
@@ -1204,14 +608,9 @@ fn keys(value: &Value) -> impl Iterator<Item = String> + '_ {
 }
 
 /// A JSON scalar as the text iCalendar writes.
-fn scalar(value: &Value) -> String {
+pub(super) fn scalar(value: &Value) -> String {
     match value {
         Value::String(text) => text.clone(),
         other => other.to_string(),
     }
-}
-
-/// A JSCalendar date-time back in the iCalendar basic spelling.
-fn basic(text: &str) -> String {
-    datetime_from_json(text).unwrap_or_else(|| text.to_owned())
 }

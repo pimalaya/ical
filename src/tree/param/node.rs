@@ -5,7 +5,8 @@
 //! [`IcalParamNode`] is the syntactic peer of the decoded
 //! [`IcalParam`](crate::param::IcalParam): a name leaf and its raw value
 //! leaves, parsed from and serialized back to the wire verbatim. The per-name
-//! lens markers that give it meaning live alongside in [`crate::tree::param`].
+//! parameter lenses that give it meaning live alongside in
+//! [`crate::tree::param`].
 
 use core::fmt;
 

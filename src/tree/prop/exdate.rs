@@ -1,22 +1,15 @@
 //! # EXDATE lens
 //!
-//! The `EXDATE` property lens.
+//! Reading and editing the `EXDATE` property in place: it decodes as an
+//! [`IcalDateTimeList`] and edits through the generic [`IcalValueCursor`].
+//!
+//! Its RFC contract sits on the marker, [`EXDATE`].
 
 use crate::{
-    prop::IcalPropKind,
-    tree::{
-        line::IcalLine,
-        prop::{lens::IcalPropLens, spec::IcalPropSpec},
-        value::cursor::IcalValueCursor,
-    },
-    value::IcalValueKind,
+    prop::exdate::EXDATE,
+    tree::{line::IcalLine, prop::lens::IcalPropLens, value::cursor::IcalValueCursor},
     value::datetime::IcalDateTimeList,
-    version::IcalVersion,
 };
-
-/// The `EXDATE` property lens.
-#[allow(non_camel_case_types)]
-pub struct EXDATE;
 
 impl IcalPropLens for EXDATE {
     type Target<'v> = IcalDateTimeList<'v>;
@@ -28,20 +21,5 @@ impl IcalPropLens for EXDATE {
 
     fn cursor<'c, 'a>(line: &'c mut IcalLine<'a>) -> IcalValueCursor<'c, 'a> {
         IcalValueCursor { line }
-    }
-}
-
-impl IcalPropSpec for EXDATE {
-    const KIND: IcalPropKind = IcalPropKind::ExDate;
-
-    fn allowed_values(_version: IcalVersion) -> &'static [IcalValueKind] {
-        &[IcalValueKind::DateTimeList]
-    }
-
-    /// A list whatever its items are: a declared `DATE`, `DATE-TIME` or
-    /// `PERIOD` describes each item, not the value as a whole, and every item
-    /// is kept as raw text.
-    fn value(_version: IcalVersion, _declared: Option<IcalValueKind>) -> IcalValueKind {
-        IcalValueKind::DateTimeList
     }
 }

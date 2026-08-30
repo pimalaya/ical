@@ -1,22 +1,15 @@
 //! # DTSTAMP lens
 //!
-//! The `DTSTAMP` property lens.
+//! Reading and editing the `DTSTAMP` property in place: it decodes as an
+//! [`IcalDateTime`] and edits through the generic [`IcalValueCursor`].
+//!
+//! Its RFC contract sits on the marker, [`DTSTAMP`].
 
 use crate::{
-    prop::IcalPropKind,
-    tree::{
-        line::IcalLine,
-        prop::{cardinality::IcalPropCardinality, lens::IcalPropLens, spec::IcalPropSpec},
-        value::cursor::IcalValueCursor,
-    },
-    value::IcalValueKind,
+    prop::dtstamp::DTSTAMP,
+    tree::{line::IcalLine, prop::lens::IcalPropLens, value::cursor::IcalValueCursor},
     value::datetime::IcalDateTime,
-    version::IcalVersion,
 };
-
-/// The `DTSTAMP` property lens.
-#[allow(non_camel_case_types)]
-pub struct DTSTAMP;
 
 impl IcalPropLens for DTSTAMP {
     type Target<'v> = IcalDateTime<'v>;
@@ -28,21 +21,5 @@ impl IcalPropLens for DTSTAMP {
 
     fn cursor<'c, 'a>(line: &'c mut IcalLine<'a>) -> IcalValueCursor<'c, 'a> {
         IcalValueCursor { line }
-    }
-}
-
-impl IcalPropSpec for DTSTAMP {
-    const KIND: IcalPropKind = IcalPropKind::DtStamp;
-
-    fn allowed_versions() -> &'static [IcalVersion] {
-        &[IcalVersion::V2_0]
-    }
-
-    fn cardinality(_version: IcalVersion) -> IcalPropCardinality {
-        IcalPropCardinality::AtMostOne
-    }
-
-    fn allowed_values(_version: IcalVersion) -> &'static [IcalValueKind] {
-        &[IcalValueKind::DateTime]
     }
 }

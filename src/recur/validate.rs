@@ -19,7 +19,7 @@ use alloc::vec::Vec;
 
 use crate::{
     recur::{IcalRecurFreq, IcalRecurRule, IcalRecurSkip},
-    valid::IcalValid,
+    validator::IcalValid,
 };
 
 /// A rule part, named so a problem can point at one.
@@ -323,7 +323,6 @@ mod tests {
     fn expansion_stays_liberal_about_what_validation_reports() {
         use crate::recur::{IcalRecurDateTime, expand::IcalRecurExpand};
 
-        // NOTE: The same rule: reported by validation, ignored by expansion.
         let rule = IcalRecurRule::parse("FREQ=MONTHLY;BYWEEKNO=3").unwrap();
         assert!(!rule.problems().is_empty());
 

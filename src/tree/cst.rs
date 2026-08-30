@@ -26,8 +26,8 @@
 //!
 //! ```rust
 //! use ical::tree::cst::IcalCst;
-//! use ical::tree::component::vevent::VEVENT;
-//! use ical::tree::prop::summary::SUMMARY;
+//! use ical::component::vevent::VEVENT;
+//! use ical::prop::summary::SUMMARY;
 //!
 //! let raw = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//x//EN\r\nBEGIN:VEVENT\r\nUID:1\r\nDTSTAMP:20260101T000000Z\r\nSUMMARY:Lunch\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
 //! let mut cst = IcalCst::parse(raw).unwrap();
@@ -52,11 +52,9 @@ use alloc::{
 };
 
 use crate::{
+    component::spec::IcalComponentSpec,
     prop::IcalProp,
-    tree::{
-        codec::mode::Escaper, component::lens::IcalComponentLens, error::IcalParseError,
-        line::IcalLine, prop::lens::IcalPropLens,
-    },
+    tree::{codec::mode::Escaper, error::IcalParseError, line::IcalLine, prop::lens::IcalPropLens},
     version::IcalVersion,
 };
 
@@ -364,8 +362,6 @@ impl<'a> IcalCst<'a> {
             }
 
             if name.eq_ignore_ascii_case("BEGIN") {
-                // NOTE: A nested component starts at `rest` (the BEGIN line
-                // just peeked); recurse from there and skip past its END.
                 let (child, next) = Self::take_component(rest)?;
                 items.push(IcalItem::Component(Box::new(child)));
                 rest = next;
@@ -462,7 +458,7 @@ impl<'a> IcalCst<'a> {
     }
 
     /// The first direct child component of type `C`, as a borrowed subtree.
-    pub fn component<C: IcalComponentLens>(&self) -> Option<&IcalCst<'a>> {
+    pub fn component<C: IcalComponentSpec>(&self) -> Option<&IcalCst<'a>> {
         self.items.iter().find_map(|item| match item {
             IcalItem::Component(child) if child.is_kind::<C>() => Some(&**child),
             _ => None,
@@ -470,7 +466,7 @@ impl<'a> IcalCst<'a> {
     }
 
     /// The first direct child component of type `C`, mutably.
-    pub fn component_mut<C: IcalComponentLens>(&mut self) -> Option<&mut IcalCst<'a>> {
+    pub fn component_mut<C: IcalComponentSpec>(&mut self) -> Option<&mut IcalCst<'a>> {
         self.items.iter_mut().find_map(|item| match item {
             IcalItem::Component(child) if child.is_kind::<C>() => Some(&mut **child),
             _ => None,
@@ -478,15 +474,15 @@ impl<'a> IcalCst<'a> {
     }
 
     /// Every direct child component of type `C`, in source order.
-    pub fn components<C: IcalComponentLens>(&self) -> impl Iterator<Item = &IcalCst<'a>> {
+    pub fn components<C: IcalComponentSpec>(&self) -> impl Iterator<Item = &IcalCst<'a>> {
         self.items.iter().filter_map(|item| match item {
             IcalItem::Component(child) if child.is_kind::<C>() => Some(&**child),
             _ => None,
         })
     }
 
-    /// Whether this component's `BEGIN` name matches the lens marker `C`.
-    fn is_kind<C: IcalComponentLens>(&self) -> bool {
+    /// Whether this component's `BEGIN` name matches the component marker `C`.
+    fn is_kind<C: IcalComponentSpec>(&self) -> bool {
         self.begin
             .as_ref()
             .map(|begin| begin.raw_value_str().eq_ignore_ascii_case(&C::KIND))
@@ -622,12 +618,9 @@ mod tests {
     };
 
     use crate::{
-        tree::{
-            component::vevent::VEVENT,
-            cst::IcalCst,
-            error::IcalParseError,
-            prop::{prodid::PRODID, summary::SUMMARY},
-        },
+        component::vevent::VEVENT,
+        prop::{prodid::PRODID, summary::SUMMARY},
+        tree::{cst::IcalCst, error::IcalParseError},
         version::IcalVersion,
     };
 
@@ -768,8 +761,6 @@ mod tests {
             [IcalParseError::MissingPropertyColon(_)]
         ));
 
-        // NOTE: The rest of the calendar survived: the property after the bad
-        // line is there to be read.
         let cal = &recovery.calendars[0];
         assert_eq!(&*cal.prop::<PRODID>().unwrap().0, "-//Example//EN");
     }

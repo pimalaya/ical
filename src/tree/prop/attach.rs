@@ -1,22 +1,15 @@
 //! # ATTACH lens
 //!
-//! The `ATTACH` property lens.
+//! Reading and editing the `ATTACH` property in place: it decodes as an
+//! [`IcalUri`] and edits through the generic [`IcalValueCursor`].
+//!
+//! Its RFC contract sits on the marker, [`ATTACH`].
 
 use crate::{
-    prop::IcalPropKind,
-    tree::{
-        line::IcalLine,
-        prop::{lens::IcalPropLens, spec::IcalPropSpec},
-        value::cursor::IcalValueCursor,
-    },
-    value::IcalValueKind,
+    prop::attach::ATTACH,
+    tree::{line::IcalLine, prop::lens::IcalPropLens, value::cursor::IcalValueCursor},
     value::uri::IcalUri,
-    version::IcalVersion,
 };
-
-/// The `ATTACH` property lens.
-#[allow(non_camel_case_types)]
-pub struct ATTACH;
 
 impl IcalPropLens for ATTACH {
     type Target<'v> = IcalUri<'v>;
@@ -28,13 +21,5 @@ impl IcalPropLens for ATTACH {
 
     fn cursor<'c, 'a>(line: &'c mut IcalLine<'a>) -> IcalValueCursor<'c, 'a> {
         IcalValueCursor { line }
-    }
-}
-
-impl IcalPropSpec for ATTACH {
-    const KIND: IcalPropKind = IcalPropKind::Attach;
-
-    fn allowed_values(_version: IcalVersion) -> &'static [IcalValueKind] {
-        &[IcalValueKind::Uri]
     }
 }

@@ -12,6 +12,10 @@
 //!
 //! A known name is the closed [`IcalParamKind`], reached through `FromStr`
 //! and `Deref`. Pure model, no [`crate::tree`] dependency.
+//!
+//! The default parameter set the property spec starts from lives here too
+//! (`COMMON_PARAMS`), the contract being model rather than syntax; the
+//! read-and-write lens on each parameter is in [`crate::tree::param`].
 
 use core::{error, fmt, ops, str};
 
@@ -412,6 +416,15 @@ impl IcalParam<'_> {
     }
 }
 
+/// The default parameters a property may carry, used by the spec for the
+/// uniform majority. Per-property sets refine this where a property allows
+/// more or fewer.
+pub(crate) const COMMON_PARAMS: &[IcalParamKind] = &[
+    IcalParamKind::Value,
+    IcalParamKind::Language,
+    IcalParamKind::AltRep,
+];
+
 #[cfg(test)]
 mod tests {
     use core::str::FromStr;
@@ -427,8 +440,6 @@ mod tests {
         ] {
             assert_eq!(IcalParamKind::from_str(&kind).ok(), Some(kind));
         }
-        // NOTE: Case-insensitive on the way in; unknown names are not in the
-        // vocabulary.
         assert_eq!(
             IcalParamKind::from_str("role").ok(),
             Some(IcalParamKind::Role),

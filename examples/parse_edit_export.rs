@@ -5,7 +5,7 @@
 //!
 //! Run with: `cargo run --example parse_edit_export`
 
-use ical::tree::{component::vevent::VEVENT, cst::IcalCst, prop::summary::SUMMARY};
+use ical::{component::vevent::VEVENT, prop::summary::SUMMARY, tree::cst::IcalCst};
 
 fn main() {
     let raw = concat!(

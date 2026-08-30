@@ -1,22 +1,15 @@
 //! # GEO lens
 //!
-//! The `GEO` property lens.
+//! Reading and editing the `GEO` property in place: it decodes as an
+//! [`IcalGeo`] and edits through the generic [`IcalValueCursor`].
+//!
+//! Its RFC contract sits on the marker, [`GEO`].
 
 use crate::{
-    prop::IcalPropKind,
-    tree::{
-        line::IcalLine,
-        prop::{cardinality::IcalPropCardinality, lens::IcalPropLens, spec::IcalPropSpec},
-        value::cursor::IcalValueCursor,
-    },
-    value::IcalValueKind,
+    prop::geo::GEO,
+    tree::{line::IcalLine, prop::lens::IcalPropLens, value::cursor::IcalValueCursor},
     value::geo::IcalGeo,
-    version::IcalVersion,
 };
-
-/// The `GEO` property lens.
-#[allow(non_camel_case_types)]
-pub struct GEO;
 
 impl IcalPropLens for GEO {
     type Target<'v> = IcalGeo<'v>;
@@ -28,17 +21,5 @@ impl IcalPropLens for GEO {
 
     fn cursor<'c, 'a>(line: &'c mut IcalLine<'a>) -> IcalValueCursor<'c, 'a> {
         IcalValueCursor { line }
-    }
-}
-
-impl IcalPropSpec for GEO {
-    const KIND: IcalPropKind = IcalPropKind::Geo;
-
-    fn cardinality(_version: IcalVersion) -> IcalPropCardinality {
-        IcalPropCardinality::AtMostOne
-    }
-
-    fn allowed_values(_version: IcalVersion) -> &'static [IcalValueKind] {
-        &[IcalValueKind::Geo]
     }
 }

@@ -36,6 +36,7 @@ use crate::{
         value::node::IcalValueNode,
         wire::IcalWire,
     },
+    validator::IcalValid,
 };
 
 impl Ical<'_> {
@@ -99,6 +100,12 @@ impl IcalComponent<'_> {
 impl<'a> From<Ical<'a>> for IcalCst<'static> {
     fn from(cal: Ical<'a>) -> Self {
         cal.encode()
+    }
+}
+
+impl<'a> From<IcalValid<Ical<'a>>> for IcalCst<'static> {
+    fn from(valid: IcalValid<Ical<'a>>) -> Self {
+        valid.into_inner().encode()
     }
 }
 
@@ -284,12 +291,12 @@ mod tests {
         assert_eq!(param.encode(Escaper::Modern).to_string(), "CN=a^nb^^c^'d",);
     }
 
+    /// The decoded model holds a parameter's content, its RFC 5545 section 3.1
+    /// delimiters excluded, so the pair is put back around a value carrying a
+    /// character a bare `paramtext` may not hold.
     #[test]
-    fn keeps_a_quoted_parameter_value_quoted() {
-        // NOTE: the decoded model holds a parameter exactly as the wire spelled
-        // it, its own delimiters included, so the surrounding pair is written
-        // back as a pair rather than encoded as content.
-        let param = IcalParam::AltRep(Cow::Borrowed("\"cid:part1.0001@example.org\""));
+    fn quotes_a_parameter_value_carrying_a_delimiter() {
+        let param = IcalParam::AltRep(Cow::Borrowed("cid:part1.0001@example.org"));
 
         assert_eq!(
             param.encode(Escaper::Modern).to_string(),

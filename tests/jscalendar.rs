@@ -1,5 +1,3 @@
-#![cfg(feature = "jscalendar")]
-
 //! The RFC 8984 JSCalendar conversion, both ways.
 //!
 //! Two questions are asked of every case. Does the conversion say what the RFC
@@ -7,6 +5,8 @@
 //! second is the stronger of the two: a Group converted to a calendar and back
 //! must equal the Group it started as, whatever the mapping did in between,
 //! because that is what "the escape hatch caught everything" means.
+
+#![cfg(all(feature = "jscalendar", feature = "parser"))]
 
 mod common;
 

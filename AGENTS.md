@@ -41,5 +41,5 @@ Check the structure yourself against the strict rules (CAIRN.md §8): a discover
 - Check the bare core too: `cargo build --no-default-features` must stay dependency-free, with no std leak.
 - Never adjust production code to fit a test: adjust the test to match correct behaviour.
 - No em dashes in prose, per the Pimalaya guidelines.
-- Public items carry the `Ical` domain prefix. The property, parameter and component lens markers are the documented exception (see [CONTRIBUTING.md](./CONTRIBUTING.md)).
+- Public items carry the `Ical` domain prefix. The property, parameter and component markers are the documented exception (see [CONTRIBUTING.md](./CONTRIBUTING.md)).
 - A user-facing change also lands in CHANGELOG.md, which is a release-scoped roll-up over the Cairn log, not a replacement for it.

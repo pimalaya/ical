@@ -8,7 +8,7 @@
 //! parameters.
 //!
 //! It stays generic: what the name means and how the value decodes belong to
-//! the lens markers and the [`codec`](crate::tree::codec).
+//! the property lenses and the [`codec`](crate::tree::codec).
 //!
 //! Folding, stray blank lines and QUOTED-PRINTABLE soft breaks are resolved
 //! on parse, so every layer above sees one logical line, and recorded on the
@@ -556,8 +556,6 @@ mod tests {
 
     #[test]
     fn keeps_the_fold_points_when_an_edit_keeps_the_length() {
-        // NOTE: Same length, so every offset still indexes what it did: the
-        // line is folded exactly where it was.
         let (mut line, _) = IcalLine::take(b"NOTE:foo\r\n bar\r\n").unwrap();
         line.value = IcalValueNode::parse(b"BARFOO");
         assert_eq!(line.to_string(), "NOTE:BAR\r\n FOO\r\n");
@@ -565,8 +563,6 @@ mod tests {
 
     #[test]
     fn keeps_whitespace_beyond_the_single_fold_indicator() {
-        // NOTE: only the first space is the fold marker; the rest is value
-        // content.
         let (line, _) = IcalLine::take(b"NOTE:foo\r\n  bar\r\n").unwrap();
         assert_eq!(line.raw_value_str(), "foo bar");
     }

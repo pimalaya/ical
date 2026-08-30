@@ -1,22 +1,15 @@
 //! # DURATION lens
 //!
-//! The `DURATION` property lens.
+//! Reading and editing the `DURATION` property in place: it decodes as an
+//! [`IcalDuration`] and edits through the generic [`IcalValueCursor`].
+//!
+//! Its RFC contract sits on the marker, [`DURATION`].
 
 use crate::{
-    prop::IcalPropKind,
-    tree::{
-        line::IcalLine,
-        prop::{cardinality::IcalPropCardinality, lens::IcalPropLens, spec::IcalPropSpec},
-        value::cursor::IcalValueCursor,
-    },
-    value::IcalValueKind,
+    prop::duration::DURATION,
+    tree::{line::IcalLine, prop::lens::IcalPropLens, value::cursor::IcalValueCursor},
     value::duration::IcalDuration,
-    version::IcalVersion,
 };
-
-/// The `DURATION` property lens.
-#[allow(non_camel_case_types)]
-pub struct DURATION;
 
 impl IcalPropLens for DURATION {
     type Target<'v> = IcalDuration<'v>;
@@ -28,21 +21,5 @@ impl IcalPropLens for DURATION {
 
     fn cursor<'c, 'a>(line: &'c mut IcalLine<'a>) -> IcalValueCursor<'c, 'a> {
         IcalValueCursor { line }
-    }
-}
-
-impl IcalPropSpec for DURATION {
-    const KIND: IcalPropKind = IcalPropKind::Duration;
-
-    fn allowed_versions() -> &'static [IcalVersion] {
-        &[IcalVersion::V2_0]
-    }
-
-    fn cardinality(_version: IcalVersion) -> IcalPropCardinality {
-        IcalPropCardinality::AtMostOne
-    }
-
-    fn allowed_values(_version: IcalVersion) -> &'static [IcalValueKind] {
-        &[IcalValueKind::Duration]
     }
 }

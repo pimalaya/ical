@@ -1,23 +1,15 @@
 //! # LINK lens
 //!
-//! The `LINK` property lens.
+//! Reading and editing the `LINK` property in place: it decodes as an
+//! [`IcalUri`] and edits through the generic [`IcalValueCursor`].
+//!
+//! Its RFC contract sits on the marker, [`LINK`].
 
 use crate::{
-    param::IcalParamKind,
-    prop::IcalPropKind,
-    tree::{
-        line::IcalLine,
-        prop::{lens::IcalPropLens, spec::IcalPropSpec},
-        value::cursor::IcalValueCursor,
-    },
-    value::IcalValueKind,
+    prop::link::LINK,
+    tree::{line::IcalLine, prop::lens::IcalPropLens, value::cursor::IcalValueCursor},
     value::uri::IcalUri,
-    version::IcalVersion,
 };
-
-/// The `LINK` property lens.
-#[allow(non_camel_case_types)]
-pub struct LINK;
 
 impl IcalPropLens for LINK {
     type Target<'v> = IcalUri<'v>;
@@ -29,27 +21,5 @@ impl IcalPropLens for LINK {
 
     fn cursor<'c, 'a>(line: &'c mut IcalLine<'a>) -> IcalValueCursor<'c, 'a> {
         IcalValueCursor { line }
-    }
-}
-
-impl IcalPropSpec for LINK {
-    const KIND: IcalPropKind = IcalPropKind::Link;
-
-    fn allowed_versions() -> &'static [IcalVersion] {
-        &[IcalVersion::V2_0]
-    }
-
-    fn allowed_values(_version: IcalVersion) -> &'static [IcalValueKind] {
-        &[IcalValueKind::Uri, IcalValueKind::Text]
-    }
-
-    /// RFC 9253 8.1: a link states what it links to with `LINKREL`.
-    fn allowed_params(_version: IcalVersion) -> &'static [IcalParamKind] {
-        &[
-            IcalParamKind::Value,
-            IcalParamKind::LinkRel,
-            IcalParamKind::Label,
-            IcalParamKind::FmtType,
-        ]
     }
 }

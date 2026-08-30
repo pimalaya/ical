@@ -1,22 +1,15 @@
 //! # ORGANIZER lens
 //!
-//! The `ORGANIZER` property lens.
+//! Reading and editing the `ORGANIZER` property in place: it decodes as an
+//! [`IcalCalAddress`] and edits through the generic [`IcalValueCursor`].
+//!
+//! Its RFC contract sits on the marker, [`ORGANIZER`].
 
 use crate::{
-    prop::IcalPropKind,
-    tree::{
-        line::IcalLine,
-        prop::{cardinality::IcalPropCardinality, lens::IcalPropLens, spec::IcalPropSpec},
-        value::cursor::IcalValueCursor,
-    },
-    value::IcalValueKind,
+    prop::organizer::ORGANIZER,
+    tree::{line::IcalLine, prop::lens::IcalPropLens, value::cursor::IcalValueCursor},
     value::cal_address::IcalCalAddress,
-    version::IcalVersion,
 };
-
-/// The `ORGANIZER` property lens.
-#[allow(non_camel_case_types)]
-pub struct ORGANIZER;
 
 impl IcalPropLens for ORGANIZER {
     type Target<'v> = IcalCalAddress<'v>;
@@ -28,21 +21,5 @@ impl IcalPropLens for ORGANIZER {
 
     fn cursor<'c, 'a>(line: &'c mut IcalLine<'a>) -> IcalValueCursor<'c, 'a> {
         IcalValueCursor { line }
-    }
-}
-
-impl IcalPropSpec for ORGANIZER {
-    const KIND: IcalPropKind = IcalPropKind::Organizer;
-
-    fn allowed_versions() -> &'static [IcalVersion] {
-        &[IcalVersion::V2_0]
-    }
-
-    fn cardinality(_version: IcalVersion) -> IcalPropCardinality {
-        IcalPropCardinality::AtMostOne
-    }
-
-    fn allowed_values(_version: IcalVersion) -> &'static [IcalValueKind] {
-        &[IcalValueKind::CalAddress]
     }
 }

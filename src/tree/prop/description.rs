@@ -1,21 +1,15 @@
 //! # DESCRIPTION lens
 //!
-//! The `DESCRIPTION` property lens.
+//! Reading and editing the `DESCRIPTION` property in place: it decodes as an
+//! [`IcalText`] and edits through the generic [`IcalValueCursor`].
+//!
+//! Its RFC contract sits on the marker, [`DESCRIPTION`].
 
 use crate::{
-    prop::IcalPropKind,
-    tree::{
-        line::IcalLine,
-        prop::{cardinality::IcalPropCardinality, lens::IcalPropLens, spec::IcalPropSpec},
-        value::cursor::IcalValueCursor,
-    },
+    prop::description::DESCRIPTION,
+    tree::{line::IcalLine, prop::lens::IcalPropLens, value::cursor::IcalValueCursor},
     value::text::IcalText,
-    version::IcalVersion,
 };
-
-/// The `DESCRIPTION` property lens.
-#[allow(non_camel_case_types)]
-pub struct DESCRIPTION;
 
 impl IcalPropLens for DESCRIPTION {
     type Target<'v> = IcalText<'v>;
@@ -27,13 +21,5 @@ impl IcalPropLens for DESCRIPTION {
 
     fn cursor<'c, 'a>(line: &'c mut IcalLine<'a>) -> IcalValueCursor<'c, 'a> {
         IcalValueCursor { line }
-    }
-}
-
-impl IcalPropSpec for DESCRIPTION {
-    const KIND: IcalPropKind = IcalPropKind::Description;
-
-    fn cardinality(_version: IcalVersion) -> IcalPropCardinality {
-        IcalPropCardinality::AtMostOne
     }
 }

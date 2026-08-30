@@ -18,8 +18,8 @@ use ical::{
     recur::{
         IcalRecurFreq, IcalRecurRule, validate::IcalRecurPart, validate::IcalRecurRuleProblem,
     },
-    tree::{cst::IcalCst, ical::validate::IcalValidateError},
-    valid::IcalValid,
+    tree::cst::IcalCst,
+    validator::{IcalValid, IcalValidateError},
     value::IcalValueKind,
     version::IcalVersion,
 };

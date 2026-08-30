@@ -12,7 +12,7 @@ The raw rule text stays on `IcalRecur` in the decoded model, which is what byte-
 
 ### Requirement: Civil expansion
 
-Expansion SHALL be civil: no time zone, no offset. RFC 5545 defines expansion on the local wall-clock time of `DTSTART`, so no UTC offset is ever needed and none is ever resolved. Turning an occurrence into an instant is the caller's step, served by [timezone](./timezone.md).
+Expansion SHALL be civil: no time zone, no offset. RFC 5545 defines expansion on the local wall-clock time of `DTSTART`, so no UTC offset is ever needed and none is ever resolved. Turning an occurrence into an instant is the caller's step, served by [tz](./tz.md).
 
 #### Scenario: A daily rule on a zoned start
 - GIVEN `DTSTART;TZID=Europe/Paris:20260301T090000` and `FREQ=DAILY`

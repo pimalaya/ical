@@ -38,14 +38,14 @@
 //! The typed rule is not the round-trip path (the syntax tree is), so ignored
 //! parts are dropped rather than carried.
 
-use core::{fmt, num::ParseIntError, ops::Range, str::FromStr};
-
-use alloc::{string::String, vec::Vec};
-
 mod civil;
 pub mod expand;
 pub mod set;
 pub mod validate;
+
+use core::{fmt, num::ParseIntError, ops::Range, str::FromStr};
+
+use alloc::{string::String, vec::Vec};
 
 /// A civil date and time, with no time zone and no offset.
 ///
@@ -323,7 +323,7 @@ pub struct IcalRecurRule {
     pub freq: IcalRecurFreq,
     /// The last date the rule may yield, inclusive.
     ///
-    /// NOTE: RFC 5545 requires this to be UTC whenever `DTSTART` is zoned,
+    /// RFC 5545 requires this to be UTC whenever `DTSTART` is zoned,
     /// while expansion is civil, so a caller with a `TZID` start converts the
     /// bound into that zone; unconverted it is off by that zone's offset.
     pub until: Option<IcalRecurDateTime>,

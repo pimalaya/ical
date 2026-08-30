@@ -12,10 +12,9 @@
 //! `CALSCALE`, `METHOD`, ...) and its nested [`components`](Ical::components)
 //! (`VEVENT`, `VTODO`, `VTIMEZONE`, ...), each a recursive [`IcalComponent`].
 //!
-//! Build a calendar directly from its public fields; strict construction and
-//! conformance checking live in the syntax layer
-//! ([`validate`](crate::tree::ical::validate)), which this module does not
-//! depend on: pure model, no [`crate::tree`].
+//! Build a calendar directly from its public fields; strict construction is
+//! the [`builder`](crate::builder) and conformance checking the
+//! [`validator`](crate::validator). Pure model, no [`crate::tree`].
 //!
 //! [`IcalComponent`]: crate::component::IcalComponent
 

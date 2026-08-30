@@ -14,6 +14,29 @@
 //! A known name is the closed [`IcalComponentKind`] identity (its wire
 //! spelling reached through `Deref` and `FromStr`); an unknown one keeps its
 //! verbatim bytes. Pure model, no [`crate::tree`] dependency.
+//!
+//! This module also owns the per-component contract: one marker module per
+//! component the crate knows, each carrying its
+//! [`IcalComponentSpec`](spec) impl, and the [`spec`] vtable that bridges the
+//! open [`IcalComponentKind`] back to those static impls. The marker is also
+//! the type-level key for typed subtree access
+//! ([`IcalCst::component`](crate::tree::cst::IcalCst::component)).
+
+pub mod available;
+pub mod daylight;
+pub mod participant;
+pub mod spec;
+pub mod standard;
+pub mod valarm;
+pub mod vavailability;
+pub mod vcalendar;
+pub mod vevent;
+pub mod vfreebusy;
+pub mod vjournal;
+pub mod vlocation;
+pub mod vresource;
+pub mod vtimezone;
+pub mod vtodo;
 
 use core::{error, fmt, ops, str};
 

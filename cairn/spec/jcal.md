@@ -34,3 +34,7 @@ Byte fidelity belongs to the syntax tree. jCal is a projection of the decoded mo
 - GIVEN `RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=10`
 - WHEN it is encoded to jCal and decoded back
 - THEN the rule reads `FREQ=WEEKLY;COUNT=10;BYDAY=MO`, the same parts in the RFC's order
+
+### Requirement: jCal needs no parser
+
+The `jcal` feature SHALL NOT imply `parser`. It reads the property spec to resolve a value kind, and the spec is model rather than syntax, so a build with default features off and `jcal` on SHALL pull in `serde_json` alone.

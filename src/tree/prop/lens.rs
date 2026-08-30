@@ -5,10 +5,12 @@
 //! the type.
 //!
 //! The wire name comes from its [`IcalPropSpec::KIND`] supertrait, so the two
-//! stay in sync; each property implements it on the marker in its own module.
+//! stay in sync; each property implements it on the marker it defines in
+//! [`crate::prop`].
 
 use crate::{
-    tree::{codec::Codec, line::IcalLine, prop::spec::IcalPropSpec},
+    prop::spec::IcalPropSpec,
+    tree::{codec::Codec, line::IcalLine},
     version::IcalVersion,
 };
 

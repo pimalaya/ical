@@ -47,4 +47,19 @@ impl Escaper {
     pub fn has_param_encoding(self) -> bool {
         matches!(self, Self::Modern)
     }
+
+    /// Whether this version wraps a parameter value carrying a delimiter in
+    /// double quotes: RFC 5545 section 3.1 keeps `,`, `;` and `:` out of a
+    /// bare `paramtext` and gives `quoted-string` for a value that needs one,
+    /// while vCalendar 1.0 has no such production and reads its double quote
+    /// as content.
+    ///
+    /// A different question from [`has_param_encoding`], which is RFC 6868's
+    /// caret encoding, though the two versions this crate knows happen to
+    /// answer both the same way.
+    ///
+    /// [`has_param_encoding`]: Self::has_param_encoding
+    pub fn has_param_quoting(self) -> bool {
+        matches!(self, Self::Modern)
+    }
 }

@@ -9,13 +9,11 @@
 use std::borrow::Cow;
 
 use ical::{
+    builder::IcalPropBuilder,
     component::{IcalComponent, IcalComponentKind},
     ical::Ical,
-    tree::{
-        cst::IcalCst,
-        ical::builder::IcalPropBuilder,
-        prop::{dtstamp::DTSTAMP, prodid::PRODID, summary::SUMMARY, uid::UID},
-    },
+    prop::{dtstamp::DTSTAMP, prodid::PRODID, summary::SUMMARY, uid::UID},
+    tree::cst::IcalCst,
     value::{IcalValue, datetime::IcalDateTime, text::IcalText},
     version::IcalVersion,
 };

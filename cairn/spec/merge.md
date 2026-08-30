@@ -8,6 +8,8 @@ status: current
 
 Reconciling two divergent edits of a calendar against their common base, in the syntax layer, so the merged calendar is bytes rather than a re-encoding.
 
+The merge is arranged as the steps it performs: addressing a calendar, diffing a side against the base, deciding when two sides performed one act, judging whether a right-side act lands, and replaying the ones that do.
+
 ### Requirement: Three-way merge against a stored base
 
 Two divergent versions of a calendar SHALL reconcile against their common base, never by last-writer-wins. A field only one side touched SHALL be taken from that side. Every action each side took relative to the base, and every collision between them, SHALL be reported to the caller.
