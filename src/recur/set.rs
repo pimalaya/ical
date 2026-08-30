@@ -40,6 +40,7 @@ use crate::{
     param::IcalParam,
     prop::{IcalPropKind, IcalPropName},
     recur::{IcalRecurDateTime, IcalRecurRule, expand::IcalRecurExpand},
+    tz::IcalTz,
     value::IcalValue,
 };
 
@@ -192,15 +193,35 @@ impl IcalRecurSet {
 
     /// Walk the set, lazily, in identity order.
     pub fn expand(&self) -> IcalRecurSetExpand<'_> {
+        self.walk(None)
+    }
+
+    /// Walk the set against a time zone, dropping the instances its rules
+    /// generate at local times the zone jumps over (RFC 5545 3.3.10).
+    ///
+    /// The filter sits on the rule streams alone. An `RDATE` does not generate
+    /// an instance, it names one, so a date written into one is as deliberate
+    /// as a lone `DTSTART` and is kept whatever the zone says of it.
+    pub fn expand_in_zone(&self, zone: &IcalTz) -> IcalRecurSetExpand<'_> {
+        self.walk(Some(zone))
+    }
+
+    /// The walk both expansions are, with and without a zone to filter by.
+    fn walk(&self, zone: Option<&IcalTz>) -> IcalRecurSetExpand<'_> {
         let start = self.start;
+
+        let stream = |rule: &IcalRecurRule| {
+            let expand = IcalRecurExpand::new(rule.clone(), start?);
+
+            Some(match zone {
+                Some(zone) => expand.in_zone(zone.clone()),
+                None => expand,
+            })
+        };
 
         IcalRecurSetExpand {
             set: self,
-            streams: self
-                .rules
-                .iter()
-                .filter_map(|rule| start.map(|start| IcalRecurExpand::new(rule.clone(), start)))
-                .collect(),
+            streams: self.rules.iter().filter_map(stream).collect(),
             heads: vec![None; self.rules.len()],
             primed: false,
             // NOTE: The literal sources: DTSTART, the RDATEs, and the identity
@@ -215,11 +236,7 @@ impl IcalRecurSet {
                 literals
             },
             literal: 0,
-            exrules: self
-                .exrules
-                .iter()
-                .filter_map(|rule| start.map(|start| IcalRecurExpand::new(rule.clone(), start)))
-                .collect(),
+            exrules: self.exrules.iter().filter_map(stream).collect(),
             exheads: vec![None; self.exrules.len()],
             last: None,
         }

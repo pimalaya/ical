@@ -15,7 +15,7 @@
 //! the offset after it, and a recurrence rule saying when it takes effect.
 //! "Observance" is RFC 5545 3.6.5's own word for one such rule, reused by RFC
 //! 7808; a datetime library would call the instants it generates transitions,
-//! which is what the private `Transition` here is.
+//! which is what [`IcalTzTransition`] here is.
 //!
 //! ## The two hard cases are answered, not guessed
 //!
@@ -26,7 +26,14 @@
 //! [`resolve`](IcalTz::resolve) reports both as what they are, with the
 //! offsets either side, rather than picking one and calling it the answer.
 //! Choosing belongs to the caller, who knows whether a skipped alarm should
-//! fire early, late or not at all.
+//! fire early, late or not at all. [`instant`](IcalTzOffset::instant) is the
+//! one place a choice is made, and it says which of its three answers the RFC
+//! settled and which it did not.
+//!
+//! The gap has one caller that does not choose: a recurrence rule generating
+//! an instance in one is generating something that never happens, which RFC
+//! 5545 3.3.10 drops from the set outright. That filter reads the zone through
+//! [`IcalTzTransitions`], since it asks once per candidate rather than once.
 //!
 //! ## What is read, and what is not
 //!
@@ -67,6 +74,10 @@ pub enum IcalTzOffset {
     /// of UTC, so `-0500` is `-18000`.
     One(i32),
     /// The local time never happens: a transition jumped over it.
+    ///
+    /// An instance a recurrence rule generates here is dropped from the set
+    /// and costs no `COUNT` slot, by RFC 5545 3.3.10 rather than by any choice
+    /// of the caller's. See [`recur::expand`](crate::recur::expand).
     Gap {
         /// The offset in force before the transition.
         before: i32,
@@ -90,6 +101,23 @@ impl IcalTzOffset {
             Self::One(offset) => Some(*offset),
             _ => None,
         }
+    }
+
+    /// The instant a civil local time names under this resolution, in seconds
+    /// since the Unix epoch.
+    ///
+    /// The crossing, named once. `None` for a gap is the specification's own
+    /// answer (RFC 5545 3.3.10): a local time that never happens names no
+    /// instant. The earlier of a fold's two is a default the RFC does not
+    /// mandate, and a caller wanting the later one reads it off the variant.
+    pub fn instant(&self, local: IcalRecurDateTime) -> Option<i64> {
+        let offset = match self {
+            Self::One(offset) => *offset,
+            Self::Gap { .. } => return None,
+            Self::Fold { earlier, .. } => *earlier,
+        };
+
+        Some(local.seconds() - i64::from(offset))
     }
 }
 
@@ -121,20 +149,75 @@ pub struct IcalTz {
 /// One transition of a zone: the instant it happens, expressed in the local
 /// time before it, and the offsets either side.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Transition {
-    /// The onset in the local time *before* the transition, as `DTSTART`
-    /// spells it.
-    before_local: IcalRecurDateTime,
-    from: i32,
-    to: i32,
+pub struct IcalTzTransition {
+    /// The onset in the local time *before* the transition, as an observance's
+    /// `DTSTART` spells it (RFC 5545 3.6.5).
+    pub local: IcalRecurDateTime,
+    /// The offset in force before it, in seconds east of UTC.
+    pub from: i32,
+    /// The offset in force after it.
+    pub to: i32,
 }
 
-impl Transition {
+impl IcalTzTransition {
     /// The same instant in the local time *after* the transition.
-    fn after_local(&self) -> IcalRecurDateTime {
+    ///
+    /// The pair of it and [`local`](Self::local) bounds what a spring-forward
+    /// jumps over and what a fall-back repeats.
+    pub fn after_local(&self) -> IcalRecurDateTime {
         IcalRecurDateTime::from_seconds(
-            self.before_local.seconds() + i64::from(self.to) - i64::from(self.from),
+            self.local.seconds() + i64::from(self.to) - i64::from(self.from),
         )
+    }
+}
+
+/// A zone's transitions, materialised: resolution by lookup, not by expansion.
+///
+/// [`IcalTz::resolve`] re-expands every observance on every call, which is the
+/// right shape for the one question a caller asks about an occurrence. Asking
+/// once per candidate of a recurrence rule is a different shape, and this is
+/// it: the transitions are held, and the held span doubles whenever a query
+/// runs past it, so walking a rule forward costs one expansion amortised
+/// rather than one per date.
+#[derive(Clone, Debug)]
+pub struct IcalTzTransitions {
+    zone: IcalTz,
+    transitions: Vec<IcalTzTransition>,
+    /// The last year [`transitions`](Self::transitions) covers, before
+    /// anything is materialised.
+    through: Option<i32>,
+    /// How many years past a query the next materialisation reaches.
+    span: i32,
+}
+
+impl IcalTzTransitions {
+    /// Hold a zone, materialising nothing until something is asked of it.
+    pub fn of_zone(zone: IcalTz) -> Self {
+        Self {
+            zone,
+            transitions: Vec::new(),
+            through: None,
+            span: 1,
+        }
+    }
+
+    /// The offset in force at a civil local time, or the gap or fold it is in,
+    /// exactly as [`IcalTz::resolve`] answers it.
+    pub fn resolve(&mut self, local: IcalRecurDateTime) -> IcalTzOffset {
+        if self.through.is_none_or(|through| local.year > through) {
+            let through = local.year.saturating_add(self.span);
+
+            self.transitions = self.zone.transitions(through);
+            self.through = Some(through);
+            self.span = self.span.saturating_mul(2);
+        }
+
+        IcalTz::offset(&self.transitions, local)
+    }
+
+    /// Whether a civil local time is one the zone jumps over.
+    pub fn is_gap(&mut self, local: IcalRecurDateTime) -> bool {
+        matches!(self.resolve(local), IcalTzOffset::Gap { .. })
     }
 }
 
@@ -183,39 +266,59 @@ impl IcalTz {
     /// A zone with no observance resolves everything to UTC, stating no offset
     /// to apply. A local time before the first transition takes the offset that
     /// transition says came before it, which is what `TZOFFSETFROM` is for.
+    ///
+    /// One call materialises what it needs and drops it. A caller asking many
+    /// times, as a zoned expansion does, holds the transitions instead
+    /// ([`IcalTzTransitions`]).
     pub fn resolve(&self, local: IcalRecurDateTime) -> IcalTzOffset {
-        let mut previous: Option<Transition> = None;
-        let mut next: Option<Transition> = None;
-        let mut first: Option<Transition> = None;
+        Self::offset(&self.transitions(local.year), local)
+    }
+
+    /// Whether a civil local time is one this zone jumps over, so that no
+    /// instant answers to it (RFC 5545 3.3.10).
+    pub fn is_gap(&self, local: IcalRecurDateTime) -> bool {
+        matches!(self.resolve(local), IcalTzOffset::Gap { .. })
+    }
+
+    /// Every transition this zone states up to the end of a year, in
+    /// chronological order.
+    ///
+    /// One onset past the bound is taken from each observance, which is what
+    /// makes the list answer for the year itself: a fold reaches back from the
+    /// transition that closes it, and a zone whose rules all start later still
+    /// states the offset that came before them.
+    pub fn transitions(&self, through: i32) -> Vec<IcalTzTransition> {
+        let mut transitions = Vec::new();
 
         for observance in &self.observances {
             for onset in observance.onsets.expand() {
-                let transition = Transition {
-                    before_local: onset.start,
+                let transition = IcalTzTransition {
+                    local: onset.start,
                     from: observance.from,
                     to: observance.to,
                 };
 
-                if first.is_none_or(|held| transition.before_local < held.before_local) {
-                    first = Some(transition);
-                }
+                transitions.push(transition);
 
-                if transition.before_local <= local {
-                    if previous.is_none_or(|held| held.before_local < transition.before_local) {
-                        previous = Some(transition);
-                    }
-                } else {
-                    // NOTE: Onsets come out in order, so the first one past the
-                    // query is this observance's only candidate for the next
-                    // transition, and there is no reason to walk an endless
-                    // rule any further.
-                    if next.is_none_or(|held| transition.before_local < held.before_local) {
-                        next = Some(transition);
-                    }
+                // NOTE: Onsets come out in order, so there is no reason to walk
+                // an endless rule past the bound the caller asked for.
+                if transition.local.year > through {
                     break;
                 }
             }
         }
+
+        transitions.sort_unstable_by_key(|transition| transition.local);
+        transitions
+    }
+
+    /// The offset a materialised transition list puts in force at a local
+    /// time, the one resolution both [`resolve`](Self::resolve) and
+    /// [`IcalTzTransitions`] answer with.
+    fn offset(transitions: &[IcalTzTransition], local: IcalRecurDateTime) -> IcalTzOffset {
+        let index = transitions.partition_point(|transition| transition.local <= local);
+        let previous = index.checked_sub(1).map(|index| transitions[index]);
+        let next = transitions.get(index).copied();
 
         // NOTE: A local time the last transition jumped over never happened.
         if let Some(transition) = previous
@@ -240,7 +343,7 @@ impl IcalTz {
             };
         }
 
-        match (previous, first) {
+        match (previous, transitions.first()) {
             (Some(transition), _) => IcalTzOffset::One(transition.to),
             (None, Some(transition)) => IcalTzOffset::One(transition.from),
             (None, None) => IcalTzOffset::One(0),

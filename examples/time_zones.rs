@@ -13,7 +13,7 @@
 //! Run with: `cargo run --example time_zones`
 
 use ical::{
-    recur::IcalRecurDateTime,
+    recur::{IcalRecurDateTime, IcalRecurRule, expand::IcalRecurExpand},
     tree::cst::IcalCst,
     tz::{IcalTz, IcalTzOffset},
 };
@@ -77,6 +77,33 @@ fn main() {
 
     let ambiguous = zone.resolve(at(2026, 11, 1, 1, 30));
     println!("unambiguous in the fold:     {:?}", ambiguous.unambiguous());
+
+    // `instant` names the crossing once: the fold takes its earlier offset,
+    // and the gap names no instant at all, because no instant answers to it.
+    let noon = at(2026, 7, 15, 12, 0);
+    let skipped = at(2026, 3, 8, 2, 30);
+    println!(
+        "\ninstant at noon in July: {:?}",
+        zone.resolve(noon).instant(noon)
+    );
+    println!(
+        "instant in the gap:      {:?}",
+        zone.resolve(skipped).instant(skipped)
+    );
+
+    // Which is why a rule generating an instance there generates nothing: RFC
+    // 5545 3.3.10 drops it, and spends no COUNT slot on it, so five occurrences
+    // still come out and the series runs a day further to yield them.
+    let rule = IcalRecurRule::parse("FREQ=DAILY;COUNT=5").unwrap();
+    let daily = IcalRecurExpand::new(rule, at(2026, 3, 6, 2, 30)).in_zone(zone);
+
+    println!("\ndaily at 02:30 over the jump:");
+    for occurrence in daily {
+        println!(
+            "  {:04}-{:02}-{:02} {:02}:{:02}",
+            occurrence.year, occurrence.month, occurrence.day, occurrence.hour, occurrence.minute,
+        );
+    }
 }
 
 /// A civil date-time on the hour and minute given.

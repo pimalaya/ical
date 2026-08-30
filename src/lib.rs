@@ -113,6 +113,11 @@
 //! offset from the `VTIMEZONE` the calendar carries, and reporting the
 //! spring-forward gap and the fall-back fold rather than guessing.
 //!
+//! A zone crosses back into expansion for one purpose, and changes nothing
+//! about it: RFC 5545 3.3.10 forbids counting an instance a rule generates at
+//! a local time the clock jumped over, so an expansion given a zone drops
+//! those candidates before `COUNT` is spent.
+//!
 //! ## Reconciling two replicas
 //!
 //! [`merge`](tree::merge) is the syntax layer's answer to two divergent edits

@@ -37,3 +37,12 @@ A local time a spring-forward skips SHALL be reported as skipped, and a local ti
 - GIVEN a transition that repeats 02:00 to 03:00
 - WHEN 02:30 is resolved
 - THEN the result reports a fold, carrying both the earlier and the later offset
+
+### Requirement: The crossing to an instant is named once
+
+`IcalTzOffset::instant` SHALL give the instant a civil time names, as seconds since the Unix epoch. It SHALL return nothing in a gap, which is the RFC's answer rather than a refusal to answer, and the earlier of the two in a fold, which is a default the RFC does not mandate and which the variant's fields still expose.
+
+#### Scenario: The three answers
+- GIVEN a resolution that is one offset, a gap, and a fold
+- WHEN each is asked for the instant its local time names
+- THEN the offset is subtracted, the gap names none, and the fold takes its earlier offset

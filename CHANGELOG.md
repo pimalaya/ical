@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Added `IcalRecurExpand::in_zone` and `IcalRecurSet::expand_in_zone`, which drop the instances RFC 5545 3.3.10 forbids counting.
+
+  A rule generating an instance at a local time the clock jumps over generates something that never happens, and the section is explicit that such an instance "MUST be ignored and MUST NOT be counted as part of the recurrence set". The zone enters expansion as a predicate on candidates and nothing more: occurrences stay civil, stepping stays total arithmetic, and a candidate in a gap is skipped before `COUNT` is spent, so a rule bounded by `COUNT=5` still yields five and runs one period further to do so. An expansion given no zone behaves exactly as it did. The filter sits on the rule streams alone: an `RDATE` names a date rather than generating one, so it is kept whatever the zone says of it.
+
+- Added `IcalTzOffset::instant`, the instant a civil local time names under a resolution, in seconds since the Unix epoch. A gap names none, which is the RFC's own answer; a fold takes its earlier offset, which is a default the variant's fields still let a caller override.
+
+- Added `IcalTz::is_gap`, `IcalTz::transitions` and `IcalTzTransitions`, which materialise a zone's transitions rather than re-expanding every observance on every call. `IcalTz::resolve` answers by lookup over that list now, and a caller asking once per date, as a zoned expansion does, holds the list and grows it as the walk moves forward.
+
 ## [0.3.0] - 2026-08-30
 
 ### Added

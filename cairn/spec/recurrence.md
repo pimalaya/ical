@@ -14,6 +14,8 @@ The raw rule text stays on `IcalRecur` in the decoded model, which is what byte-
 
 Expansion SHALL be civil: no time zone, no offset. RFC 5545 defines expansion on the local wall-clock time of `DTSTART`, so no UTC offset is ever needed and none is ever resolved. Turning an occurrence into an instant is the caller's step, served by [tz](./tz.md).
 
+A zone MAY be supplied to an expansion, and SHALL then be consulted for one purpose only: to drop the instances RFC 5545 3.3.10 forbids counting. It SHALL never change how an occurrence is represented or how the walk steps, both of which stay total arithmetic on civil times.
+
 #### Scenario: A daily rule on a zoned start
 - GIVEN `DTSTART;TZID=Europe/Paris:20260301T090000` and `FREQ=DAILY`
 - WHEN the rule is expanded
@@ -167,3 +169,21 @@ This is a deliberate divergence. python-dateutil applies such a part as a limit,
 - GIVEN `FREQ=MONTHLY;BYWEEKNO=3` from a start on the 15th
 - WHEN the rule is expanded
 - THEN it yields the 15th of each month, as `FREQ=MONTHLY` alone would
+
+### Requirement: A nonexistent local time is dropped and not counted
+
+A rule-generated instance whose local time does not exist in the zone the component references SHALL be omitted from the recurrence set, and SHALL NOT consume a `COUNT` slot (RFC 5545 3.3.10). A rule bounded by `COUNT` therefore yields as many occurrences as it names, running further in time to do so.
+
+The rule SHALL apply to instances a rule generated. A date named by an `RDATE` SHALL be kept, the specification's clause being about what rules generate rather than about every date-time in a gap.
+
+An expansion given no zone SHALL behave as it did before, since a validity it cannot check is one it does not apply.
+
+#### Scenario: A COUNT slot a gap does not consume
+- GIVEN a daily rule at a local time the clock jumps over, bounded by `COUNT=5`
+- WHEN it is expanded in the zone that jumps
+- THEN five occurrences come out, and the series runs one period past where it would have ended
+
+#### Scenario: A date an RDATE names in a gap
+- GIVEN an `RDATE` naming a local time the clock jumps over
+- WHEN the set is expanded in that zone
+- THEN the date is kept, having been named rather than generated

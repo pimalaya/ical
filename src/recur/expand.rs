@@ -37,10 +37,28 @@
 //!
 //! Neither bound truncates a rule that does yield: an occurrence is an
 //! occurrence however far apart from the last one it falls.
+//!
+//! ## The one thing a zone is consulted for
+//!
+//! Expansion is civil, and [`in_zone`](IcalRecurExpand::in_zone) does not
+//! change that: the zone is a predicate on candidates, never a representation.
+//! RFC 5545 3.3.10 ignores an instance a rule generates at a local time the
+//! clock jumps over, and forbids counting it, so such a candidate is skipped
+//! before `COUNT` is spent. A rule bounded by `COUNT` therefore yields as many
+//! occurrences as it names, running further in time to do so.
+//!
+//! A rule whose every candidate falls in a gap, `FREQ=YEARLY;BYMONTH=3;
+//! BYDAY=2SU;BYHOUR=2;BYMINUTE=30` against the zone whose transition that is,
+//! yields nothing. The barren-period budget does not catch it, every period
+//! being full of candidates that die at emit time, so the year cap is the
+//! bound that ends the walk.
 
 use alloc::{vec, vec::Vec};
 
-use crate::recur::{IcalRecurDateTime, IcalRecurFreq, IcalRecurRule, IcalRecurSkip, civil};
+use crate::{
+    recur::{IcalRecurDateTime, IcalRecurFreq, IcalRecurRule, IcalRecurSkip, civil},
+    tz::{IcalTz, IcalTzTransitions},
+};
 
 /// The last year expansion looks at, the widest an RFC 5545 date spells.
 const MAX_YEAR: i32 = 9999;
@@ -115,6 +133,7 @@ pub struct IcalRecurExpand {
     index: usize,
     emitted: u32,
     done: bool,
+    zone: Option<IcalTzTransitions>,
 }
 
 impl IcalRecurExpand {
@@ -144,9 +163,24 @@ impl IcalRecurExpand {
             index: 0,
             emitted: 0,
             done: alien,
+            zone: None,
             rule,
             start,
         }
+    }
+
+    /// Expands against a time zone, dropping the instances it jumps over.
+    ///
+    /// RFC 5545 3.3.10 ignores a rule-generated instance at a nonexistent
+    /// local time and forbids counting it, so the zone enters as a predicate
+    /// on candidates and nothing more: occurrences stay civil, and stepping
+    /// stays total arithmetic on civil times.
+    ///
+    /// The zone is taken owned, so the iterator keeps no lifetime and stays
+    /// the same type it was without one.
+    pub fn in_zone(mut self, zone: IcalTz) -> Self {
+        self.zone = Some(IcalTzTransitions::of_zone(zone));
+        self
     }
 
     /// Loads the next non-empty period into the buffer.
@@ -580,6 +614,18 @@ impl Iterator for IcalRecurExpand {
                 if candidate < self.start {
                     continue;
                 }
+
+                // NOTE: RFC 5545 3.3.10 ignores an instance at a nonexistent
+                // local time and forbids counting it, so a gap is skipped
+                // before either bound is consulted and before `emitted` rises.
+                if self
+                    .zone
+                    .as_mut()
+                    .is_some_and(|zone| zone.is_gap(candidate))
+                {
+                    continue;
+                }
+
                 if self.rule.until.is_some_and(|until| candidate > until)
                     || self.rule.count.is_some_and(|count| self.emitted >= count)
                 {
@@ -692,9 +738,9 @@ fn align(from: i64, target: i64, step: i64) -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use alloc::format;
+    use alloc::{format, string::String, vec};
 
-    use crate::recur::expand::*;
+    use crate::{recur::expand::*, recur::set::IcalRecurSet, tz::IcalTzObservance};
 
     fn expand(rule: &str, start: IcalRecurDateTime, take: usize) -> Vec<IcalRecurDateTime> {
         let rule = IcalRecurRule::parse(rule).unwrap();
@@ -850,6 +896,48 @@ mod tests {
             dates(&[(1997, 9, 2), (1997, 9, 3), (1997, 9, 4)])
         );
         assert!(expand("FREQ=DAILY;COUNT=0", start, 10).is_empty());
+    }
+
+    #[test]
+    fn drops_a_gap_instance_without_spending_its_count_slot() {
+        // A zone that jumps 2026-03-08 02:00 to 03:00, and a rule at 02:30:
+        // the instance on the 8th never happens, so the walk runs a day
+        // further to yield the five occurrences COUNT names.
+        let zone = IcalTz {
+            id: String::from("Test/Jump"),
+            observances: vec![IcalTzObservance {
+                daylight: true,
+                from: -5 * 3600,
+                to: -4 * 3600,
+                onsets: IcalRecurSet {
+                    start: Some(IcalRecurDateTime {
+                        year: 2026,
+                        month: 3,
+                        day: 8,
+                        hour: 2,
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            }],
+        };
+
+        let rule = IcalRecurRule::parse("FREQ=DAILY;COUNT=5").unwrap();
+        let start = IcalRecurDateTime {
+            year: 2026,
+            month: 3,
+            day: 6,
+            hour: 2,
+            minute: 30,
+            ..Default::default()
+        };
+
+        let days: Vec<_> = IcalRecurExpand::new(rule, start)
+            .in_zone(zone)
+            .map(|at| at.day)
+            .collect();
+
+        assert_eq!(days, [6, 7, 9, 10, 11]);
     }
 
     #[test]
