@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.0] - 2026-08-31
 
 ### Added
 
@@ -14,7 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Added `IcalTzOffset::instant`, the instant a civil local time names under a resolution, in seconds since the Unix epoch. A gap names none, which is the RFC's own answer; a fold takes its earlier offset, which is a default the variant's fields still let a caller override.
 
-- Added `IcalTz::is_gap`, `IcalTz::transitions` and `IcalTzTransitions`, which materialise a zone's transitions rather than re-expanding every observance on every call. `IcalTz::resolve` answers by lookup over that list now, and a caller asking once per date, as a zoned expansion does, holds the list and grows it as the walk moves forward.
+- Added `IcalTz::is_gap`, `IcalTz::transitions`, `IcalTzTransition` and `IcalTzTransitions`, which materialise a zone's transitions rather than re-expanding every observance on every call. `IcalTz::resolve` answers by lookup over that list now, and a caller asking once per date, as a zoned expansion does, holds the list and grows it as the walk moves forward.
 
 ## [0.3.0] - 2026-08-30
 
@@ -236,7 +236,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Added 190 real-world fixtures from the libical, ical4j and ical.js suites, swept for round-trip fidelity and cross-checked against calcard.
 
-[unreleased]: https://github.com/pimalaya/ical/compare/v0.3.0..HEAD
+[0.4.0]: https://github.com/pimalaya/ical/compare/v0.3.0..v0.4.0
 [0.3.0]: https://github.com/pimalaya/ical/compare/v0.2.0..v0.3.0
 [0.2.0]: https://github.com/pimalaya/ical/compare/v0.1.0..v0.2.0
 [0.1.0]: https://github.com/pimalaya/ical/compare/root..v0.1.0
