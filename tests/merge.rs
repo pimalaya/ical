@@ -85,7 +85,7 @@ fn reports_a_conflict_rather_than_letting_one_side_win_silently() {
 
     assert_eq!(report.conflicts.len(), 1);
     assert!(matches!(
-        report.conflicts[0].reason,
+        report.conflicts[0].left,
         IcalMergeReason::Divergent(_)
     ));
 
@@ -304,7 +304,7 @@ fn reports_a_rule_change_against_an_instance_change() {
     // have moved the ground the override stood on.
     assert_eq!(report.conflicts.len(), 1);
     assert!(matches!(
-        report.conflicts[0].reason,
+        report.conflicts[0].left,
         IcalMergeReason::Recurrence(_)
     ));
 
@@ -663,7 +663,7 @@ fn spelling_a_value_two_ways_is_no_agreement() {
 
     assert_eq!(report.conflicts.len(), 1, "{:?}", report.conflicts);
     assert!(matches!(
-        report.conflicts[0].reason,
+        report.conflicts[0].left,
         IcalMergeReason::Divergent(_),
     ));
 

@@ -127,10 +127,10 @@ impl<'a> IcalMerge<'_, 'a> {
                 applicable.push(op);
             }
 
-            if let Some(reason) = verdict.reason {
+            if let Some(left) = verdict.reason {
                 conflicts.push(IcalMergeConflict {
+                    left,
                     right: op.action.clone(),
-                    reason,
                 });
             }
         }
@@ -163,26 +163,28 @@ pub struct IcalMergeReport<'a> {
     pub left: Vec<IcalMergeAction<'a>>,
     /// What the right calendar changed relative to the base.
     pub right: Vec<IcalMergeAction<'a>>,
-    /// The right-side actions that did not simply apply, and why.
+    /// The pairs of actions that collided, one per side.
     pub conflicts: Vec<IcalMergeConflict<'a>>,
 }
 
-/// A right-side action that did not simply apply.
+/// Two actions that collided, one per side.
+///
+/// They are named `left` and `right` as vcard-rs names its own pair, the left
+/// one carrying with it why the right one did not simply apply.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct IcalMergeConflict<'a> {
+    /// The left side's action, and why the right one did not simply apply.
+    pub left: IcalMergeReason<'a>,
     /// The action the right side wanted.
     pub right: IcalMergeAction<'a>,
-    /// Why it did not simply apply.
-    pub reason: IcalMergeReason<'a>,
 }
 
-/// Why a right-side action did not simply apply.
+/// A left-side action, and why the right one did not simply apply against it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum IcalMergeReason<'a> {
     /// Both sides changed the same field. The merged calendar holds the left
     /// side's outcome, except where a removal met an update, in which case the
-    /// update was kept whichever side it came from. The action carried here is
-    /// the left side's, beside the right side's on the conflict itself.
+    /// update was kept whichever side it came from.
     Divergent(IcalMergeAction<'a>),
     /// One side changed a series and the other changed one of its instances.
     /// Both survive in the merged calendar; a rule that moved may have moved

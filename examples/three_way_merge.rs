@@ -89,8 +89,8 @@ fn main() {
     // resolve it otherwise can.
     println!("\nconflicts:");
     for conflict in &report.conflicts {
-        println!("  right wanted {:?}", conflict.right);
-        println!("  because      {:?}", conflict.reason);
+        println!("  left did      {:?}", conflict.left);
+        println!("  right wanted  {:?}", conflict.right);
     }
 
     // The merged calendar is the left calendar's bytes with the right side's

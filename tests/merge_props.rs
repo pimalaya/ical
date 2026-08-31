@@ -417,7 +417,7 @@ mod model {
 
         for conflict in &report.conflicts {
             if matches!(
-                conflict.reason,
+                conflict.left,
                 ical::tree::merge::IcalMergeReason::Recurrence(_)
             ) {
                 continue;
@@ -447,7 +447,7 @@ mod model {
             .iter()
             .filter(|conflict| {
                 !matches!(
-                    conflict.reason,
+                    conflict.left,
                     ical::tree::merge::IcalMergeReason::Recurrence(_)
                 )
             })
@@ -2236,7 +2236,7 @@ fn agrees_on_conflicts(
 
     for conflict in &merged.report.conflicts {
         if matches!(
-            conflict.reason,
+            conflict.left,
             ical::tree::merge::IcalMergeReason::Recurrence(_)
         ) {
             continue;
@@ -2248,7 +2248,7 @@ fn agrees_on_conflicts(
             return Err(format!(
                 "a collision was reported that the two sides did not have: {address:?}, \
                  reported as {:?}",
-                conflict.reason
+                conflict.left
             ));
         }
     }
@@ -2518,7 +2518,7 @@ fn the_generator_collides_often_enough() {
 
         if merged.report.conflicts.iter().any(|conflict| {
             matches!(
-                conflict.reason,
+                conflict.left,
                 ical::tree::merge::IcalMergeReason::Divergent(_)
             )
         }) {

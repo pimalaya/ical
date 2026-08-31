@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Renamed `IcalMergeConflict::reason` to `left`, and made it the first field, so a conflict reads `{ left, right }` as vcard-rs's does.
+
+  The two crates state one merge contract, and this one named one side after itself and described the other from the outside. The field carries what it always carried, the left side's action inside the `IcalMergeReason` that says which kind of conflict this is, and that enum stays: iCalendar has a second kind, a change to a series meeting a change to one of its instances, that vCard has no counterpart for. Callers matching on the field rename it; nothing else moves.
+
 ## [0.4.0] - 2026-08-31
 
 ### Added
@@ -236,6 +244,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Added 190 real-world fixtures from the libical, ical4j and ical.js suites, swept for round-trip fidelity and cross-checked against calcard.
 
+[unreleased]: https://github.com/pimalaya/ical/compare/v0.4.0..HEAD
 [0.4.0]: https://github.com/pimalaya/ical/compare/v0.3.0..v0.4.0
 [0.3.0]: https://github.com/pimalaya/ical/compare/v0.2.0..v0.3.0
 [0.2.0]: https://github.com/pimalaya/ical/compare/v0.1.0..v0.2.0
