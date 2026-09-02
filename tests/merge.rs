@@ -693,3 +693,451 @@ fn writing_an_unordered_list_parameter_in_two_orders_is_agreement() {
     assert!(report.conflicts.is_empty(), "{:?}", report.conflicts);
     assert_eq!(bytes(&report), left);
 }
+
+/// What each reported collision lands on, in the order the report gives them.
+fn collided(report: &IcalMergeReport<'_>) -> Vec<String> {
+    report
+        .conflicts
+        .iter()
+        .map(|pair| named(&pair.right))
+        .collect()
+}
+
+/// What an action lands on: the name of a property, or the key of the
+/// component a component-level action names.
+fn named(action: &IcalMergeAction<'_>) -> String {
+    match action {
+        IcalMergeAction::ComponentAdded { at } | IcalMergeAction::ComponentRemoved { at } => {
+            at.0.last()
+                .map(|step| step.key.to_string())
+                .unwrap_or_default()
+        }
+        IcalMergeAction::PropAdded { at, .. }
+        | IcalMergeAction::PropRemoved { at, .. }
+        | IcalMergeAction::ValueChanged { at, .. }
+        | IcalMergeAction::ValueItemAdded { at, .. }
+        | IcalMergeAction::ValueItemRemoved { at, .. }
+        | IcalMergeAction::ParamAdded { at, .. }
+        | IcalMergeAction::ParamRemoved { at, .. }
+        | IcalMergeAction::ParamChanged { at, .. } => at.name.to_string(),
+    }
+}
+
+/// Two properties each written differently on both sides are two reported
+/// collisions, not the one a caller who has only ever seen a single-property
+/// disagreement would expect.
+#[test]
+fn two_diverging_properties_are_reported_twice() {
+    let left = edited("SUMMARY:Weekly sync", "SUMMARY:Sprint sync")
+        .replace("LOCATION:Room A", "LOCATION:Room B");
+    let right = edited("SUMMARY:Weekly sync", "SUMMARY:Weekly standup")
+        .replace("LOCATION:Room A", "LOCATION:Room C");
+
+    let report = merge(BASE, &left, &right);
+
+    assert_eq!(report.left.len(), 2);
+    assert_eq!(report.right.len(), 2);
+    assert_eq!(
+        collided(&report),
+        ["SUMMARY", "LOCATION"],
+        "{:?}",
+        report.conflicts
+    );
+
+    // NOTE: the left side wins both, so the count is the only trace the merged
+    // calendar carries of the two values it did not keep.
+    assert_eq!(bytes(&report), left);
+}
+
+/// Three properties each written differently on both sides are three reported
+/// collisions, so the count follows the disagreement rather than saturating.
+#[test]
+fn three_diverging_properties_are_reported_three_times() {
+    let left = edited("SUMMARY:Weekly sync", "SUMMARY:Sprint sync")
+        .replace("LOCATION:Room A", "LOCATION:Room B")
+        .replace(
+            "ORGANIZER:mailto:chair@example.com",
+            "ORGANIZER:mailto:ada@example.com",
+        );
+    let right = edited("SUMMARY:Weekly sync", "SUMMARY:Weekly standup")
+        .replace("LOCATION:Room A", "LOCATION:Room C")
+        .replace(
+            "ORGANIZER:mailto:chair@example.com",
+            "ORGANIZER:mailto:bob@example.com",
+        );
+
+    let report = merge(BASE, &left, &right);
+
+    assert_eq!(
+        collided(&report),
+        ["SUMMARY", "LOCATION", "ORGANIZER"],
+        "{:?}",
+        report.conflicts,
+    );
+}
+
+/// Edits that merge are not counted, so the number reports the disagreement
+/// rather than the traffic.
+///
+/// Both sides wrote `SUMMARY` and `LOCATION` differently, and each also
+/// touched fields the other left alone. Only the two contested ones are
+/// reported, and every uncontested change lands.
+#[test]
+fn merged_edits_do_not_inflate_the_count() {
+    let alarm = "BEGIN:VALARM\r\nTRIGGER:-PT15M\r\nACTION:DISPLAY\r\nEND:VALARM\r\n";
+
+    let left = edited("SUMMARY:Weekly sync", "SUMMARY:Sprint sync")
+        .replace("LOCATION:Room A", "LOCATION:Room B")
+        .replace("DTSTAMP:20260101T000000Z", "DTSTAMP:20260102T000000Z");
+    let right = edited("SUMMARY:Weekly sync", "SUMMARY:Weekly standup")
+        .replace("LOCATION:Room A", "LOCATION:Room C")
+        .replace("PARTSTAT=NEEDS-ACTION", "PARTSTAT=ACCEPTED")
+        .replace("END:VEVENT", &format!("{alarm}END:VEVENT"));
+
+    let report = merge(BASE, &left, &right);
+    let merged = bytes(&report);
+
+    assert_eq!(
+        collided(&report),
+        ["SUMMARY", "LOCATION"],
+        "{:?}",
+        report.conflicts
+    );
+
+    assert!(merged.contains("SUMMARY:Sprint sync"));
+    assert!(merged.contains("LOCATION:Room B"));
+    assert!(merged.contains("DTSTAMP:20260102T000000Z"));
+    assert!(merged.contains("PARTSTAT=ACCEPTED"));
+    assert!(merged.contains("TRIGGER:-PT15M"));
+    assert_eq!(merged, reparsed(&merged));
+}
+
+/// A recurring event and the instance it overrides: one calendar object made
+/// of two components, which a merge has to reconcile together.
+const SERIES: &str = "BEGIN:VCALENDAR\r\n\
+     VERSION:2.0\r\n\
+     PRODID:-//Example//EN\r\n\
+     BEGIN:VEVENT\r\n\
+     UID:series@example.com\r\n\
+     DTSTAMP:20260101T000000Z\r\n\
+     DTSTART:20260105T090000Z\r\n\
+     RRULE:FREQ=WEEKLY\r\n\
+     SUMMARY:Standup\r\n\
+     LOCATION:Room A\r\n\
+     END:VEVENT\r\n\
+     BEGIN:VEVENT\r\n\
+     UID:series@example.com\r\n\
+     RECURRENCE-ID:20260112T090000Z\r\n\
+     DTSTAMP:20260101T000000Z\r\n\
+     DTSTART:20260112T100000Z\r\n\
+     SUMMARY:Standup\r\n\
+     LOCATION:Room B\r\n\
+     END:VEVENT\r\n\
+     END:VCALENDAR\r\n";
+
+/// The number of components of one name the calendar holds.
+fn components(merged: &str, name: &str) -> usize {
+    merged.matches(&format!("BEGIN:{name}\r\n")).count()
+}
+
+/// A master edited on one side and an override edited on the other are one
+/// object edited in two places, so both land and neither component is dropped.
+#[test]
+fn merges_a_master_edit_with_an_override_edit() {
+    let left = SERIES.replace("LOCATION:Room A", "LOCATION:Room C");
+    let right = SERIES.replace("LOCATION:Room B", "LOCATION:Room D");
+
+    let report = merge(SERIES, &left, &right);
+    let merged = bytes(&report);
+
+    // NOTE: `LOCATION` says nothing about when the series happens, so the two
+    // edits are not even reported against one another (RFC 5545 3.8.5).
+    assert!(report.conflicts.is_empty(), "{:?}", report.conflicts);
+
+    assert!(merged.contains("LOCATION:Room C"));
+    assert!(merged.contains("LOCATION:Room D"));
+    assert!(merged.contains("RRULE:FREQ=WEEKLY"));
+    assert!(merged.contains("RECURRENCE-ID:20260112T090000Z"));
+    assert_eq!(components(&merged, "VEVENT"), 2);
+}
+
+/// One field of one override written differently on both sides is one
+/// collision, reported once and not once per component of the object.
+#[test]
+fn one_field_of_an_override_collides_once() {
+    let left = SERIES.replace("LOCATION:Room B", "LOCATION:Room C");
+    let right = SERIES.replace("LOCATION:Room B", "LOCATION:Room D");
+
+    let report = merge(SERIES, &left, &right);
+    let merged = bytes(&report);
+
+    assert_eq!(collided(&report), ["LOCATION"], "{:?}", report.conflicts);
+    assert!(matches!(
+        report.conflicts[0].left,
+        IcalMergeReason::Divergent(_),
+    ));
+
+    // NOTE: the master carries a `LOCATION` too, and nobody touched it.
+    assert!(merged.contains("LOCATION:Room A"));
+    assert!(merged.contains("LOCATION:Room C"));
+    assert_eq!(components(&merged, "VEVENT"), 2);
+}
+
+/// An override added on one side survives a master edited on the other, and
+/// the object comes out holding all three components.
+#[test]
+fn merges_an_added_override_with_a_master_edit() {
+    let added = "BEGIN:VEVENT\r\n\
+         UID:series@example.com\r\n\
+         RECURRENCE-ID:20260119T090000Z\r\n\
+         DTSTAMP:20260101T000000Z\r\n\
+         DTSTART:20260119T110000Z\r\n\
+         SUMMARY:Standup\r\n\
+         LOCATION:Room E\r\n\
+         END:VEVENT\r\n";
+
+    let left = SERIES.replace("LOCATION:Room A", "LOCATION:Room C");
+    let right = SERIES.replace("END:VCALENDAR", &format!("{added}END:VCALENDAR"));
+
+    let report = merge(SERIES, &left, &right);
+    let merged = bytes(&report);
+
+    assert!(report.conflicts.is_empty(), "{:?}", report.conflicts);
+
+    assert!(merged.contains("LOCATION:Room C"));
+    assert!(merged.contains("RECURRENCE-ID:20260119T090000Z"));
+    assert!(merged.contains("LOCATION:Room E"));
+    assert_eq!(components(&merged, "VEVENT"), 3);
+    assert_eq!(merged, reparsed(&merged));
+}
+
+/// The master component of [`SERIES`], for the cases that delete it whole.
+const MASTER: &str = "BEGIN:VEVENT\r\n\
+     UID:series@example.com\r\n\
+     DTSTAMP:20260101T000000Z\r\n\
+     DTSTART:20260105T090000Z\r\n\
+     RRULE:FREQ=WEEKLY\r\n\
+     SUMMARY:Standup\r\n\
+     LOCATION:Room A\r\n\
+     END:VEVENT\r\n";
+
+/// The overriding occurrence of [`SERIES`], for the cases that delete it
+/// whole.
+const OVERRIDE: &str = "BEGIN:VEVENT\r\n\
+     UID:series@example.com\r\n\
+     RECURRENCE-ID:20260112T090000Z\r\n\
+     DTSTAMP:20260101T000000Z\r\n\
+     DTSTART:20260112T100000Z\r\n\
+     SUMMARY:Standup\r\n\
+     LOCATION:Room B\r\n\
+     END:VEVENT\r\n";
+
+/// An override deleted on one side and edited on the other keeps the edited
+/// occurrence, whichever side deleted it, and is reported once either way.
+///
+/// The rule that an update beats a removal is stated about the removal, not
+/// about the granularity it happened at: a whole occurrence taken away is
+/// exactly what the other side's edit was written against, so the component
+/// comes back carrying that edit rather than the outcome following which of
+/// the two sides happens to be `ours`.
+#[test]
+fn an_edited_override_outlives_a_deletion_from_either_side() {
+    let deleted = SERIES.replace(OVERRIDE, "");
+    let edited = SERIES.replace("LOCATION:Room B", "LOCATION:Room D");
+
+    assert_eq!(components(&deleted, "VEVENT"), 1);
+
+    // NOTE: the left side deleted, so the occurrence comes back as the right
+    // side wrote it rather than the edit landing nowhere.
+    let left_deleted = merge(SERIES, &deleted, &edited);
+    let merged = bytes(&left_deleted);
+
+    assert_eq!(
+        left_deleted.conflicts.len(),
+        1,
+        "{:?}",
+        left_deleted.conflicts,
+    );
+    assert!(matches!(
+        left_deleted.conflicts[0].left,
+        IcalMergeReason::Divergent(IcalMergeAction::ComponentRemoved { .. }),
+    ));
+    assert_eq!(components(&merged, "VEVENT"), 2);
+    assert!(merged.contains("LOCATION:Room D"), "got: {merged}");
+    assert!(
+        merged.contains("RECURRENCE-ID:20260112T090000Z"),
+        "{merged}"
+    );
+    assert_eq!(merged, reparsed(&merged));
+
+    // NOTE: the left side edited, so the deletion is refused, and the two
+    // sides come out holding the same occurrence.
+    let right_deleted = merge(SERIES, &edited, &deleted);
+    let merged = bytes(&right_deleted);
+
+    assert_eq!(
+        right_deleted.conflicts.len(),
+        1,
+        "{:?}",
+        right_deleted.conflicts,
+    );
+    assert!(matches!(
+        right_deleted.conflicts[0].right,
+        IcalMergeAction::ComponentRemoved { .. },
+    ));
+    assert_eq!(components(&merged, "VEVENT"), 2);
+    assert!(merged.contains("LOCATION:Room D"), "got: {merged}");
+}
+
+/// An occurrence one side deleted and the other left alone goes away, from
+/// either side, with nothing to report.
+///
+/// A component comes back for the sake of an edit that would otherwise land
+/// nowhere. An untouched occurrence has no such edit, so the deletion is a
+/// change one side alone made and it simply applies.
+#[test]
+fn a_deleted_override_nobody_edited_goes_away() {
+    let deleted = SERIES.replace(OVERRIDE, "");
+
+    let left_deleted = merge(SERIES, &deleted, SERIES);
+    let merged = bytes(&left_deleted);
+
+    assert!(
+        left_deleted.conflicts.is_empty(),
+        "{:?}",
+        left_deleted.conflicts
+    );
+    assert_eq!(components(&merged, "VEVENT"), 1);
+    assert!(!merged.contains("RECURRENCE-ID"), "got: {merged}");
+
+    let right_deleted = merge(SERIES, SERIES, &deleted);
+    let merged = bytes(&right_deleted);
+
+    assert!(
+        right_deleted.conflicts.is_empty(),
+        "{:?}",
+        right_deleted.conflicts
+    );
+    assert_eq!(components(&merged, "VEVENT"), 1);
+    assert!(!merged.contains("RECURRENCE-ID"), "got: {merged}");
+}
+
+/// An occurrence both sides deleted stays gone: they agreed, and agreement is
+/// not a collision.
+#[test]
+fn an_override_both_sides_deleted_stays_gone() {
+    let deleted = SERIES.replace(OVERRIDE, "");
+
+    let report = merge(SERIES, &deleted, &deleted);
+    let merged = bytes(&report);
+
+    assert!(report.conflicts.is_empty(), "{:?}", report.conflicts);
+    assert_eq!(components(&merged, "VEVENT"), 1);
+    assert_eq!(merged, deleted);
+}
+
+/// A master deleted on one side and an override edited on the other are two
+/// components, so the deletion applies and the edit applies with it.
+///
+/// Nothing was removed out from under the edit: the occurrence it lands on is
+/// still there. What is said out loud is that the series the occurrence hangs
+/// off is gone, which is a recurrence conflict rather than a divergence.
+#[test]
+fn a_deleted_master_leaves_the_edited_override_standing() {
+    let deleted = SERIES.replace(MASTER, "");
+    let edited = SERIES.replace("LOCATION:Room B", "LOCATION:Room D");
+
+    for (left, right) in [(&deleted, &edited), (&edited, &deleted)] {
+        let report = merge(SERIES, left, right);
+        let merged = bytes(&report);
+
+        assert_eq!(report.conflicts.len(), 1, "{:?}", report.conflicts);
+        assert!(matches!(
+            report.conflicts[0].left,
+            IcalMergeReason::Recurrence(_),
+        ));
+        assert_eq!(components(&merged, "VEVENT"), 1);
+        assert!(!merged.contains("RRULE:FREQ=WEEKLY"), "got: {merged}");
+        assert!(merged.contains("LOCATION:Room D"), "got: {merged}");
+    }
+}
+
+/// An event holding a reminder, so an edit can sit one component below the one
+/// the other side deletes.
+const REMINDED: &str = "BEGIN:VCALENDAR\r\n\
+     VERSION:2.0\r\n\
+     BEGIN:VEVENT\r\n\
+     UID:event-1@example.com\r\n\
+     DTSTAMP:20260101T000000Z\r\n\
+     SUMMARY:Weekly sync\r\n\
+     BEGIN:VALARM\r\n\
+     ACTION:DISPLAY\r\n\
+     TRIGGER:-PT10M\r\n\
+     END:VALARM\r\n\
+     END:VEVENT\r\n\
+     END:VCALENDAR\r\n";
+
+/// An edit nested under a deleted component brings back the deleted component,
+/// not only the one holding the edited line.
+#[test]
+fn an_edit_under_a_deleted_component_brings_the_whole_component_back() {
+    let deleted = REMINDED.replace(
+        "BEGIN:VEVENT\r\n\
+         UID:event-1@example.com\r\n\
+         DTSTAMP:20260101T000000Z\r\n\
+         SUMMARY:Weekly sync\r\n\
+         BEGIN:VALARM\r\n\
+         ACTION:DISPLAY\r\n\
+         TRIGGER:-PT10M\r\n\
+         END:VALARM\r\n\
+         END:VEVENT\r\n",
+        "",
+    );
+    let edited = REMINDED.replace("TRIGGER:-PT10M", "TRIGGER:-PT20M");
+
+    assert!(!deleted.contains("VEVENT"), "got: {deleted}");
+
+    for (left, right) in [(&deleted, &edited), (&edited, &deleted)] {
+        let report = merge(REMINDED, left, right);
+        let merged = bytes(&report);
+
+        assert_eq!(report.conflicts.len(), 1, "{:?}", report.conflicts);
+        assert_eq!(components(&merged, "VEVENT"), 1);
+        assert_eq!(components(&merged, "VALARM"), 1);
+        assert!(merged.contains("SUMMARY:Weekly sync"), "got: {merged}");
+        assert!(merged.contains("TRIGGER:-PT20M"), "got: {merged}");
+        assert_eq!(merged, reparsed(&merged));
+    }
+}
+
+/// The count is the right side's blocked actions, not the properties they
+/// contest: one property the left side removed and the right side both retyped
+/// and relabelled is reported twice.
+///
+/// vcard-rs collapses the same shape to one report, so a caller showing the
+/// number to a person cannot read it as a count of contested fields across
+/// both libraries.
+#[test]
+fn a_removed_property_is_reported_once_per_edit_of_it() {
+    let removed = BASE.replace("LOCATION:Room A\r\n", "");
+    let touched = edited("LOCATION:Room A", "LOCATION;LANGUAGE=en:Room B");
+
+    let report = merge(BASE, &removed, &touched);
+    let merged = bytes(&report);
+
+    assert_eq!(report.right.len(), 2);
+    assert_eq!(
+        collided(&report),
+        ["LOCATION", "LOCATION"],
+        "{:?}",
+        report.conflicts
+    );
+
+    // NOTE: the property itself comes back once, the right side's own line,
+    // which is what makes the two reports two views of one restoration.
+    assert_eq!(merged.matches("LOCATION").count(), 1, "got: {merged}");
+    assert!(
+        merged.contains("LOCATION;LANGUAGE=en:Room B"),
+        "got: {merged}"
+    );
+}

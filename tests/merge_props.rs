@@ -407,6 +407,10 @@ mod model {
     /// The fields the report names as contested, that is the ones a divergence
     /// was reported about.
     ///
+    /// Both halves of the pair count. Either side's action may be the one that
+    /// did not land, and where a component removal met an edit inside it, the
+    /// removal is the loser and the left half is where the report names it.
+    ///
     /// A recurrence conflict is deliberately not counted: it refuses nothing,
     /// so it can never be the reason a change failed to land.
     pub fn contested(
@@ -416,13 +420,11 @@ mod model {
         let mut out = BTreeSet::new();
 
         for conflict in &report.conflicts {
-            if matches!(
-                conflict.left,
-                ical::tree::merge::IcalMergeReason::Recurrence(_)
-            ) {
+            let ical::tree::merge::IcalMergeReason::Divergent(left) = &conflict.left else {
                 continue;
-            }
+            };
 
+            out.extend(fields_of(left, universe));
             out.extend(fields_of(&conflict.right, universe));
         }
 

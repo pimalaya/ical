@@ -16,6 +16,14 @@
 //! An addition is the exception, since it names a property the base did not
 //! hold: it carries the position it holds in the side that added it, and never
 //! meets an action addressed in the base.
+//!
+//! What the baseline side took away out from under an act that writes
+//! something comes back rather than the act landing nowhere, at both
+//! granularities: the line alone where a property was removed, the whole
+//! component where the component holding it was. That is what [`Restored`]
+//! holds.
+
+use core::iter;
 
 use alloc::{
     borrow::Cow,
@@ -103,6 +111,38 @@ impl<'a> Shift<'a> {
     }
 }
 
+/// What the replay has already put back, so nothing comes back twice.
+///
+/// A restored line and a restored component are the right side's own, bytes
+/// and all, so every action that side took on them is already in them: they
+/// come back once, whole, and the actions naming them are then let go rather
+/// than written a second time.
+#[derive(Default)]
+pub(super) struct Restored<'a> {
+    components: Vec<IcalComponentPath<'a>>,
+    lines: Vec<(IcalComponentPath<'a>, String, usize)>,
+}
+
+impl<'a> Restored<'a> {
+    /// Whether a component already put back holds this path.
+    fn holds(&self, at: &IcalComponentPath<'a>) -> bool {
+        self.components.iter().any(|held| at.0.starts_with(&held.0))
+    }
+
+    /// Take a line as put back, answering whether it is the first to claim it.
+    fn claims(&mut self, at: &IcalPropPath<'a>) -> bool {
+        let key = (at.component.clone(), at.name.to_ascii_uppercase(), at.index);
+
+        if self.lines.contains(&key) {
+            return false;
+        }
+
+        self.lines.push(key);
+
+        true
+    }
+}
+
 impl<'a> IcalMerge<'_, 'a> {
     /// Replay one right-side action onto the merged calendar.
     pub(super) fn apply(
@@ -110,8 +150,34 @@ impl<'a> IcalMerge<'_, 'a> {
         merged: &mut IcalCst<'a>,
         op: &Op<'a>,
         shift: &Shift<'_>,
-        restored: &mut Vec<(IcalComponentPath<'a>, String, usize)>,
+        restored: &mut Restored<'a>,
     ) {
+        let host = match &op.action {
+            IcalMergeAction::ComponentAdded { at } | IcalMergeAction::ComponentRemoved { at } => {
+                at.parent()
+            }
+            _ => op.path().clone(),
+        };
+
+        // NOTE: a component put back is the right side's own, so this action
+        // is already in it and replaying it would write it twice.
+        if restored.holds(&host) {
+            return;
+        }
+
+        if merged.at(&host).is_none() {
+            // NOTE: the component is gone because the baseline side removed it
+            // while the right side worked inside it. An act that writes
+            // something brings it back, since keeping data beats losing it
+            // silently; an act that only takes something away has nothing to
+            // bring.
+            if !op.action.is_removal() {
+                self.restore(merged, &host, restored);
+            }
+
+            return;
+        }
+
         match &op.action {
             IcalMergeAction::ComponentAdded { at } => {
                 let Some(source) = self.right.at(at).cloned() else {
@@ -136,13 +202,44 @@ impl<'a> IcalMerge<'_, 'a> {
         }
     }
 
+    /// Put back the highest component the baseline side removed out from under
+    /// the right side's own act.
+    ///
+    /// It comes back as the right side wrote it, whole: the act that brought
+    /// it back is in it, and so is every other act that side made inside it,
+    /// which is why those are let go rather than replayed onto it.
+    fn restore(
+        &self,
+        merged: &mut IcalCst<'a>,
+        at: &IcalComponentPath<'a>,
+        restored: &mut Restored<'a>,
+    ) {
+        let gone = at
+            .ancestors()
+            .chain(iter::once(at.clone()))
+            .find(|path| merged.at(path).is_none());
+
+        let Some(gone) = gone else {
+            return;
+        };
+        let Some(source) = self.right.at(&gone).cloned() else {
+            return;
+        };
+        let Some(target) = merged.at_mut(&gone.parent()) else {
+            return;
+        };
+
+        target.items.push(IcalItem::Component(Box::new(source)));
+        restored.components.push(gone);
+    }
+
     /// Replay a property-level action onto the line it lands on.
     fn apply_to_line(
         &self,
         merged: &mut IcalCst<'a>,
         op: &Op<'a>,
         shift: &Shift<'_>,
-        restored: &mut Vec<(IcalComponentPath<'a>, String, usize)>,
+        restored: &mut Restored<'a>,
     ) {
         let action = &op.action;
 
@@ -190,10 +287,7 @@ impl<'a> IcalMerge<'_, 'a> {
         // already in it, and pushing again would leave one copy per action.
         let Some(line) = target.and_then(|ordinal| component.nth_line_mut(&at.name, ordinal))
         else {
-            let key = (at.component.clone(), at.name.to_ascii_uppercase(), at.index);
-
-            if !restored.contains(&key) {
-                restored.push(key);
+            if restored.claims(at) {
                 component.items.push(IcalItem::Prop(source));
             }
 

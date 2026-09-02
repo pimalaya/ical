@@ -73,7 +73,7 @@ use crate::{
         merge::{
             diff::Diff,
             op::{Op, Slot},
-            replay::Shift,
+            replay::{Restored, Shift},
         },
     },
     value::IcalValue,
@@ -138,7 +138,7 @@ impl<'a> IcalMerge<'_, 'a> {
         applicable.sort_by_key(|op| op.replay_order());
 
         let shift = Shift::of(&left_ops);
-        let mut restored = Vec::new();
+        let mut restored = Restored::default();
 
         for op in applicable {
             self.apply(&mut merged, op, &shift, &mut restored);

@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Fixed a component removed on one side and edited on the other being settled by whichever side the merge was given as the left one.
+
+  The rule that an update beats a removal, whichever side it came from, was built for a property alone: a component the baseline side removed was never put back, so the other side's edit of it was reported as blocked and then landed nowhere. An overriding occurrence deleted on one side and edited on the other now survives carrying that edit, whichever side deleted it, and the divergence is still reported. A component only one side removed, or one both sides removed, still goes: only an act that writes something brings a component back.
+
 ## [0.5.0] - 2026-08-31
 
 ### Changed
