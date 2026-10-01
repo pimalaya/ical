@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-10-01
+
 ### Added
 
 - Added `IcalCst::push_raw`, appending raw logical lines kept byte for byte, as `VcardCst::push_raw` does for vCard.
@@ -266,7 +268,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Added 190 real-world fixtures from the libical, ical4j and ical.js suites, swept for round-trip fidelity and cross-checked against calcard.
 
-[unreleased]: https://github.com/pimalaya/ical/compare/v0.5.2..HEAD
+[unreleased]: https://github.com/pimalaya/ical/compare/v0.5.3..HEAD
+[0.5.3]: https://github.com/pimalaya/ical/compare/v0.5.2..v0.5.3
 [0.5.2]: https://github.com/pimalaya/ical/compare/v0.5.1..v0.5.2
 [0.5.1]: https://github.com/pimalaya/ical/compare/v0.5.0..v0.5.1
 [0.5.0]: https://github.com/pimalaya/ical/compare/v0.4.0..v0.5.0
