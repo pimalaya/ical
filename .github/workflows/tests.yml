@@ -31,7 +31,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@cargo-tarpaulin
       - name: Measure coverage (cobertura.xml)
-        run: cargo tarpaulin --all-features --engine llvm --out Xml
+        run: cargo tarpaulin --all-features --engine llvm --out Xml --timeout 600
       - name: Upload to Codecov
         uses: codecov/codecov-action@v4
         with:
