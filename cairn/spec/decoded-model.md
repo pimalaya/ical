@@ -178,7 +178,7 @@ Both types SHALL keep their raw text as the value, so byte-faithful round-trippi
 
 ### Requirement: Building a calendar from another representation
 
-A projection synthesizing a calendar from a JSON event SHALL find its building blocks here rather than defining its own. `IcalCst::empty` SHALL build a component carrying only its BEGIN/END envelope, and `IcalProp::text` SHALL build a text property for a known kind or an `X-` name, its value escaped when the calendar is serialized, the way `VcardProp::text` does for vCard.
+A projection synthesizing a calendar from a JSON event SHALL find its building blocks here rather than defining its own. `IcalCst::empty` SHALL build a component carrying only its BEGIN/END envelope, `IcalCst::push_raw` SHALL append raw logical lines kept byte for byte, failing without touching the component on one that does not tokenise, and `IcalProp::text` SHALL build a text property for a known kind or an `X-` name, its value escaped when the calendar is serialized, the way `VcardProp::text` does for vCard.
 
 #### Scenario: A minted event
 - GIVEN an empty `VEVENT` holding a SUMMARY with a comma and a semicolon, and an `X-` text property, pushed into a 2.0 calendar

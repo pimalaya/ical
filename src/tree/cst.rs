@@ -423,6 +423,29 @@ impl<'a> IcalCst<'a> {
         self.version_str().parse().unwrap_or(IcalVersion::V2_0)
     }
 
+    /// Append raw logical lines, without their line ending, kept byte for
+    /// byte: lines a projection stashed verbatim and restores as they were.
+    ///
+    /// Fails on a line that does not tokenise, leaving the component
+    /// unchanged. A stashed subcomponent comes back as its lines, which
+    /// serialize the same.
+    pub fn push_raw(&mut self, line: &str) -> Result<&mut Self, IcalParseError> {
+        let mut bytes = String::with_capacity(line.len() + 2);
+        bytes.push_str(line);
+        bytes.push_str("\r\n");
+
+        let mut lines = Vec::new();
+        let mut rest = bytes.as_bytes();
+        while !rest.is_empty() {
+            let (line, tail) = IcalLine::take(rest)?;
+            lines.push(IcalItem::Prop(line.into_static()));
+            rest = tail;
+        }
+
+        self.items.extend(lines);
+        Ok(self)
+    }
+
     /// Append a typed property to this component, encoding it into a line.
     pub fn push(&mut self, prop: IcalProp<'a>) -> &mut Self {
         let escaper = Escaper::for_version_str(&self.version_str());
@@ -824,6 +847,17 @@ mod tests {
                 "SUMMARY:Dinner\r\n",
                 "END:VEVENT\r\nEND:VCALENDAR\r\n",
             )
+        );
+    }
+
+    #[test]
+    fn push_raw_keeps_a_stashed_line_verbatim() {
+        let mut vevent = IcalCst::empty("VEVENT");
+        vevent.push_raw("X-STASHED;X-P=a:kept\\, as is").unwrap();
+
+        assert_eq!(
+            String::from_utf8(vevent.to_bytes()).unwrap(),
+            "BEGIN:VEVENT\r\nX-STASHED;X-P=a:kept\\, as is\r\nEND:VEVENT\r\n",
         );
     }
 

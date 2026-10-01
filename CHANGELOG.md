@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Added `IcalCst::push_raw`, appending raw logical lines kept byte for byte, as `VcardCst::push_raw` does for vCard.
+
+- Added the `tzdb` feature, off by default: `tzdb::vtimezone` synthesizes the VTIMEZONE an IANA zone name stands for from the bundled time zone database, and `tzdb::is_known` tells whether a name can be. It moved here from io-gcal, so every JSON-to-iCalendar projection shares one implementation.
+
 ## [0.5.2] - 2026-10-01
 
 ### Added

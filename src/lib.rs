@@ -205,3 +205,7 @@ pub mod jscalendar;
 
 #[cfg(feature = "parser")]
 pub mod tree;
+
+#[cfg(feature = "tzdb")]
+#[cfg_attr(docsrs, doc(cfg(feature = "tzdb")))]
+pub mod tzdb;

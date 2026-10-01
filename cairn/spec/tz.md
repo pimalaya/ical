@@ -46,3 +46,12 @@ A local time a spring-forward skips SHALL be reported as skipped, and a local ti
 - GIVEN a resolution that is one offset, a gap, and a fold
 - WHEN each is asked for the instant its local time names
 - THEN the offset is subtracted, the gap names none, and the fold takes its earlier offset
+
+### Requirement: A VTIMEZONE can be synthesized from the database, opt-in
+
+Behind the `tzdb` feature, and only there, `tzdb::vtimezone` SHALL build the VTIMEZONE an IANA name stands for from the bundled time zone database, describing the era an anchor instant falls in, and `tzdb::is_known` SHALL tell whether a name can be rebuilt so. A calendar synthesized from a representation that names a zone and stops there owes that component (RFC 5545 3.2.19). The database SHALL stay out of every other feature: offset resolution keeps needing no database and no dependency.
+
+#### Scenario: A zone settled for decades
+- GIVEN `Asia/Hong_Kong` and an anchor in 2026
+- WHEN its VTIMEZONE is synthesized
+- THEN it carries a single standard observance and no summer time

@@ -27,6 +27,7 @@ jscalendar = ["jcal"]
 quoted-printable = ["dep:quoted_printable"]
 base64 = ["dep:base64"]
 encoding = ["dep:encoding_rs"]
+tzdb = ["parser", "dep:jiff"]
 
 [[bench]]
 name = "parse"
@@ -114,6 +115,7 @@ proptest = { version = "1", default-features = false, features = ["std"] }
 [dependencies]
 base64 = { version = "0.23", default-features = false, features = ["alloc"], optional = true }
 encoding_rs = { version = "0.8", default-features = false, features = ["alloc"], optional = true }
+jiff = { version = "0.2.33", default-features = false, features = ["alloc", "tzdb-bundle-always"], optional = true }
 memchr = { version = "2", default-features = false, optional = true }
 quoted_printable = { version = "0.5", default-features = false, optional = true }
 serde_json = { version = "1", default-features = false, features = ["alloc"], optional = true }
