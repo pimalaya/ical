@@ -104,7 +104,7 @@ use alloc::{
 
 use crate::{
     param::IcalParam,
-    value::{IcalValue, owned},
+    value::{IcalValue, owned, text::IcalText},
 };
 
 /// Parse iCalendar property kind error.
@@ -192,6 +192,25 @@ impl IcalPropName<'_> {
         match self {
             Self::Kind(kind) => IcalPropName::Kind(kind),
             Self::Unknown(name) => IcalPropName::Unknown(owned(name)),
+        }
+    }
+}
+
+impl<'a> IcalProp<'a> {
+    /// A text property: a known kind or an `X-` name, its parameters and its
+    /// raw value, escaped when the calendar is serialized.
+    ///
+    /// The shape a projection mints when it synthesizes a calendar from
+    /// another representation.
+    pub fn text(
+        name: impl Into<IcalPropName<'a>>,
+        params: Vec<IcalParam<'a>>,
+        value: impl Into<Cow<'a, str>>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            params,
+            value: IcalValue::Text(IcalText(value.into())),
         }
     }
 }

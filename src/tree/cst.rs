@@ -108,6 +108,18 @@ impl<'a> IcalCst<'a> {
         }
     }
 
+    /// An empty component, `VEVENT` or `VTIMEZONE` say, its BEGIN/END envelope
+    /// seeded, ready for properties and subcomponents.
+    pub fn empty(name: impl Into<Cow<'a, str>>) -> Self {
+        let name = name.into();
+        Self {
+            begin: Some(IcalLine::text("BEGIN", name.clone())),
+            items: Vec::new(),
+            end: Some(IcalLine::text("END", name)),
+            trailing: Cow::Borrowed(""),
+        }
+    }
+
     /// Parse the first calendar from raw text, borrowed for the Cst lifetime.
     ///
     /// A bare, envelope-less record (every line a property) is also accepted,
@@ -812,6 +824,27 @@ mod tests {
                 "SUMMARY:Dinner\r\n",
                 "END:VEVENT\r\nEND:VCALENDAR\r\n",
             )
+        );
+    }
+
+    #[test]
+    fn an_empty_component_takes_minted_text_props_escaped() {
+        use alloc::vec;
+
+        use crate::prop::{IcalProp, IcalPropKind};
+
+        let mut vevent = IcalCst::empty("VEVENT");
+        vevent.push(IcalProp::text(IcalPropKind::Summary, vec![], "a, b; c"));
+        vevent.push(IcalProp::text("X-VENDOR-LINK", vec![], "https://x.org"));
+
+        let mut calendar = IcalCst::v2();
+        calendar.push_component(vevent);
+
+        assert_eq!(
+            String::from_utf8(calendar.to_bytes()).unwrap(),
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\n\
+             SUMMARY:a\\, b\\; c\r\nX-VENDOR-LINK:https://x.org\r\n\
+             END:VEVENT\r\nEND:VCALENDAR\r\n",
         );
     }
 }

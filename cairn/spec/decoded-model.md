@@ -175,3 +175,12 @@ Both types SHALL keep their raw text as the value, so byte-faithful round-trippi
 - GIVEN a number of seconds
 - WHEN it is written as a duration and read back
 - THEN the number returned is the number written
+
+### Requirement: Building a calendar from another representation
+
+A projection synthesizing a calendar from a JSON event SHALL find its building blocks here rather than defining its own. `IcalCst::empty` SHALL build a component carrying only its BEGIN/END envelope, and `IcalProp::text` SHALL build a text property for a known kind or an `X-` name, its value escaped when the calendar is serialized, the way `VcardProp::text` does for vCard.
+
+#### Scenario: A minted event
+- GIVEN an empty `VEVENT` holding a SUMMARY with a comma and a semicolon, and an `X-` text property, pushed into a 2.0 calendar
+- WHEN the calendar is serialized
+- THEN the SUMMARY value is escaped per RFC 5545 3.3.11 and both lines sit between the event's BEGIN and END

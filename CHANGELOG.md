@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Added `IcalCst::empty` and `IcalProp::text`, what a projection needs to build a calendar from a JSON event: an empty component and a text property for a known kind or an `X-` name.
+
 ## [0.5.1] - 2026-09-02
 
 ### Fixed
