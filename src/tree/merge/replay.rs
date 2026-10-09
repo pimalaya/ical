@@ -258,7 +258,7 @@ impl<'a> IcalMerge<'_, 'a> {
                 return;
             };
 
-            component.items.push(IcalItem::Prop(source));
+            component.push_line(source);
 
             return;
         }
@@ -288,7 +288,7 @@ impl<'a> IcalMerge<'_, 'a> {
         let Some(line) = target.and_then(|ordinal| component.nth_line_mut(&at.name, ordinal))
         else {
             if restored.claims(at) {
-                component.items.push(IcalItem::Prop(source));
+                component.push_line(source);
             }
 
             return;

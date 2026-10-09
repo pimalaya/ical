@@ -77,13 +77,6 @@ impl IcalValueNode<'_> {
             _ => false,
         }
     }
-
-    /// The serialized bytes of the node, for comparing across escaping modes.
-    pub(super) fn raw_bytes(&self) -> Vec<u8> {
-        let mut out = Vec::new();
-        self.write_bytes(&mut out);
-        out
-    }
 }
 
 impl IcalParamNode<'_> {

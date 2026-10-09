@@ -108,8 +108,10 @@
 //! `RECURRENCE-ID` overrides included.
 //!
 //! Both are lazy, and both are civil: RFC 5545 expands on the local
-//! wall-clock time of `DTSTART`, so no offset is ever needed and none is ever
-//! resolved.
+//! wall-clock time of `DTSTART`, so expansion never needs an offset. A time
+//! written on another clock, a UTC `UNTIL` or an `EXDATE` under another
+//! `TZID`, is brought onto that one as the set is read, when the calendar's
+//! `VTIMEZONE`s are at hand.
 //!
 //! [`tz`] is the step after, turning a civil occurrence into a UTC
 //! offset from the `VTIMEZONE` the calendar carries, and reporting the

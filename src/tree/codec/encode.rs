@@ -194,9 +194,10 @@ pub(crate) fn scalar_node(value: &str, escaper: Escaper) -> IcalValueNode<'stati
 /// its `;` or `,` on the way out would rewrite the reference the value is, and
 /// a value that decoded whole would not survive its own round trip.
 ///
-/// A line break is the one exception, being the byte that would end the line
-/// the value sits on: it goes out percent-encoded, the only way RFC 3986
-/// section 2.1 lets a URI carry one.
+/// Two exceptions go out percent-encoded, the only way RFC 3986 section 2.1
+/// lets a URI carry either: a line break, which would end the line the value
+/// sits on, and a backslash, which a reader takes for the text escape a
+/// producer in the wild put there, so the value would not read back.
 pub(crate) fn verbatim_node(value: &[u8], escaper: Escaper) -> IcalValueNode<'static> {
     let mut bytes = Vec::with_capacity(value.len());
 
@@ -204,6 +205,7 @@ pub(crate) fn verbatim_node(value: &[u8], escaper: Escaper) -> IcalValueNode<'st
         match byte {
             b'\r' => bytes.extend_from_slice(b"%0D"),
             b'\n' => bytes.extend_from_slice(b"%0A"),
+            b'\\' => bytes.extend_from_slice(b"%5C"),
             _ => bytes.push(byte),
         }
     }
@@ -343,7 +345,13 @@ mod tests {
         let address = r"mailto:a,b;c\d@example.com";
         let node = IcalCalAddress(Cow::Borrowed(address)).encode(Escaper::Modern);
 
-        assert_eq!(node.to_string(), address);
+        // NOTE: The backslash alone is percent-encoded, so the address reads
+        // back as the same reference rather than losing it to the unescape.
+        assert_eq!(node.to_string(), "mailto:a,b;c%5Cd@example.com");
+        assert_eq!(
+            IcalCalAddress::decode(&node).0,
+            "mailto:a,b;c%5Cd@example.com"
+        );
     }
 
     #[test]

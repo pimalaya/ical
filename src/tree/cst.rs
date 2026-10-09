@@ -408,8 +408,13 @@ impl<'a> IcalCst<'a> {
         self.items
             .iter()
             .find_map(|item| match item {
+                // NOTE: RFC 5545 3.7.4 lets the value be `minver;maxver`, and
+                // the version read is the first.
                 IcalItem::Prop(line) if line.name.get().eq_ignore_ascii_case("VERSION") => {
-                    Some(line.raw_value_str())
+                    Some(match line.raw_value_str() {
+                        Cow::Borrowed(raw) => Cow::Borrowed(raw.split(';').next().unwrap_or(raw)),
+                        Cow::Owned(raw) => Cow::Owned(raw.split(';').next().unwrap_or("").into()),
+                    })
                 }
                 _ => None,
             })
@@ -423,12 +428,14 @@ impl<'a> IcalCst<'a> {
         self.version_str().parse().unwrap_or(IcalVersion::V2_0)
     }
 
-    /// Append raw logical lines, without their line ending, kept byte for
-    /// byte: lines a projection stashed verbatim and restores as they were.
+    /// Add raw logical lines, without their line ending, kept byte for byte:
+    /// lines a projection stashed verbatim and restores as they were.
     ///
     /// Fails on a line that does not tokenise, leaving the component
-    /// unchanged. A stashed subcomponent comes back as its lines, which
-    /// serialize the same.
+    /// unchanged. A property line goes where [`push_line`](Self::push_line)
+    /// puts one; a stashed subcomponent, from its `BEGIN` line to its `END`,
+    /// comes back as its lines after everything else, which serialize the
+    /// same.
     pub fn push_raw(&mut self, line: &str) -> Result<&mut Self, IcalParseError> {
         let mut bytes = String::with_capacity(line.len() + 2);
         bytes.push_str(line);
@@ -438,19 +445,63 @@ impl<'a> IcalCst<'a> {
         let mut rest = bytes.as_bytes();
         while !rest.is_empty() {
             let (line, tail) = IcalLine::take(rest)?;
-            lines.push(IcalItem::Prop(line.into_static()));
+            lines.push(line.into_static());
             rest = tail;
         }
 
-        self.items.extend(lines);
+        let mut at = self.prop_end();
+        let mut depth = 0_usize;
+
+        for line in lines {
+            let name = line.name.get();
+            let nested = depth > 0 || name.eq_ignore_ascii_case("BEGIN");
+
+            if name.eq_ignore_ascii_case("BEGIN") {
+                depth += 1;
+            } else if name.eq_ignore_ascii_case("END") {
+                depth = depth.saturating_sub(1);
+            }
+
+            if nested {
+                self.items.push(IcalItem::Prop(line));
+            } else {
+                self.items.insert(at, IcalItem::Prop(line));
+                at += 1;
+            }
+        }
+
         Ok(self)
     }
 
-    /// Append a typed property to this component, encoding it into a line.
+    /// Add a typed property to this component, encoding it into a line placed
+    /// as [`push_line`](Self::push_line) places one.
     pub fn push(&mut self, prop: IcalProp<'a>) -> &mut Self {
         let escaper = Escaper::for_version_str(&self.version_str());
-        self.items.push(IcalItem::Prop(prop.encode(escaper)));
+        self.push_line(prop.encode(escaper))
+    }
+
+    /// Add a property line after this component's properties and before its
+    /// first subcomponent, where RFC 5545 3.6 puts every property.
+    ///
+    /// Nothing else moves, so every parsed line keeps its bytes. A stashed
+    /// subcomponent kept as raw lines counts as one from its `BEGIN` line.
+    pub fn push_line(&mut self, line: IcalLine<'a>) -> &mut Self {
+        let at = self.prop_end();
+        self.items.insert(at, IcalItem::Prop(line));
         self
+    }
+
+    /// Where a property line goes: before the first subcomponent, a stashed
+    /// one included, or at the end when there is none.
+    fn prop_end(&self) -> usize {
+        self.items
+            .iter()
+            .position(|item| match item {
+                IcalItem::Component(_) => true,
+                IcalItem::Prop(line) => line.name.get().eq_ignore_ascii_case("BEGIN"),
+                IcalItem::Opaque(_) => false,
+            })
+            .unwrap_or(self.items.len())
     }
 
     /// Append a nested component to this one.
@@ -954,6 +1005,53 @@ mod tests {
             String::from_utf8(vevent.to_bytes()).unwrap(),
             format!(
                 "BEGIN:VEVENT\r\nDESCRIPTION;ENCODING=QUOTED-PRINTABLE:{value}\r\nEND:VEVENT\r\n"
+            ),
+        );
+    }
+
+    #[test]
+    fn pushes_a_property_before_the_subcomponents() {
+        use alloc::vec;
+
+        use crate::prop::{IcalProp, IcalPropKind};
+
+        // NOTE: RFC 5545 3.6 has a component's properties come before its
+        // subcomponents, so a property after END:VALARM is not a calendar.
+        let raw = concat!(
+            "BEGIN:VEVENT\r\n",
+            "UID:1\r\n",
+            "\r\n",
+            "BEGIN:VALARM\r\n",
+            "ACTION:DISPLAY\r\n",
+            "END:VALARM\r\n",
+            "END:VEVENT\r\n",
+        );
+
+        let mut vevent = IcalCst::parse(raw).unwrap();
+        vevent.push(IcalProp::text(IcalPropKind::Summary, vec![], "Lunch"));
+        vevent
+            .push_raw("X-STASHED:kept\r\nBEGIN:X-PART\r\nX-IN:1\r\nEND:X-PART")
+            .unwrap();
+        vevent.push(IcalProp::text(IcalPropKind::Comment, vec![], "Late"));
+
+        // NOTE: Every parsed line, the blank one before the alarm included,
+        // keeps its bytes; the stashed subcomponent goes after the real one.
+        assert_eq!(
+            String::from_utf8(vevent.to_bytes()).unwrap(),
+            concat!(
+                "BEGIN:VEVENT\r\n",
+                "UID:1\r\n",
+                "SUMMARY:Lunch\r\n",
+                "X-STASHED:kept\r\n",
+                "COMMENT:Late\r\n",
+                "\r\n",
+                "BEGIN:VALARM\r\n",
+                "ACTION:DISPLAY\r\n",
+                "END:VALARM\r\n",
+                "BEGIN:X-PART\r\n",
+                "X-IN:1\r\n",
+                "END:X-PART\r\n",
+                "END:VEVENT\r\n",
             ),
         );
     }

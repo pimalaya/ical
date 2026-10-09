@@ -9,8 +9,12 @@
 #![cfg(feature = "parser")]
 
 use ical::{
-    recur::{IcalRecurDateTime, set::IcalRecurSet},
+    recur::{
+        IcalRecurDateTime,
+        set::{IcalRecurOverride, IcalRecurSet, IcalRecurZone},
+    },
     tree::cst::IcalCst,
+    tz::IcalTz,
 };
 
 /// The recurrence set of a calendar's first component. The set owns its parts,
@@ -266,5 +270,126 @@ fn a_todo_expands_the_same_way() {
     assert_eq!(
         starts(&set, 5),
         ["20260105T090000", "20260205T090000", "20260305T090000"]
+    );
+}
+
+/// Europe/Paris and America/New_York as a calendar carries them, the summer
+/// of 2026 inside daylight time in both.
+const ZONES: &str = concat!(
+    "BEGIN:VTIMEZONE\r\nTZID:Europe/Paris\r\n",
+    "BEGIN:DAYLIGHT\r\nDTSTART:19810329T020000\r\n",
+    "RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU\r\n",
+    "TZOFFSETFROM:+0100\r\nTZOFFSETTO:+0200\r\nEND:DAYLIGHT\r\n",
+    "BEGIN:STANDARD\r\nDTSTART:19961027T030000\r\n",
+    "RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU\r\n",
+    "TZOFFSETFROM:+0200\r\nTZOFFSETTO:+0100\r\nEND:STANDARD\r\n",
+    "END:VTIMEZONE\r\n",
+    "BEGIN:VTIMEZONE\r\nTZID:America/New_York\r\n",
+    "BEGIN:DAYLIGHT\r\nDTSTART:20070311T020000\r\n",
+    "RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU\r\n",
+    "TZOFFSETFROM:-0500\r\nTZOFFSETTO:-0400\r\nEND:DAYLIGHT\r\n",
+    "BEGIN:STANDARD\r\nDTSTART:20071104T020000\r\n",
+    "RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU\r\n",
+    "TZOFFSETFROM:-0400\r\nTZOFFSETTO:-0500\r\nEND:STANDARD\r\n",
+    "END:VTIMEZONE\r\n",
+);
+
+/// A calendar holding the zones, then the given components.
+fn zoned(components: &str) -> String {
+    format!(
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\n{ZONES}{components}END:VCALENDAR\r\n"
+    )
+}
+
+/// A Paris series, daily at 09:00 local.
+const SERIES: &str = "BEGIN:VEVENT\r\nUID:1\r\nDTSTAMP:20260101T000000Z\r\nDTSTART;TZID=Europe/Paris:20260706T090000\r\n";
+
+#[test]
+fn ends_a_zoned_series_at_its_utc_until() {
+    // NOTE: RFC 5545 3.3.10 has UNTIL in UTC beside a zoned DTSTART: 07:00Z
+    // is 09:00 in Paris, so the third instance is the last, not dropped.
+    let raw = zoned(&format!(
+        "{SERIES}RRULE:FREQ=DAILY;UNTIL=20260708T070000Z\r\nEND:VEVENT\r\n"
+    ));
+    let set = set_of_uid(&raw, "1");
+
+    assert_eq!(set.zone, IcalRecurZone::Tz("Europe/Paris".into()));
+    assert_eq!(
+        starts(&set, 10),
+        ["20260706T090000", "20260707T090000", "20260708T090000"],
+    );
+}
+
+#[test]
+fn removes_an_instance_an_exdate_names_on_another_clock() {
+    // NOTE: 07:00Z and 03:00 in New York are both 09:00 in Paris.
+    let raw = zoned(&format!(
+        "{SERIES}RRULE:FREQ=DAILY;COUNT=4\r\n\
+         EXDATE:20260707T070000Z\r\n\
+         EXDATE;TZID=America/New_York:20260708T030000\r\n\
+         END:VEVENT\r\n"
+    ));
+
+    assert_eq!(
+        starts(&set_of_uid(&raw, "1"), 10),
+        ["20260706T090000", "20260709T090000"],
+    );
+}
+
+#[test]
+fn replaces_the_instance_a_utc_recurrence_id_names() {
+    // NOTE: Read as written, the override named no instance and the series
+    // showed the day twice, once moved and once not.
+    let raw = zoned(&format!(
+        "BEGIN:VEVENT\r\nUID:1\r\nDTSTAMP:20260101T000000Z\r\n\
+         RECURRENCE-ID:20260707T070000Z\r\n\
+         DTSTART;TZID=Europe/Paris:20260707T140000\r\n\
+         END:VEVENT\r\n\
+         {SERIES}RRULE:FREQ=DAILY;COUNT=3\r\nEND:VEVENT\r\n"
+    ));
+    let set = set_of_uid(&raw, "1");
+
+    assert_eq!(
+        starts(&set, 10),
+        ["20260706T090000", "20260707T140000", "20260708T090000"],
+    );
+    assert_eq!(text(set.overrides[0].id), "20260707T090000");
+}
+
+#[test]
+fn reads_one_override_on_the_series_clock() {
+    let raw = zoned(concat!(
+        "BEGIN:VEVENT\r\nUID:1\r\nDTSTAMP:20260101T000000Z\r\n",
+        "RECURRENCE-ID;TZID=America/New_York:20260707T030000\r\n",
+        "DTSTART:20260707T120000Z\r\n",
+        "END:VEVENT\r\n",
+    ));
+    let cst = IcalCst::parse(&raw).unwrap();
+    let ical = cst.decode();
+    let zones: Vec<IcalTz> = ical
+        .components
+        .iter()
+        .filter_map(IcalTz::of_component)
+        .collect();
+
+    let paris = IcalRecurZone::Tz("Europe/Paris".into());
+    let over = IcalRecurOverride::of_component(&ical.components[2], &paris, &zones).unwrap();
+
+    assert_eq!(text(over.id), "20260707T090000");
+    assert_eq!(text(over.start), "20260707T140000");
+}
+
+#[test]
+fn compares_as_written_without_the_zones() {
+    // NOTE: No VTIMEZONE to tell the clocks apart, so the UTC bound is read on
+    // the start's clock, as before.
+    let raw = event(concat!(
+        "DTSTART;TZID=Europe/Paris:20260706T090000\r\n",
+        "RRULE:FREQ=DAILY;UNTIL=20260708T070000Z\r\n",
+    ));
+
+    assert_eq!(
+        starts(&set_of(&raw), 10),
+        ["20260706T090000", "20260707T090000"]
     );
 }

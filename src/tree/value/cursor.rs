@@ -189,7 +189,8 @@ mod tests {
         let mut c = IcalCst::parse(&raw).unwrap();
 
         // NOTE: RFC 5545 3.3.13 gives a URI no escapes, so text escaping the
-        // `,` `;` and `\` on the way in rewrote the address it is.
+        // `,` and `;` on the way in rewrote the address it is. A backslash
+        // goes out as `%5C`, which reads back where a raw one would not.
         let address = r"mailto:ada,lovelace;x\y@example.com";
         let url = r"https://example.com/a;b,c\d";
         c.prop_mut::<ORGANIZER>().unwrap().set_text(address);
@@ -197,20 +198,22 @@ mod tests {
 
         let out = c.to_string();
         assert!(
-            out.contains(&format!("ORGANIZER;CN=Ada:{address}\r\n")),
+            out.contains("ORGANIZER;CN=Ada:mailto:ada,lovelace;x%5Cy@example.com\r\n"),
             "{out}"
         );
-        assert!(out.contains(&format!("URL:{url}\r\n")), "{out}");
+        assert!(
+            out.contains("URL:https://example.com/a;b,c%5Cd\r\n"),
+            "{out}"
+        );
 
-        // NOTE: Read back, a `,` and a `;` stay. A backslash, which RFC 3986
-        // keeps out of a URI, is still read as the text escape a producer in
-        // the wild put there.
-        c.prop_mut::<URL>()
-            .unwrap()
-            .set_text("https://example.com/a;b,c");
-        assert_eq!(
-            c.prop_mut::<URL>().unwrap().text(),
-            "https://example.com/a;b,c"
+        let written = "https://example.com/a;b,c%5Cd";
+        assert_eq!(c.prop_mut::<URL>().unwrap().text(), written);
+
+        // NOTE: What was read back writes back the same bytes.
+        c.prop_mut::<URL>().unwrap().set_text(written);
+        assert!(
+            c.to_string()
+                .contains("URL:https://example.com/a;b,c%5Cd\r\n")
         );
     }
 

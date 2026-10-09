@@ -26,9 +26,11 @@
 //! [`resolve`](IcalTz::resolve) reports both as what they are, with the
 //! offsets either side, rather than picking one and calling it the answer.
 //! Choosing belongs to the caller, who knows whether a skipped alarm should
-//! fire early, late or not at all. [`instant`](IcalTzOffset::instant) is the
-//! one place a choice is made, and it says which of its three answers the RFC
-//! settled and which it did not.
+//! fire early, late or not at all. The two places a choice is made follow the
+//! two answers RFC 5545 gives: [`instant`](IcalTzOffset::instant) for a time a
+//! rule generates, which in a gap names nothing (3.3.10), and
+//! [`literal_instant`](IcalTzOffset::literal_instant) for a time a property
+//! states, which in a gap takes the offset before it (3.3.5).
 //!
 //! The gap has one caller that does not choose: a recurrence rule generating
 //! an instance in one is generating something that never happens, which RFC
@@ -103,21 +105,43 @@ impl IcalTzOffset {
         }
     }
 
-    /// The instant a civil local time names under this resolution, in seconds
+    /// The instant a local time a recurrence rule generated names, in seconds
     /// since the Unix epoch.
     ///
-    /// The crossing, named once. `None` for a gap is the specification's own
-    /// answer (RFC 5545 3.3.10): a local time that never happens names no
-    /// instant. The earlier of a fold's two is a default the RFC does not
-    /// mandate, and a caller wanting the later one reads it off the variant.
+    /// For a generated instance: `None` for a gap is the specification's own
+    /// answer (RFC 5545 3.3.10), an instance at a local time that never
+    /// happens being no instance. The earlier of a fold's two is a default the
+    /// RFC does not mandate, and a caller wanting the later one reads it off
+    /// the variant. A time somebody wrote down is read by
+    /// [`literal_instant`](Self::literal_instant) instead.
     pub fn instant(&self, local: IcalRecurDateTime) -> Option<i64> {
-        let offset = match self {
-            Self::One(offset) => *offset,
-            Self::Gap { .. } => return None,
-            Self::Fold { earlier, .. } => *earlier,
-        };
+        match self {
+            Self::Gap { .. } => None,
+            _ => Some(self.literal_instant(local)),
+        }
+    }
 
-        Some(local.seconds() - i64::from(offset))
+    /// The offset a written `DATE-TIME` is read with (RFC 5545 3.3.5): the one
+    /// in force, the earlier of a fold's two, and in a gap the offset before
+    /// it, so the time still names an instant.
+    pub fn literal_offset(&self) -> i32 {
+        match self {
+            Self::One(offset) => *offset,
+            Self::Gap { before, .. } => *before,
+            Self::Fold { earlier, .. } => *earlier,
+        }
+    }
+
+    /// The instant a written `DATE-TIME` names (RFC 5545 3.3.5), in seconds
+    /// since the Unix epoch, through [`literal_offset`](Self::literal_offset).
+    ///
+    /// For a time a property states rather than one a rule generates: a
+    /// `DTSTART`, an override's start, an `EXDATE`, a `RECURRENCE-ID`. In a gap
+    /// it is the instant the clock reads as one offset past it, which is
+    /// RFC 5545's own example of `02:30` read as `03:30` on the day New York
+    /// springs forward.
+    pub fn literal_instant(&self, local: IcalRecurDateTime) -> i64 {
+        local.seconds() - i64::from(self.literal_offset())
     }
 }
 
@@ -278,6 +302,28 @@ impl IcalTz {
     /// instant answers to it (RFC 5545 3.3.10).
     pub fn is_gap(&self, local: IcalRecurDateTime) -> bool {
         matches!(self.resolve(local), IcalTzOffset::Gap { .. })
+    }
+
+    /// The local time this zone's clock shows at an instant, in seconds since
+    /// the Unix epoch: the inverse of a resolution, and never ambiguous, since
+    /// every instant has exactly one offset in force.
+    pub fn local(&self, instant: i64) -> IcalRecurDateTime {
+        // NOTE: A local time is less than a day from its instant, so the
+        // transitions through the next year hold the one in force.
+        let year = IcalRecurDateTime::from_seconds(instant).year;
+        let transitions = self.transitions(year.saturating_add(1));
+
+        let index = transitions.partition_point(|transition| {
+            transition.local.seconds() - i64::from(transition.from) <= instant
+        });
+
+        let offset = match (index.checked_sub(1), transitions.first()) {
+            (Some(index), _) => transitions[index].to,
+            (None, Some(transition)) => transition.from,
+            (None, None) => 0,
+        };
+
+        IcalRecurDateTime::from_seconds(instant + i64::from(offset))
     }
 
     /// Every transition this zone states up to the end of a year, in

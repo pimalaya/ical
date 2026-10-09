@@ -228,15 +228,12 @@ impl<'a> IcalValueNode<'a> {
         }
     }
 
-    /// The raw (still-escaped) bytes of the first component's first value, for
-    /// the simple single-value lines (the envelope values and diagnostics).
-    pub(crate) fn first_value_bytes(&self) -> &[u8] {
-        match self.component_at(0) {
-            Some(Component::Raw(bytes)) => first_value(bytes),
-            Some(Component::Split(leaves)) => {
-                leaves.first().map(|leaf| leaf.as_bytes()).unwrap_or(b"")
-            }
-            None => b"",
+    /// The whole value as it is written on the wire, still escaped, its `;` and
+    /// `,` in place: borrowed straight from parse, joined once split.
+    pub(crate) fn raw_bytes(&self) -> Cow<'_, [u8]> {
+        match &self.raw {
+            Some(raw) => Cow::Borrowed(raw),
+            None => Cow::Owned(self.joined_bytes()),
         }
     }
 
@@ -414,16 +411,6 @@ enum Component<'s, 'a> {
     Raw(&'s [u8]),
     /// The component's already-split leaves.
     Split(&'s [IcalValueLeaf<'a>]),
-}
-
-/// The first `,`-separated value of a component (escape-aware): the bytes up to
-/// the first unescaped comma, or the whole component when it has none.
-fn first_value(component: &[u8]) -> &[u8] {
-    let mut first = None;
-    split_on(component, b',', |value| {
-        first.get_or_insert(value);
-    });
-    first.unwrap_or(component)
 }
 
 /// Split a value into its `;`-separated components, each a list of its

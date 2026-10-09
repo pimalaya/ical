@@ -38,14 +38,25 @@ A local time a spring-forward skips SHALL be reported as skipped, and a local ti
 - WHEN 02:30 is resolved
 - THEN the result reports a fold, carrying both the earlier and the later offset
 
-### Requirement: The crossing to an instant is named once
+### Requirement: The crossing to an instant follows the RFC's two answers
 
-`IcalTzOffset::instant` SHALL give the instant a civil time names, as seconds since the Unix epoch. It SHALL return nothing in a gap, which is the RFC's answer rather than a refusal to answer, and the earlier of the two in a fold, which is a default the RFC does not mandate and which the variant's fields still expose.
+RFC 5545 answers a local time in a gap twice, by who wrote it, and the crossing SHALL follow both.
+
+`IcalTzOffset::instant` SHALL give the instant a local time a rule generated names, as seconds since the Unix epoch. It SHALL return nothing in a gap, which is RFC 5545 3.3.10's answer for an instance rather than a refusal to answer, and the earlier of the two in a fold, which is a default the RFC does not mandate and which the variant's fields still expose.
+
+`IcalTzOffset::literal_offset` and `IcalTzOffset::literal_instant` SHALL read a written `DATE-TIME` (a `DTSTART`, an override's start, an `EXDATE`, a `RECURRENCE-ID`) by RFC 5545 3.3.5: the offset in force, the earlier of a fold's two, and in a gap the offset before it, so a written time always names an instant.
+
+`IcalTz::local` SHALL give the local time a zone's clock shows at an instant, the inverse of a resolution, which is never ambiguous.
 
 #### Scenario: The three answers
 - GIVEN a resolution that is one offset, a gap, and a fold
 - WHEN each is asked for the instant its local time names
 - THEN the offset is subtracted, the gap names none, and the fold takes its earlier offset
+
+#### Scenario: The examples of RFC 5545 3.3.5
+- GIVEN America/New_York, and `20070311T023000` and `20071104T013000` written in it
+- WHEN each is read as a written time
+- THEN the first names 03:30 EDT, at the offset before the gap, and the second 01:30 EDT, the first of the two
 
 ### Requirement: A VTIMEZONE can be synthesized from the database, opt-in
 

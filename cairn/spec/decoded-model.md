@@ -187,9 +187,9 @@ Both types SHALL keep their raw text as the value, so byte-faithful round-trippi
 
 ### Requirement: A calendar address is a URI
 
-A `CAL-ADDRESS` value SHALL be encoded as a URI is, with no text escaping (RFC 5545 3.3.3, 3.3.13), so a `,`, a `;` or a `\` in an address goes out as it is held. The value type SHALL decide the encoding on every path: the model's encode, and an in-place edit through the value cursor's `set_text` and `set_bytes`, which write a URI or a calendar user address as it is and any other value escaped.
+A `CAL-ADDRESS` value SHALL be encoded as a URI is, with no text escaping (RFC 5545 3.3.3, 3.3.13), so a `,` or a `;` in an address goes out as it is held, and a `\` as `%5C` (RFC 3986 2.1), the one byte a reader would otherwise take for a text escape, so a written address reads back and writes back the same. The value type SHALL decide the encoding on every path: the model's encode, and an in-place edit through the value cursor's `set_text` and `set_bytes`, which write a URI or a calendar user address as it is and any other value escaped.
 
-Reading stays liberal: a URI is still read through the text unescape, so a `,` or a `;` a producer in the wild escaped reads as itself, and a `\`, which RFC 3986 keeps out of a URI anyway, reads as the escape it most likely is.
+Reading stays liberal: a URI is still read through the text unescape, so a `,` or a `;` a producer in the wild escaped reads as itself, and a raw `\`, which RFC 3986 keeps out of a URI anyway, reads as the escape it most likely is.
 
 #### Scenario: An address carrying separators
 - GIVEN an `ORGANIZER` whose address holds a `,` and a `;`
@@ -199,7 +199,7 @@ Reading stays liberal: a URI is still read through the text unescape, so a `,` o
 #### Scenario: An address edited in place
 - GIVEN a parsed `ORGANIZER` and `URL`
 - WHEN each is set through its lens cursor to a value holding a `,`, a `;` and a `\`
-- THEN each goes out exactly as set, no backslash added
+- THEN the `,` and `;` go out as set, the `\` as `%5C`, and the value read back writes back the same bytes
 
 ### Requirement: Building a calendar from another representation
 

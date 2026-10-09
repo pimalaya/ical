@@ -103,6 +103,24 @@ A `QUOTED-PRINTABLE` line SHALL NOT be folded, since a fold after one of its `=`
 - WHEN it is serialized
 - THEN the line is still one physical line
 
+### Requirement: A property goes before the subcomponents
+
+A property the crate adds to a component SHALL go after its properties and before its first subcomponent, where RFC 5545 3.6 puts every property: `IcalCst::push`, `IcalCst::push_line`, the property lines of `IcalCst::push_raw`, and a property the merge adds. A stashed subcomponent held as raw lines SHALL count as a subcomponent from its `BEGIN` line, and `push_raw` SHALL put the lines from a `BEGIN` to its `END` after everything else. Nothing already in the component SHALL move, so every parsed line keeps its bytes.
+
+#### Scenario: A property pushed beside an alarm
+- GIVEN a parsed `VEVENT` holding a `VALARM`, a blank line before it
+- WHEN a property is pushed, then raw lines holding a property and a stashed subcomponent
+- THEN both properties sit before the blank line and the `VALARM`, the stashed subcomponent after it, and every parsed line is unchanged
+
+### Requirement: A raw value is the whole value
+
+`IcalLine::raw_value` and `IcalLine::raw_value_str` SHALL return the line's whole value as written on the wire, still escaped, every `;` and `,` in place, borrowed when the line is as parsed. A reader wanting one `;`-component names it through the value node; a reader wanting the value decoded goes through the cursor or the decoder.
+
+#### Scenario: A rule read raw
+- GIVEN `RRULE:FREQ=WEEKLY;COUNT=3;BYDAY=MO,WE`
+- WHEN its raw value is read
+- THEN it reads `FREQ=WEEKLY;COUNT=3;BYDAY=MO,WE` rather than stopping at the first `;`
+
 ### Requirement: Raw value bytes
 
 A property value SHALL be kept as raw bytes, so a value in a foreign `CHARSET` survives unaltered. A property name and its parameters MUST be valid UTF-8, as every version's grammar guarantees; a non-UTF-8 name or parameter is a parse error.
@@ -176,7 +194,7 @@ Serializing a value SHALL NOT emit a byte that ends the line it sits on, whateve
 
 vCalendar 1.0 has no newline escape, so a newline written into a 1.0 value SHALL go out as `\n` and read back as those two characters. That is the closest versit can carry, and the alternative is a calendar its own parser refuses.
 
-A URI and a calendar user address take no text escape, so a line break written into one SHALL go out percent-encoded, `%0D` and `%0A`, the only way RFC 3986 section 2.1 lets a URI carry one.
+A URI and a calendar user address take no text escape, so a line break written into one SHALL go out percent-encoded, `%0D` and `%0A`, the only way RFC 3986 section 2.1 lets a URI carry one, and so SHALL a backslash, `%5C`, which a reader would take for a text escape.
 
 #### Scenario: A newline set on a vCalendar 1.0 property
 - GIVEN a 1.0 calendar and a caller setting a value holding a newline

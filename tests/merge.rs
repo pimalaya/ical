@@ -1141,3 +1141,24 @@ fn a_removed_property_is_reported_once_per_edit_of_it() {
         "got: {merged}"
     );
 }
+
+#[test]
+fn adds_a_property_before_the_subcomponents_it_sits_beside() {
+    let base = edited(
+        "CATEGORIES:work,weekly\r\n",
+        "CATEGORIES:work,weekly\r\nBEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER:-PT15M\r\nEND:VALARM\r\n",
+    );
+    let right = base.replace(
+        "LOCATION:Room A\r\n",
+        "LOCATION:Room A\r\nCOMMENT:Bring notes\r\n",
+    );
+
+    let report = merge(&base, &base, &right);
+    let merged = bytes(&report);
+
+    // NOTE: RFC 5545 3.6 puts a component's properties before its
+    // subcomponents, so the added line cannot follow END:VALARM.
+    let comment = merged.find("COMMENT:Bring notes").expect("the addition");
+    assert!(comment < merged.find("BEGIN:VALARM").unwrap(), "{merged}");
+    assert_eq!(reparsed(&merged), merged);
+}

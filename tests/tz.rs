@@ -194,3 +194,51 @@ fn an_unknown_tzid_is_no_zone() {
 
     assert!(IcalTz::of_calendar(&ical, "Europe/Paris").is_none());
 }
+
+#[test]
+fn reads_a_written_time_by_rfc_5545_3_3_5() {
+    let zone = zone(US, "America/New_York");
+
+    // NOTE: The section's own two examples: 02:30 on the day the clock
+    // springs forward is read at the offset before the gap, so as 03:30 EDT;
+    // 01:30 on the day it falls back is the first of the two, in EDT.
+    let gap = at(2007, 3, 11, 2, 30);
+    assert_eq!(zone.resolve(gap).instant(gap), None);
+    assert_eq!(zone.resolve(gap).literal_offset(), -5 * 3600);
+    assert_eq!(
+        zone.resolve(gap).literal_instant(gap),
+        at(2007, 3, 11, 7, 30).seconds()
+    );
+    assert_eq!(
+        zone.local(zone.resolve(gap).literal_instant(gap)),
+        at(2007, 3, 11, 3, 30)
+    );
+
+    let fold = at(2007, 11, 4, 1, 30);
+    assert_eq!(zone.resolve(fold).literal_offset(), -4 * 3600);
+    assert_eq!(
+        zone.resolve(fold).instant(fold),
+        Some(zone.resolve(fold).literal_instant(fold))
+    );
+}
+
+#[test]
+fn tells_the_local_time_an_instant_shows() {
+    let zone = zone(US, "America/New_York");
+
+    // NOTE: Both sides of each transition, and both passes through the
+    // repeated hour, which a resolution alone cannot tell apart.
+    let cases = [
+        (at(2026, 7, 15, 16, 0), at(2026, 7, 15, 12, 0)),
+        (at(2026, 1, 15, 17, 0), at(2026, 1, 15, 12, 0)),
+        (at(2026, 3, 8, 6, 59), at(2026, 3, 8, 1, 59)),
+        (at(2026, 3, 8, 7, 0), at(2026, 3, 8, 3, 0)),
+        (at(2026, 11, 1, 5, 30), at(2026, 11, 1, 1, 30)),
+        (at(2026, 11, 1, 6, 30), at(2026, 11, 1, 1, 30)),
+        (at(2026, 11, 1, 7, 0), at(2026, 11, 1, 2, 0)),
+    ];
+
+    for (utc, local) in cases {
+        assert_eq!(zone.local(utc.seconds()), local, "{utc:?}");
+    }
+}

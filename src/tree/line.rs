@@ -200,15 +200,23 @@ impl<'a> IcalLine<'a> {
         }
     }
 
-    /// The raw bytes of the line's first value, for simple single-value lines.
-    pub fn raw_value(&self) -> &[u8] {
-        self.value.first_value_bytes()
+    /// The line's whole value as it is written on the wire: still escaped, not
+    /// transfer-decoded, every `;` and `,` in place.
+    ///
+    /// Raw, so for a value to read, decode it instead: the value cursor or
+    /// [`IcalLine::decode`].
+    pub fn raw_value(&self) -> Cow<'_, [u8]> {
+        self.value.raw_bytes()
     }
 
-    /// The raw first value as UTF-8 text, lossily; for the ASCII envelope
-    /// values (`VERSION`) and diagnostics.
+    /// The whole raw value as UTF-8 text, lossily, as [`raw_value`] reads it.
+    ///
+    /// [`raw_value`]: Self::raw_value
     pub fn raw_value_str(&self) -> Cow<'_, str> {
-        String::from_utf8_lossy(self.value.first_value_bytes())
+        match self.value.raw_bytes() {
+            Cow::Borrowed(bytes) => String::from_utf8_lossy(bytes),
+            Cow::Owned(bytes) => Cow::Owned(String::from_utf8_lossy(&bytes).into_owned()),
+        }
     }
 
     /// Serialize the whole line to bytes: its logical content, laid back out in
@@ -458,6 +466,19 @@ mod tests {
     use crate::tree::{line::IcalLine, value::node::IcalValueNode};
 
     #[test]
+    fn reads_the_whole_raw_value_past_its_separators() {
+        // NOTE: Reading the first `;`-component alone turned this rule into
+        // an endless weekly one.
+        let (mut line, _) = IcalLine::take(b"RRULE:FREQ=WEEKLY;COUNT=3;BYDAY=MO,WE\r\n").unwrap();
+        assert_eq!(line.raw_value_str(), "FREQ=WEEKLY;COUNT=3;BYDAY=MO,WE");
+
+        // NOTE: Split by an edit, the value still reads whole, escapes kept.
+        line.value.set(&["a,b;c"]);
+        assert_eq!(line.raw_value_str(), r"a\,b\;c");
+        assert_eq!(&*line.raw_value(), br"a\,b\;c");
+    }
+
+    #[test]
     fn takes_one_line_and_leaves_the_rest() {
         let (line, rest) = IcalLine::take(b"FN:John\r\nEND:VCALENDAR\r\n").unwrap();
         assert_eq!(line.name.get(), "FN");
@@ -594,7 +615,7 @@ mod tests {
         .unwrap();
         assert_eq!(line.name.get(), "NOTE");
         assert_eq!(line.raw_value_str(), "caf=C3=A9");
-        assert_eq!(line.raw_value(), b"caf=C3=A9");
+        assert_eq!(&*line.raw_value(), b"caf=C3=A9");
     }
 
     #[test]

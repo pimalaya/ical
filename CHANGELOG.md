@@ -12,7 +12,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
   This is a breaking change for a caller matching `IcalValidateError` exhaustively, which needs an arm for it. The same duration still reads as a length through `IcalDuration::seconds`, so only the check is strict, as the rest of the validator is.
 
+- Added `IcalTzOffset::literal_offset` and `IcalTzOffset::literal_instant`, which read a written `DATE-TIME` by RFC 5545 3.3.5: a time in a gap at the offset before it, a time in a fold at the earlier offset.
+
+  `IcalTzOffset::instant` stays the reading of a time a rule generates, which in a gap names nothing (3.3.10). A `DTSTART`, an override's start, an `EXDATE` or a `RECURRENCE-ID` wants the literal one.
+
+- Added `IcalTz::local`, the local time a zone's clock shows at an instant, the inverse of a resolution.
+
+- Added `IcalRecurZone` and `IcalRecurSet::zone`, the clock a set's times are told on, read from its `DTSTART`, with `IcalRecurSet::of_component_in`, `IcalRecurSet::with_override_in` and `IcalRecurOverride::of_component`, which bring a time written on another clock onto that one through the zones given.
+
+- Added `IcalCst::push_line`, which adds a property line before a component's first subcomponent.
+
 ### Changed
+
+- Changed `IcalRecurSet::of_uid` to tell every time on the series' clock through the `VTIMEZONE`s among the components it is given, and to read the series before its overrides whatever their order. `IcalRecurSet` gains the public `zone` field, so a struct literal naming every field needs it.
+
+- Changed `IcalLine::raw_value` and `IcalLine::raw_value_str` to return the line's whole raw value, every `;` and `,` in place, rather than its first value. `raw_value` returns a `Cow<[u8]>` instead of a `&[u8]`, a breaking signature change, since a value an edit split has to be joined.
+
+- Changed `IcalCst::push`, `IcalCst::push_raw` and the merge to add a property before the component's subcomponents rather than after its last item. `push_raw` puts the lines of a stashed subcomponent after everything else.
 
 - Changed the encoder to fold a line longer than 75 octets, as RFC 5545 3.1 asks, never inside a UTF-8 sequence.
 
@@ -22,11 +38,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- Fixed a zoned recurring series ending an instance early on a UTC `UNTIL`, which RFC 5545 3.3.10 requires beside a zoned `DTSTART`, and an `EXDATE` or a `RECURRENCE-ID` written in UTC or another zone naming no instance, so the override showed beside the instance it replaced. Read through `of_uid` or the `_in` forms, each is told on the series' clock first; without the zones they still compare as written.
+
+- Fixed a property pushed onto a component landing after `END:VALARM`, which RFC 5545 3.6 does not allow.
+
+- Fixed `IcalLine::raw_value_str` cutting a value at its first `;`, so an `RRULE` read `FREQ=WEEKLY` and lost its `COUNT`, and the merge's identity of a component cut a `UID` holding a `;` or `,`.
+
 - Fixed the validator and the builder refusing what the RFCs allow.
 
   `DTSTART`, `DTEND`, `DUE` and `RECURRENCE-ID` take a `DATE` and a `TZID`, and `RECURRENCE-ID` its `RANGE`; `EXDATE` and `RDATE` take a `TZID`; `ORGANIZER` takes `CN`, `DIR`, `SENT-BY`, `EMAIL` and the RFC 6638 scheduling parameters, as `ATTENDEE` does. The rest of section 3.8 had the same kind of gap: `ATTACH` refused its inline `BINARY` form with `FMTTYPE` and `ENCODING`, `FREEBUSY` its `FBTYPE`, `TRIGGER` its absolute `DATE-TIME` form and `RELATED`, and `DESCRIPTION` could not repeat, as a `VJOURNAL` or a multilingual `VCALENDAR` lets it. From the extensions, `IMAGE`, `CONFERENCE`, `LINK`, `RELATED-TO`, `STRUCTURED-DATA` and `STYLED-DESCRIPTION` take the values and parameters RFC 7986, 9073 and 9253 give them.
 
-- Fixed a calendar user address being text-escaped on the way out, so a `,`, `;` or `\` in an `ATTENDEE` or `ORGANIZER` gained a backslash. A `CAL-ADDRESS` is a URI (RFC 5545 3.3.3) and is written as one now.
+- Fixed a calendar user address being text-escaped on the way out, so a `,`, `;` or `\` in an `ATTENDEE` or `ORGANIZER` gained a backslash. A `CAL-ADDRESS` is a URI (RFC 5545 3.3.3) and is written as one now, a backslash as `%5C` (RFC 3986 2.1) so the address reads back and writes back the same.
 
 - Fixed `IcalValueCursor::set_text` and `set_bytes` text-escaping a URI or a calendar user address edited in place, the same bug on the edit path: both now encode by the line's value type, as the model's encode does.
 
