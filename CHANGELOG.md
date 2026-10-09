@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-09
+
 ### Added
 
 - Added `IcalValidateError::Duration`, reported for a `DURATION`, a relative `TRIGGER`, a `REFRESH-INTERVAL` or a `GAP` parameter outside the RFC 5545 3.3.6 grammar: a week standing beside other units, an hour with no `T` (`P1H`), lower case, units out of order, or a second straight after an hour (`PT1H20S`).
@@ -324,7 +326,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Added 190 real-world fixtures from the libical, ical4j and ical.js suites, swept for round-trip fidelity and cross-checked against calcard.
 
-[unreleased]: https://github.com/pimalaya/ical/compare/v0.5.3..HEAD
+[unreleased]: https://github.com/pimalaya/ical/compare/v0.6.0..HEAD
+[0.6.0]: https://github.com/pimalaya/ical/compare/v0.5.3..v0.6.0
 [0.5.3]: https://github.com/pimalaya/ical/compare/v0.5.2..v0.5.3
 [0.5.2]: https://github.com/pimalaya/ical/compare/v0.5.1..v0.5.2
 [0.5.1]: https://github.com/pimalaya/ical/compare/v0.5.0..v0.5.1
