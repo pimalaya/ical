@@ -64,6 +64,57 @@ fn bytes(report: &IcalMergeReport<'_>) -> Vec<u8> {
     report.merged.to_bytes()
 }
 
+/// Whether a parameter says what its property's value means, so that changing
+/// it contests a concurrent change to the value: the merge's own list.
+fn qualifies(name: &str) -> bool {
+    matches!(
+        name,
+        "VALUE"
+            | "TZID"
+            | "ENCODING"
+            | "CHARSET"
+            | "LANGUAGE"
+            | "FMTTYPE"
+            | "RANGE"
+            | "RELATED"
+            | "FBTYPE"
+            | "RELTYPE"
+            | "LINKREL"
+    )
+}
+
+/// The value the merge settles a bookkeeping property's field on when both
+/// sides wrote one (RFC 5545 3.8.7): the later stamp, the greater sequence.
+///
+/// The model holds a value as its decoded debug spelling, the wire text inside
+/// its quotes. A value that does not read leaves the field to the ordinary
+/// rules, as it leaves the merge's.
+fn settled<'v>(
+    prop: &str,
+    slot: &model::FieldSlot,
+    left: &'v String,
+    right: &'v String,
+) -> Option<&'v String> {
+    use ical::recur::IcalRecurDateTime;
+
+    if *slot != model::FieldSlot::Value {
+        return None;
+    }
+
+    let text = |value: &'v String| Some(&value[value.find('"')? + 1..value.rfind('"')?]);
+    let (ours, theirs) = (text(left)?, text(right)?);
+
+    let later = if prop.eq_ignore_ascii_case("SEQUENCE") {
+        theirs.parse::<u64>().ok()? > ours.parse::<u64>().ok()?
+    } else if prop.eq_ignore_ascii_case("DTSTAMP") || prop.eq_ignore_ascii_case("LAST-MODIFIED") {
+        IcalRecurDateTime::parse(theirs).ok()? > IcalRecurDateTime::parse(ours).ok()?
+    } else {
+        return None;
+    };
+
+    Some(if later { right } else { left })
+}
+
 /// The four models a law is stated over, plus the report that produced the
 /// fourth.
 struct Merged<'a> {
@@ -706,7 +757,47 @@ mod reference {
             slots.extend(side.fields(address).iter().map(|(key, _)| &key.slot));
         }
 
+        let changed = |side: &Side, slot: &FieldSlot| {
+            let of = |held: &Side| {
+                held.fields(address)
+                    .iter()
+                    .find(|(key, _)| key.slot == *slot)
+                    .map(|(_, value)| value.clone())
+            };
+
+            of(side) != of(base)
+        };
+        let valued = |slot: &FieldSlot| matches!(slot, FieldSlot::Value | FieldSlot::Item(_));
+        let meaning =
+            |slot: &FieldSlot| matches!(slot, FieldSlot::Param(name) if crate::qualifies(name));
+
+        // NOTE: A parameter saying what the value means contests the other
+        // side's change to the value, both ways: the right side's change
+        // yields to the left side's field, and the property is contested.
+        let left_valued = slots.iter().any(|slot| valued(slot) && changed(left, slot));
+        let left_meaning = slots
+            .iter()
+            .any(|slot| meaning(slot) && changed(left, slot));
+
         for slot in slots {
+            if changed(right, slot)
+                && ((meaning(slot) && left_valued) || (valued(slot) && left_meaning))
+            {
+                contested.insert(address.clone());
+
+                let held = left
+                    .fields(address)
+                    .iter()
+                    .find(|(key, _)| key.slot == *slot)
+                    .map(|(key, value)| (key.clone(), value.clone()));
+
+                if let Some((key, value)) = held {
+                    merged.insert(key, value);
+                }
+
+                continue;
+            }
+
             let key = FieldKey {
                 component: address.0.clone(),
                 prop: address.1.clone(),
@@ -729,6 +820,10 @@ mod reference {
                 r
             } else if l == r {
                 l
+            } else if let (Some(ours), Some(theirs)) = (&l, &r)
+                && let Some(later) = crate::settled(&address.1, slot, ours, theirs)
+            {
+                Some(later.clone())
             } else {
                 contested.insert(address.clone());
 
@@ -2044,6 +2139,18 @@ fn completeness(merged: &Merged<'_>) -> Result<(), String> {
                     return Err(format!("both sides' changes vanished:\n{named}"));
                 }
 
+                // NOTE: A bookkeeping value two sides wrote is settled, by
+                // the later one, rather than contested.
+                if let (Some(ours), Some(theirs)) = (l, r)
+                    && let Some(later) = settled(&key.prop, &key.slot, ours, theirs)
+                {
+                    if m != Some(later) {
+                        return Err(format!("the later bookkeeping value lost:\n{named}"));
+                    }
+
+                    continue;
+                }
+
                 if !reported {
                     return Err(format!("a collision went unreported:\n{named}"));
                 }
@@ -2423,6 +2530,13 @@ proptest! {
             let r = merged.right.get(&key);
 
             if !(l != b && r != b && l != r && l.is_some() && r.is_some()) {
+                continue;
+            }
+
+            if let (Some(ours), Some(theirs)) = (l, r)
+                && let Some(later) = settled(&key.prop, &key.slot, ours, theirs)
+            {
+                prop_assert_eq!(merged.merged.get(&key), Some(later), "the later value did not win");
                 continue;
             }
 

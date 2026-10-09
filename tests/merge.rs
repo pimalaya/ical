@@ -1162,3 +1162,141 @@ fn adds_a_property_before_the_subcomponents_it_sits_beside() {
     assert!(comment < merged.find("BEGIN:VALARM").unwrap(), "{merged}");
     assert_eq!(reparsed(&merged), merged);
 }
+
+/// The base with a floating 09:00 start, and the lines that move it.
+fn floating(start: &str) -> String {
+    edited("DTSTART:20260105T090000Z", start)
+}
+
+#[test]
+fn a_zone_change_contests_a_time_change_both_ways() {
+    // NOTE: RFC 5545 3.2.19: the TZID says what the time means, so landing one
+    // side's zone on the other side's time writes an 08:00 in a zone nobody
+    // gave it.
+    let base = floating("DTSTART:20260105T090000");
+    let moved = floating("DTSTART:20260105T080000");
+    let zoned = floating("DTSTART;TZID=/example.org/Romance:20260105T100000");
+
+    for (left, right) in [(&moved, &zoned), (&zoned, &moved)] {
+        let report = merge(&base, left, right);
+        let merged = bytes(&report);
+
+        assert!(
+            !merged.contains("TZID=/example.org/Romance:20260105T080000"),
+            "{merged}"
+        );
+        assert!(!report.conflicts.is_empty(), "{merged}");
+        assert_eq!(merged, *left, "the left side's start stands whole");
+    }
+}
+
+#[test]
+fn a_zone_alone_contests_a_time_alone_both_ways() {
+    let base = floating("DTSTART:20260105T090000");
+    let moved = floating("DTSTART:20260105T080000");
+    let zoned = floating("DTSTART;TZID=/example.org/Romance:20260105T090000");
+
+    for (left, right) in [(&moved, &zoned), (&zoned, &moved)] {
+        let report = merge(&base, left, right);
+
+        assert_eq!(bytes(&report), *left);
+        assert!(!report.conflicts.is_empty());
+    }
+}
+
+#[test]
+fn a_related_change_contests_a_trigger_change() {
+    // NOTE: RFC 5545 3.2.14: RELATED says which end the trigger counts from.
+    let alarm = |trigger: &str| {
+        edited(
+            "CATEGORIES:work,weekly\r\n",
+            &format!(
+                "CATEGORIES:work,weekly\r\nBEGIN:VALARM\r\nACTION:DISPLAY\r\n{trigger}\r\nEND:VALARM\r\n"
+            ),
+        )
+    };
+    let base = alarm("TRIGGER:-PT15M");
+    let left = alarm("TRIGGER:-PT30M");
+    let right = alarm("TRIGGER;RELATED=END:-PT15M");
+
+    let report = merge(&base, &left, &right);
+
+    assert_eq!(bytes(&report), left);
+    assert!(!report.conflicts.is_empty());
+}
+
+#[test]
+fn a_parameter_describing_the_value_still_merges_beside_it() {
+    // NOTE: ALTREP points at another rendering of the text, it does not say
+    // what the text means, so a new location and its alternate both land.
+    let left = edited("LOCATION:Room A", "LOCATION:Room B");
+    let right = edited(
+        "LOCATION:Room A",
+        "LOCATION;ALTREP=\"https://example.com/rooms\":Room A",
+    );
+
+    let report = merge(BASE, &left, &right);
+
+    assert!(
+        bytes(&report).contains("LOCATION;ALTREP=\"https://example.com/rooms\":Room B"),
+        "{}",
+        bytes(&report)
+    );
+    assert!(report.conflicts.is_empty());
+}
+
+/// The base edited on one content line, stamped, modified and sequenced.
+fn stamped(from: &str, to: &str, stamp: &str, sequence: u32) -> String {
+    edited(from, to).replace(
+        "DTSTAMP:20260101T000000Z\r\n",
+        &format!("DTSTAMP:{stamp}\r\nLAST-MODIFIED:{stamp}\r\nSEQUENCE:{sequence}\r\n"),
+    )
+}
+
+#[test]
+fn settles_the_bookkeeping_both_sides_wrote_without_a_conflict() {
+    // NOTE: RFC 5545 3.8.7.2 to 3.8.7.4: when a component was stamped, last
+    // modified and how often it was revised is no content two people
+    // contest, so the later stamps and the greater sequence stand, whichever
+    // side wrote them.
+    let early = stamped("LOCATION:Room A", "LOCATION:Room B", "20260102T080000Z", 2);
+    let late = stamped(
+        "SUMMARY:Weekly sync",
+        "SUMMARY:Weekly sync (moved)",
+        "20260102T090000Z",
+        1,
+    );
+
+    for (left, right) in [(&early, &late), (&late, &early)] {
+        let report = merge(BASE, left, right);
+        let merged = bytes(&report);
+
+        assert!(report.conflicts.is_empty(), "{:?}", report.conflicts);
+        assert!(merged.contains("LOCATION:Room B"));
+        assert!(merged.contains("SUMMARY:Weekly sync (moved)"));
+        assert!(merged.contains("DTSTAMP:20260102T090000Z"), "{merged}");
+        assert!(
+            merged.contains("LAST-MODIFIED:20260102T090000Z"),
+            "{merged}"
+        );
+        assert!(merged.contains("SEQUENCE:2"), "{merged}");
+        assert_eq!(reparsed(&merged), merged);
+    }
+}
+
+#[test]
+fn settles_a_greater_sequence_by_number_rather_than_by_spelling() {
+    let left = edited(
+        "DTSTAMP:20260101T000000Z\r\n",
+        "DTSTAMP:20260101T000000Z\r\nSEQUENCE:9\r\n",
+    );
+    let right = edited(
+        "DTSTAMP:20260101T000000Z\r\n",
+        "DTSTAMP:20260101T000000Z\r\nSEQUENCE:10\r\n",
+    );
+
+    let report = merge(BASE, &left, &right);
+
+    assert!(report.conflicts.is_empty());
+    assert!(bytes(&report).contains("SEQUENCE:10\r\n"));
+}

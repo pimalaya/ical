@@ -8,16 +8,25 @@
 //! one parameter keeps the property, so against a side that removed the
 //! property whole it is the one preserving data.
 //!
+//! A bookkeeping property is no field two people contest: `DTSTAMP`,
+//! `LAST-MODIFIED` and `SEQUENCE` record when and how often a component was
+//! written, so two sides writing them are settled by the later stamp and the
+//! greater sequence rather than reported.
+//!
 //! A recurrence conflict refuses nothing. Both sides said something true about
 //! different parts of one series, and the caller is told only because one may
 //! have moved the ground the other stood on.
 
 use alloc::vec::Vec;
 
-use crate::tree::{
-    cst::IcalCst,
-    line::IcalLine,
-    merge::{IcalMerge, IcalMergeAction, IcalMergeReason, IcalPropPath, Op, Slot},
+use crate::{
+    prop::IcalPropKind,
+    recur::IcalRecurDateTime,
+    tree::{
+        cst::IcalCst,
+        line::IcalLine,
+        merge::{IcalMerge, IcalMergeAction, IcalMergeReason, IcalPropPath, Op, Slot},
+    },
 };
 
 /// What a merge decided about one right-side action: whether it lands in the
@@ -35,6 +44,13 @@ impl<'a> IcalMerge<'_, 'a> {
         left_ops: &[Op<'a>],
         right_ops: &[Op<'a>],
     ) -> Verdict<'a> {
+        if let Some(applies) = left_ops.iter().find_map(|left| self.settles(left, op)) {
+            return Verdict {
+                applies,
+                reason: None,
+            };
+        }
+
         if let Some(collision) = left_ops.iter().find(|left| self.collides(left, op)) {
             // NOTE: a removal against an update is not a stand-off: one side
             // says the data is gone and the other says what it now is, and the
@@ -88,14 +104,16 @@ impl<'a> IcalMerge<'_, 'a> {
             // on one side meets the other side's item edits rather than
             // letting both land.
             (Slot::Value, Slot::Items) | (Slot::Items, Slot::Value) => true,
-            // NOTE: `VALUE` declares what type the value is read as, so
-            // retyping it contests every value-level action the other side
-            // made: the items it wrote were written for the old type, and
-            // keeping both leaves a property whose items contradict its own
-            // declared type (RFC 5545 3.8.5.2 for `RDATE`).
+            // NOTE: A parameter that says what the value means contests every
+            // value-level action the other side made: what that side wrote was
+            // written for the old meaning, and keeping both leaves a value
+            // neither side wrote, such as an `08:00` one side meant floating
+            // read in the zone the other side gave its `10:00` (RFC 5545
+            // 3.2.19), or `RDATE` items contradicting their declared type
+            // (3.8.5.2).
             (Slot::Param { name, .. }, Slot::Value | Slot::Items)
             | (Slot::Value | Slot::Items, Slot::Param { name, .. })
-                if name == "VALUE" =>
+                if qualifies(name) =>
             {
                 true
             }
@@ -113,6 +131,51 @@ impl<'a> IcalMerge<'_, 'a> {
             (Slot::Param { .. }, _) | (_, Slot::Param { .. }) => false,
             _ => true,
         }
+    }
+
+    /// Whether a right-side write of a bookkeeping property lands, when the
+    /// left side wrote that property too: the later `DTSTAMP` and
+    /// `LAST-MODIFIED` (RFC 5545 3.8.7.2, 3.8.7.3), the greater `SEQUENCE`
+    /// (3.8.7.4, RFC 5546 2.1.4).
+    ///
+    /// `None` when the two are not both writes of one such property, or when a
+    /// value does not read, which leaves them to the ordinary judgment.
+    fn settles(&self, left: &Op<'a>, right: &Op<'a>) -> Option<bool> {
+        let writes = |op: &Op<'a>| {
+            matches!(
+                op.action,
+                IcalMergeAction::ValueChanged { .. } | IcalMergeAction::PropAdded { .. }
+            )
+        };
+
+        let (ours, theirs) = (left.prop()?, right.prop()?);
+        let kind = [
+            IcalPropKind::DtStamp,
+            IcalPropKind::LastModified,
+            IcalPropKind::Sequence,
+        ]
+        .into_iter()
+        .find(|kind| theirs.name.eq_ignore_ascii_case(kind))?;
+
+        if !writes(left)
+            || !writes(right)
+            || ours.component != theirs.component
+            || !ours.name.eq_ignore_ascii_case(&theirs.name)
+        {
+            return None;
+        }
+
+        let (Some(ours), Some(theirs)) = self.written_lines(left, right) else {
+            return None;
+        };
+        let (ours, theirs) = (ours.raw_value_str(), theirs.raw_value_str());
+
+        Some(match kind {
+            IcalPropKind::Sequence => {
+                theirs.trim().parse::<u64>().ok()? > ours.trim().parse::<u64>().ok()?
+            }
+            _ => IcalRecurDateTime::parse(&theirs).ok()? > IcalRecurDateTime::parse(&ours).ok()?,
+        })
     }
 
     /// Whether the two sides performed the same act.
@@ -203,6 +266,35 @@ impl<'a> IcalMerge<'_, 'a> {
 
         Some(out)
     }
+}
+
+/// Whether a parameter says what its property's value means rather than
+/// describing the thing it names, so that changing it contests a concurrent
+/// change to the value.
+///
+/// How the value is read: its type (`VALUE`, RFC 5545 3.2.20), its zone
+/// (`TZID`, 3.2.19), its encoding (`ENCODING`, 3.2.7, and the vCalendar 1.0
+/// `CHARSET`), its language (`LANGUAGE`, 3.2.10) and the media type of what it
+/// holds or points at (`FMTTYPE`, 3.2.8). What it denotes: the instances a
+/// `RECURRENCE-ID` names (`RANGE`, 3.2.13), the end a `TRIGGER` counts from
+/// (`RELATED`, 3.2.14), whether a period is free or busy (`FBTYPE`, 3.2.9),
+/// and how a related component or a linked resource relates (`RELTYPE`,
+/// 3.2.15, and `LINKREL`, RFC 9253).
+fn qualifies(name: &str) -> bool {
+    matches!(
+        name,
+        "VALUE"
+            | "TZID"
+            | "ENCODING"
+            | "CHARSET"
+            | "LANGUAGE"
+            | "FMTTYPE"
+            | "RANGE"
+            | "RELATED"
+            | "FBTYPE"
+            | "RELTYPE"
+            | "LINKREL"
+    )
 }
 
 /// Whether two actions address one property: the same component, the same

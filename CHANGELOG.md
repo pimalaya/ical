@@ -38,6 +38,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- Fixed a three-way merge landing one side's time zone on the other side's time: a floating 09:00 moved to 08:00 on one side and zoned to 10:00 on the other came out as 08:00 in that zone, which neither side wrote. A change to a parameter that says what the value means (`VALUE`, `TZID`, `ENCODING`, `CHARSET`, `LANGUAGE`, `FMTTYPE`, `RANGE`, `RELATED`, `FBTYPE`, `RELTYPE`, `LINKREL`) now collides with the other side's change to the value, both ways, and the left side's line stands.
+
+- Fixed every component both sides edited conflicting on `DTSTAMP`, `LAST-MODIFIED` and `SEQUENCE`. The merge settles them without a conflict: the later stamp and the greater sequence stand, whichever side wrote them (RFC 5545 3.8.7, RFC 5546 2.1.4).
+
 - Fixed a zoned recurring series ending an instance early on a UTC `UNTIL`, which RFC 5545 3.3.10 requires beside a zoned `DTSTART`, and an `EXDATE` or a `RECURRENCE-ID` written in UTC or another zone naming no instance, so the override showed beside the instance it replaced. Read through `of_uid` or the `_in` forms, each is told on the series' clock first; without the zones they still compare as written.
 
 - Fixed a property pushed onto a component landing after `END:VALARM`, which RFC 5545 3.6 does not allow.
