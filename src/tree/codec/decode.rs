@@ -98,22 +98,15 @@ impl IcalCst<'_> {
 
 impl IcalLine<'_> {
     /// Decode the line into a typed property. A known property dispatches its
-    /// value through the spec (see `decode_value`); an unknown one keeps its
+    /// value through the spec (see `value_kind`); an unknown one keeps its
     /// raw components so it round-trips.
     pub fn decode(&self, version: IcalVersion) -> IcalProp<'_> {
         let name = self.name.get();
         let params = self.params.iter().map(IcalParamNode::decode).collect();
 
-        let value = match name.parse::<IcalPropKind>() {
-            Ok(prop) => self.decode_value(prop, version),
-            // NOTE: A name outside the vocabulary has no spec to consult, but a
-            // line that declares its own VALUE has said what to read it as
-            // (RFC 5545 3.2.20), and that holds for an X- name as much as for a
-            // registered one.
-            Err(_) => match self.declared_value_kind() {
-                Some(kind) => decode_value_kind(kind, &self.value),
-                None => IcalValue::Unknown(IcalUnknownValue::decode(&self.value)),
-            },
+        let value = match self.value_kind(version) {
+            Some(kind) => decode_value_kind(kind, &self.value),
+            None => IcalValue::Unknown(IcalUnknownValue::decode(&self.value)),
         };
 
         IcalProp {
@@ -123,13 +116,20 @@ impl IcalLine<'_> {
         }
     }
 
-    /// Decode a known property's value through its spec: resolve the in-force
-    /// value kind from the calendar version and any declared `VALUE`, then run
-    /// that kind's decoder over the value node.
-    pub(crate) fn decode_value(&self, prop: IcalPropKind, version: IcalVersion) -> IcalValue<'_> {
-        let declared = self.declared_value_kind();
-        let kind = (prop_spec(prop).value)(version, declared);
-        decode_value_kind(kind, &self.value)
+    /// The value kind the line's value is read and written as: the one its
+    /// spec puts in force for a known name, from the calendar version and any
+    /// declared `VALUE`, and the declared one alone for any other name.
+    ///
+    /// None for an undeclared extension, whose value stays raw.
+    pub(crate) fn value_kind(&self, version: IcalVersion) -> Option<IcalValueKind> {
+        match self.name.get().parse::<IcalPropKind>() {
+            Ok(prop) => Some((prop_spec(prop).value)(version, self.declared_value_kind())),
+            // NOTE: A name outside the vocabulary has no spec to consult, but a
+            // line that declares its own VALUE has said what to read it as
+            // (RFC 5545 3.2.20), and that holds for an X- name as much as for a
+            // registered one.
+            Err(_) => self.declared_value_kind(),
+        }
     }
 
     /// The value kind named by this line's `VALUE` parameter, if any.

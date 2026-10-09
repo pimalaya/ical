@@ -220,8 +220,8 @@ mod tests {
             "the default is the first allowed kind"
         );
         assert_eq!(
-            (spec.value)(IcalVersion::V2_0, Some(IcalValueKind::Binary)),
-            IcalValueKind::Binary,
+            (spec.value)(IcalVersion::V2_0, Some(IcalValueKind::Integer)),
+            IcalValueKind::Integer,
             "a declared kind is honoured even outside the allowed set"
         );
     }

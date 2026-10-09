@@ -28,10 +28,14 @@
 //! value's length moves every byte after it, so the old fold points would
 //! land in the wrong places.
 //!
-//! An edited line is written unfolded, which RFC 5545 3.1 permits (it
-//! recommends 75 octets, it does not require them).
+//! A line no shape was recorded against, built rather than parsed or edited
+//! out of the shape it had, is folded at 75 octets instead, as RFC 5545 3.1
+//! asks, never inside a UTF-8 sequence.
 
 use alloc::{borrow::Cow, vec::Vec};
+
+/// The longest a physical line runs, its line ending excluded (RFC 5545 3.1).
+pub(crate) const FOLD_OCTETS: usize = 75;
 
 /// One piece of wire the parser resolved away.
 #[derive(Clone, Debug)]
@@ -85,21 +89,51 @@ fn write_eol(crlf: bool, out: &mut Vec<u8>) {
     out.extend_from_slice(if crlf { b"\r\n" } else { b"\n" });
 }
 
+/// Write `logical` folded at [`FOLD_OCTETS`] (RFC 5545 3.1): a line break and
+/// a space before every continuation, the space counting toward its length.
+///
+/// A fold never lands inside a UTF-8 sequence: the cut backs off over the
+/// continuation bytes, at most three, so bytes that are not UTF-8 still go out.
+pub(crate) fn write_folded(logical: &[u8], crlf: bool, out: &mut Vec<u8>) {
+    let mut at = 0;
+    let mut room = FOLD_OCTETS;
+
+    while logical.len() - at > room {
+        let mut cut = at + room;
+        let floor = (cut - 3).max(at + 1);
+
+        while cut > floor && logical[cut] & 0xC0 == 0x80 {
+            cut -= 1;
+        }
+
+        out.extend_from_slice(&logical[at..cut]);
+        write_eol(crlf, out);
+        out.push(b' ');
+
+        at = cut;
+        room = FOLD_OCTETS - 1;
+    }
+
+    out.extend_from_slice(&logical[at..]);
+}
+
 /// The wire shape of one content line: every piece the parser resolved away,
 /// with the offset it sat at and the logical length those offsets index.
 ///
-/// Empty for a line that was built rather than parsed, and for a line whose
-/// wire shape *is* its logical shape (unfolded, with no blank line before it).
+/// Never sealed for a line that was built rather than parsed, and empty for a
+/// line whose wire shape *is* its logical shape (unfolded, with no blank line
+/// before it).
 #[derive(Clone, Debug, Default)]
 pub struct IcalWire<'a> {
     /// The pieces, in the order they occur on the wire.
     parts: Vec<(usize, IcalWirePart<'a>)>,
-    /// The logical length these offsets were taken against.
-    len: usize,
+    /// The logical length these offsets were taken against, none for a line
+    /// that was built rather than parsed.
+    len: Option<usize>,
 }
 
 impl<'a> IcalWire<'a> {
-    /// Whether the line's wire shape is its logical shape.
+    /// Whether the shape records no piece.
     pub fn is_empty(&self) -> bool {
         self.parts.is_empty()
     }
@@ -122,7 +156,13 @@ impl<'a> IcalWire<'a> {
 
     /// Pin the logical length the offsets were taken against.
     pub(crate) fn seal(&mut self, len: usize) {
-        self.len = len;
+        self.len = Some(len);
+    }
+
+    /// Whether the shape was recorded against `logical`, so its offsets still
+    /// index those bytes.
+    pub(crate) fn lays_out(&self, logical: &[u8]) -> bool {
+        self.len == Some(logical.len())
     }
 
     /// Put `earlier`'s pieces before this shape's, keeping the sealed length.
@@ -151,7 +191,7 @@ impl<'a> IcalWire<'a> {
     /// A shape whose sealed length no longer matches `logical` is stale, left
     /// by an edit, and is dropped: the logical bytes go out unfolded.
     pub(crate) fn write_bytes(&self, logical: &[u8], out: &mut Vec<u8>) {
-        if self.parts.is_empty() || self.len != logical.len() {
+        if self.parts.is_empty() || !self.lays_out(logical) {
             out.extend_from_slice(logical);
             return;
         }
@@ -185,9 +225,11 @@ impl<'a> IcalWire<'a> {
 
 #[cfg(test)]
 mod tests {
-    use alloc::vec::Vec;
+    use core::str;
 
-    use crate::tree::wire::IcalWire;
+    use alloc::{vec, vec::Vec};
+
+    use crate::tree::wire::{IcalWire, write_folded};
 
     fn written(wire: &IcalWire<'_>, logical: &[u8]) -> Vec<u8> {
         let mut out = Vec::new();
@@ -269,5 +311,71 @@ mod tests {
         wire.prepend(earlier);
 
         assert_eq!(written(&wire, b"foo"), b"foo==\r\n");
+    }
+
+    fn folded(logical: &[u8]) -> Vec<u8> {
+        let mut out = Vec::new();
+        write_folded(logical, true, &mut out);
+        out
+    }
+
+    /// The physical lines `folded` wrote, each with its break taken off.
+    fn physical(out: &[u8]) -> Vec<&[u8]> {
+        out.split(|&byte| byte == b'\n')
+            .map(|line| line.strip_suffix(b"\r").unwrap_or(line))
+            .collect()
+    }
+
+    #[test]
+    fn folds_at_75_octets_counting_the_continuation_space() {
+        let logical = vec![b'a'; 75 + 74 + 10];
+        let out = folded(&logical);
+
+        let lines = physical(&out);
+        assert_eq!(
+            lines.iter().map(|l| l.len()).collect::<Vec<_>>(),
+            [75, 75, 11]
+        );
+        assert!(lines[1..].iter().all(|line| line[0] == b' '));
+    }
+
+    #[test]
+    fn leaves_a_line_of_75_octets_whole() {
+        let logical = vec![b'a'; 75];
+        assert_eq!(folded(&logical), logical);
+    }
+
+    #[test]
+    fn never_folds_inside_a_utf8_sequence() {
+        // NOTE: A two-octet `é` and a four-octet emoji, each straddling octet
+        // 75, the cut backing off to the octet each one starts at.
+        for (fill, wide) in [(74, "é"), (73, "\u{1F600}")] {
+            let mut logical = vec![b'a'; fill];
+            logical.extend_from_slice(wide.as_bytes());
+            logical.extend_from_slice(&[b'b'; 10]);
+
+            let out = folded(&logical);
+            let lines = physical(&out);
+
+            assert_eq!(lines[0].len(), fill, "{wide}");
+            assert!(lines.iter().all(|line| str::from_utf8(line).is_ok()));
+        }
+    }
+
+    #[test]
+    fn folds_bytes_that_are_not_utf8() {
+        // NOTE: Continuation-looking octets all along, so no sequence start to
+        // back off to: the cut still moves forward by at least 72 octets.
+        let logical = vec![0x80; 200];
+        let out = folded(&logical);
+
+        let unfolded: Vec<u8> = physical(&out)
+            .iter()
+            .enumerate()
+            .flat_map(|(i, line)| line[usize::from(i > 0)..].to_vec())
+            .collect();
+
+        assert_eq!(unfolded, logical);
+        assert!(physical(&out).iter().all(|line| line.len() <= 75));
     }
 }

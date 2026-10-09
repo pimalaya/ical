@@ -4,6 +4,7 @@
 //! 3.8.2.6).
 
 use crate::{
+    param::IcalParamKind,
     prop::{IcalPropKind, spec::IcalPropSpec},
     value::IcalValueKind,
     version::IcalVersion,
@@ -21,5 +22,10 @@ impl IcalPropSpec for FREEBUSY {
 
     fn allowed_values(_version: IcalVersion) -> &'static [IcalValueKind] {
         &[IcalValueKind::Period]
+    }
+
+    /// Whether the periods are free or busy is `FBTYPE` (RFC 5545 3.2.9).
+    fn allowed_params(_version: IcalVersion) -> &'static [IcalParamKind] {
+        &[IcalParamKind::Value, IcalParamKind::FbType]
     }
 }

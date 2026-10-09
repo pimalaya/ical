@@ -21,7 +21,7 @@ Conformance SHALL be checked at runtime by `validate`, never encoded as a second
 
 ### Requirement: The validation walk
 
-`validate` SHALL walk the whole component tree and report, per version: a property that version does not define, a value of a kind the property does not take, a parameter the property does not take, a property that appears more often than its cardinality permits, a property a component requires but does not carry, and a component nested where it may not be.
+`validate` SHALL walk the whole component tree and report, per version: a property that version does not define, a value of a kind the property does not take, a parameter the property does not take, a property that appears more often than its cardinality permits, a property a component requires but does not carry, a component nested where it may not be, and a duration outside its grammar.
 
 Absence and repetition are reported by different checks, because they know different things: a property's cardinality states how many times it may appear anywhere, while whether it is *required* depends on the component it sits in.
 
@@ -39,6 +39,36 @@ Absence and repetition are reported by different checks, because they know diffe
 - GIVEN a `VTIMEZONE` nested inside a `VEVENT`
 - WHEN the calendar is validated
 - THEN a nesting problem is reported
+
+### Requirement: The contracts follow RFC 5545
+
+A property's contract SHALL allow every value type and every parameter its RFC gives it, so a conformant calendar is never refused: `DTSTART`, `DTEND`, `DUE` and `RECURRENCE-ID` SHALL take `DATE` beside `DATE-TIME` and a `TZID`, and `RECURRENCE-ID` its `RANGE`; `EXDATE` and `RDATE` SHALL take a `TZID`; `ORGANIZER` SHALL take `CN`, `DIR`, `SENT-BY`, `LANGUAGE`, the RFC 7986 `EMAIL` and the RFC 6638 `SCHEDULE-AGENT`, `SCHEDULE-FORCE-SEND` and `SCHEDULE-STATUS`, as `ATTENDEE` does.
+
+The rest of RFC 5545 section 3.8 and of the extensions the crate covers SHALL hold the same way: `ATTACH` takes an inline `BINARY` with its `FMTTYPE` and `ENCODING`, `FREEBUSY` its `FBTYPE`, `TRIGGER` an absolute `DATE-TIME` and its `RELATED`, and `DESCRIPTION` may repeat, as a `VJOURNAL` (RFC 5545 3.6.3) and a multilingual `VCALENDAR` (RFC 7986 5.2) carry several. `IMAGE` takes `BINARY`, `FMTTYPE`, `ENCODING`, `ALTREP` and `DISPLAY`, `CONFERENCE` its `FEATURE`, `LABEL` and `LANGUAGE`, `LINK` a `LANGUAGE`, `RELATED-TO` a `URI` (RFC 9253), `STRUCTURED-DATA` `BINARY` and `URI` with `FMTTYPE`, `SCHEMA` and `ENCODING`, and `STYLED-DESCRIPTION` a `URI` with `ALTREP`, `LANGUAGE`, `FMTTYPE` and `DERIVED`.
+
+A contract MAY stay wider than its RFC: a property stating no parameters of its own takes `VALUE`, `LANGUAGE` and `ALTREP`, and a property's cardinality is one number for every component, so a `DESCRIPTION` repeated in a `VEVENT` passes. Narrowing either would refuse calendars the check passes today, and is a change of its own.
+
+#### Scenario: A whole-day, zoned, organised event
+- GIVEN a `VEVENT` carrying `DTSTART;VALUE=DATE`, `DTEND;TZID=Europe/Paris`, `EXDATE;TZID=Europe/Paris` and an `ORGANIZER` with `CN`, `SENT-BY` and `SCHEDULE-AGENT`
+- WHEN the calendar is validated
+- THEN no problem is reported
+
+#### Scenario: A parameter the RFC still refuses
+- GIVEN a `DTSTART` carrying `PARTSTAT`
+- WHEN the calendar is validated
+- THEN a parameter-not-allowed problem is reported for `DTSTART`
+
+### Requirement: Durations are validated
+
+A duration SHALL be checked against the RFC 5545 3.3.6 grammar exactly, wherever it is the value (`DURATION`, a relative `TRIGGER`, `REFRESH-INTERVAL`) or a parameter (the RFC 9253 `GAP`), and one outside it SHALL be reported with the property and the text as written: a week stands alone, a `T` opens a time part that names a unit, the units come upper case and in order, and a minute sits between an hour and a second. A period's duration (`FREEBUSY`, `RDATE;VALUE=PERIOD`) is not checked, the period value having no grammar check of its own yet.
+
+Reading stays liberal: the same duration still reads as a length (see [decoded-model](./decoded-model.md)), so a caller computing an end is never left without one.
+
+#### Scenario: A duration written the way calendars in the wild do
+- GIVEN a `VEVENT` carrying `DURATION:P1H`, a `GAP=PT1H20S` and a `TRIGGER:-pt15m`
+- WHEN the calendar is validated
+- THEN a duration problem is reported for each, carrying the text as written
+- AND each still reads as a number of seconds
 
 ### Requirement: Recurrence rules are validated
 

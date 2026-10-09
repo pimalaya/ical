@@ -4,7 +4,9 @@
 //! than `DESCRIPTION` (RFC 9073 6.5).
 
 use crate::{
+    param::IcalParamKind,
     prop::{IcalPropKind, spec::IcalPropSpec},
+    value::IcalValueKind,
     version::IcalVersion,
 };
 
@@ -17,5 +19,22 @@ impl IcalPropSpec for STYLED_DESCRIPTION {
 
     fn allowed_versions() -> &'static [IcalVersion] {
         &[IcalVersion::V2_0]
+    }
+
+    /// Inline text, or a `URI` to fetch it from.
+    fn allowed_values(_version: IcalVersion) -> &'static [IcalValueKind] {
+        &[IcalValueKind::Text, IcalValueKind::Uri]
+    }
+
+    /// The text's media type and whether it was derived from another
+    /// description (RFC 9073 5.3), beside the parameters of `DESCRIPTION`.
+    fn allowed_params(_version: IcalVersion) -> &'static [IcalParamKind] {
+        &[
+            IcalParamKind::Value,
+            IcalParamKind::AltRep,
+            IcalParamKind::Language,
+            IcalParamKind::FmtType,
+            IcalParamKind::Derived,
+        ]
     }
 }

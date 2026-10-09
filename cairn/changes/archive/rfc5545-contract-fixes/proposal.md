@@ -1,7 +1,7 @@
 ---
 cairn: change
 id: rfc5545-contract-fixes
-status: active
+status: landed
 created: 2026-10-06
 ---
 

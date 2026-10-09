@@ -123,7 +123,7 @@ impl IcalProp<'_> {
             value: self.value.encode(escaper),
             eol: IcalLeaf::from("\r\n".to_string()),
             // NOTE: An encoded property has no wire history: it is written out
-            // unfolded, in canonical form.
+            // in canonical form, folded at 75 octets.
             wire: IcalWire::default(),
         }
     }
@@ -188,13 +188,27 @@ pub(crate) fn scalar_node(value: &str, escaper: Escaper) -> IcalValueNode<'stati
     IcalValueNode::from_components(vec![encode_component(&[value], escaper)], escaper)
 }
 
-/// Own one value exactly as given, with no escaping at all.
+/// Own one URI exactly as given, with no text escaping at all.
 ///
 /// A URI is not text: RFC 5545 section 3.3.13 gives it no escapes, so escaping
 /// its `;` or `,` on the way out would rewrite the reference the value is, and
 /// a value that decoded whole would not survive its own round trip.
-pub(crate) fn verbatim_node(value: &str, escaper: Escaper) -> IcalValueNode<'static> {
-    IcalValueNode::from_raw(value.as_bytes().to_vec(), escaper)
+///
+/// A line break is the one exception, being the byte that would end the line
+/// the value sits on: it goes out percent-encoded, the only way RFC 3986
+/// section 2.1 lets a URI carry one.
+pub(crate) fn verbatim_node(value: &[u8], escaper: Escaper) -> IcalValueNode<'static> {
+    let mut bytes = Vec::with_capacity(value.len());
+
+    for &byte in value {
+        match byte {
+            b'\r' => bytes.extend_from_slice(b"%0D"),
+            b'\n' => bytes.extend_from_slice(b"%0A"),
+            _ => bytes.push(byte),
+        }
+    }
+
+    IcalValueNode::from_raw(bytes, escaper)
 }
 
 /// Escape and own a clean value list into one component, by escaping mode.
@@ -255,7 +269,7 @@ mod tests {
             codec::{Codec, mode::Escaper},
             cst::IcalCst,
         },
-        value::text::IcalText,
+        value::{cal_address::IcalCalAddress, text::IcalText, uri::IcalUri},
     };
 
     #[test]
@@ -312,13 +326,56 @@ mod tests {
             "BEGIN:VEVENT\r\n",
             "UID:1\r\n",
             "DTSTAMP:20260101T000000Z\r\n",
-            "SUMMARY;LANGUAGE=en;ALTREP=\"cid:part1.0001@example.org\"",
-            ";X-PATH=\"C:\\temp\";X-NOTE=a^nb^^c^'d:Lunch\r\n",
+            "SUMMARY;LANGUAGE=en;ALTREP=\"cid:part1.0001@example.org\":Lunch\r\n",
+            "COMMENT;X-PATH=\"C:\\temp\";X-NOTE=a^nb^^c^'d:Bring it\r\n",
             "END:VEVENT\r\n",
             "END:VCALENDAR\r\n",
         );
         let cst = IcalCst::parse(input).unwrap();
 
         assert_eq!(cst.decode().to_string(), input);
+    }
+
+    /// A calendar user address is a URI (RFC 5545 3.3.3), and RFC 5545 3.3.13
+    /// gives a URI no escapes, so text escaping one rewrote the address.
+    #[test]
+    fn encodes_a_calendar_address_as_a_uri() {
+        let address = r"mailto:a,b;c\d@example.com";
+        let node = IcalCalAddress(Cow::Borrowed(address)).encode(Escaper::Modern);
+
+        assert_eq!(node.to_string(), address);
+    }
+
+    #[test]
+    fn round_trips_a_calendar_address_through_the_model() {
+        let input = concat!(
+            "BEGIN:VCALENDAR\r\n",
+            "VERSION:2.0\r\n",
+            "BEGIN:VEVENT\r\n",
+            "ORGANIZER;CN=Ada:mailto:ada,lovelace;x@example.com\r\n",
+            "ATTENDEE:http://example.com/a;b,c\r\n",
+            "END:VEVENT\r\n",
+            "END:VCALENDAR\r\n",
+        );
+        let cst = IcalCst::parse(input).unwrap();
+
+        assert_eq!(cst.decode().to_string(), input);
+    }
+
+    #[test]
+    fn percent_encodes_a_line_break_written_into_a_uri() {
+        // NOTE: Raw, the break would end the line the value sits on, and a URI
+        // has no escape but RFC 3986 2.1 percent-encoding to carry one.
+        let address = IcalCalAddress(Cow::Borrowed("mailto:a\r\nb@example.com"));
+        let uri = IcalUri(Cow::Borrowed("https://example.com/a\nb"));
+
+        assert_eq!(
+            address.encode(Escaper::Modern).to_string(),
+            "mailto:a%0D%0Ab@example.com",
+        );
+        assert_eq!(
+            uri.encode(Escaper::Modern).to_string(),
+            "https://example.com/a%0Ab",
+        );
     }
 }

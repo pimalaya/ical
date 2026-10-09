@@ -4,6 +4,7 @@
 //! 3.8.5.1).
 
 use crate::{
+    param::IcalParamKind,
     prop::{IcalPropKind, spec::IcalPropSpec},
     value::IcalValueKind,
     version::IcalVersion,
@@ -17,6 +18,11 @@ impl IcalPropSpec for EXDATE {
 
     fn allowed_values(_version: IcalVersion) -> &'static [IcalValueKind] {
         &[IcalValueKind::DateTimeList]
+    }
+
+    /// A local time names its zone with `TZID`, one for every item.
+    fn allowed_params(_version: IcalVersion) -> &'static [IcalParamKind] {
+        &[IcalParamKind::Value, IcalParamKind::TzId]
     }
 
     /// A list whatever its items are: a declared `DATE`, `DATE-TIME` or

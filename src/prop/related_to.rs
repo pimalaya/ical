@@ -6,6 +6,7 @@
 use crate::{
     param::IcalParamKind,
     prop::{IcalPropKind, spec::IcalPropSpec},
+    value::IcalValueKind,
     version::IcalVersion,
 };
 
@@ -15,6 +16,11 @@ pub struct RELATED_TO;
 
 impl IcalPropSpec for RELATED_TO {
     const KIND: IcalPropKind = IcalPropKind::RelatedTo;
+
+    /// RFC 9253 lets the relation name a `URI` beside the default `UID` text.
+    fn allowed_values(_version: IcalVersion) -> &'static [IcalValueKind] {
+        &[IcalValueKind::Text, IcalValueKind::Uri]
+    }
 
     /// RFC 9253 6.2 adds `GAP` here, the lag or lead between the two related
     /// components, beside the RFC 5545 `RELTYPE`.

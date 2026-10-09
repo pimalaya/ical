@@ -4,6 +4,7 @@
 //! address (RFC 5545 3.8.4.3).
 
 use crate::{
+    param::IcalParamKind,
     prop::{IcalPropKind, cardinality::IcalPropCardinality, spec::IcalPropSpec},
     value::IcalValueKind,
     version::IcalVersion,
@@ -25,5 +26,21 @@ impl IcalPropSpec for ORGANIZER {
 
     fn allowed_values(_version: IcalVersion) -> &'static [IcalValueKind] {
         &[IcalValueKind::CalAddress]
+    }
+
+    /// The RFC 5545 parameters, then `EMAIL` (RFC 7986 6.2) and the scheduling
+    /// ones a CalDAV server reads and writes (RFC 6638 7), as on `ATTENDEE`.
+    fn allowed_params(_version: IcalVersion) -> &'static [IcalParamKind] {
+        &[
+            IcalParamKind::Language,
+            IcalParamKind::Cn,
+            IcalParamKind::Dir,
+            IcalParamKind::SentBy,
+            IcalParamKind::Email,
+            IcalParamKind::Value,
+            IcalParamKind::ScheduleAgent,
+            IcalParamKind::ScheduleForceSend,
+            IcalParamKind::ScheduleStatus,
+        ]
     }
 }

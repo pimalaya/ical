@@ -18,6 +18,6 @@ impl<'v> Codec<'v> for IcalUri<'v> {
     }
 
     fn encode(&self, escaper: Escaper) -> IcalValueNode<'static> {
-        verbatim_node(&self.0, escaper)
+        verbatim_node(self.0.as_bytes(), escaper)
     }
 }

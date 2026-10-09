@@ -20,7 +20,8 @@
 //! - a property a component requires but does not carry (a `VEVENT` needs `UID`
 //!   and `DTSTAMP`, a `VALARM` needs `ACTION` and `TRIGGER`, ...);
 //! - a component nested where it may not be;
-//! - a recurrence rule that breaks RFC 5545 3.3.10.
+//! - a recurrence rule that breaks RFC 5545 3.3.10;
+//! - a duration that breaks RFC 5545 3.3.6.
 //!
 //! A passing check mints an [`IcalValid`] marker, the only way to obtain one,
 //! so holding an `IcalValid<Ical>` is proof the check passed. The same
@@ -59,10 +60,10 @@ use alloc::{
 use crate::{
     component::{IcalComponent, IcalComponentKind, IcalComponentName, spec::component_spec},
     ical::Ical,
-    param::IcalParamKind,
+    param::{IcalParam, IcalParamKind},
     prop::{IcalProp, IcalPropKind, IcalPropName, spec::prop_spec},
     recur::validate::IcalRecurRuleProblem,
-    value::IcalValueKind,
+    value::{IcalValue, IcalValueKind, duration::IcalDuration},
     version::IcalVersion,
 };
 
@@ -126,6 +127,14 @@ pub enum IcalValidateError {
         /// What is wrong with it.
         problem: IcalRecurRuleProblem,
     },
+    /// A duration, as a value or a `GAP` parameter, breaks the RFC 5545 3.3.6
+    /// grammar, which reading it as a length forgives.
+    Duration {
+        /// The property carrying the duration.
+        prop: IcalPropKind,
+        /// The duration as written.
+        duration: String,
+    },
 }
 
 impl fmt::Display for IcalValidateError {
@@ -181,6 +190,13 @@ impl fmt::Display for IcalValidateError {
                 write!(
                     f,
                     "Property `{}` carries an invalid rule: {problem}",
+                    &**prop
+                )
+            }
+            Self::Duration { prop, duration } => {
+                write!(
+                    f,
+                    "Property `{}` carries an invalid duration `{duration}`",
                     &**prop
                 )
             }
@@ -309,9 +325,28 @@ pub(crate) fn validate_prop(
         {
             errors.push(IcalValidateError::ParamNotAllowed { prop: kind, param });
         }
+
+        if let IcalParam::Gap(gap) = param {
+            check_duration(kind, gap, errors);
+        }
+    }
+
+    if let IcalValue::Duration(duration) = &prop.value {
+        check_duration(kind, &duration.0, errors);
     }
 
     validate_rule(kind, prop, errors);
+}
+
+/// Push a [`Duration`](IcalValidateError::Duration) for a duration outside the
+/// RFC 5545 3.3.6 grammar.
+fn check_duration(kind: IcalPropKind, duration: &str, errors: &mut Vec<IcalValidateError>) {
+    if !IcalDuration::from(duration).conforms() {
+        errors.push(IcalValidateError::Duration {
+            prop: kind,
+            duration: duration.to_string(),
+        });
+    }
 }
 
 /// Check the rule a `RRULE` or `EXRULE` carries against RFC 5545 3.3.10.
@@ -319,7 +354,7 @@ pub(crate) fn validate_prop(
 /// A rule the typed layer cannot even read is left alone: parsing is liberal,
 /// and an unreadable rule is a parse-level fact, not a conformance one.
 fn validate_rule(kind: IcalPropKind, prop: &IcalProp<'_>, errors: &mut Vec<IcalValidateError>) {
-    use crate::{recur::IcalRecurRule, value::IcalValue};
+    use crate::recur::IcalRecurRule;
 
     if !matches!(kind, IcalPropKind::RRule | IcalPropKind::ExRule) {
         return;

@@ -3,8 +3,9 @@
 //! The in-place edit cursor every property lens uses.
 //!
 //! A cursor borrows a content line mutably and reads and writes its value
-//! through the codec: getters decode (unescape), setters encode (escape) and
-//! write through to the syntax node.
+//! through the codec: getters decode (unescape), setters encode and write
+//! through to the syntax node, by the line's value type: a text is escaped, a
+//! URI and a calendar user address are written as they are (RFC 5545 3.3.13).
 //!
 //! A setter only rewrites the component it touches, so every other leaf (and
 //! every parameter) of a parsed line stays byte for byte intact.
@@ -26,7 +27,15 @@
 use alloc::string::String;
 use alloc::{borrow::Cow, vec::Vec};
 
-use crate::tree::{line::IcalLine, param::lens::IcalParamLens};
+use crate::{
+    tree::{
+        codec::{encode::verbatim_node, mode::Escaper},
+        line::IcalLine,
+        param::lens::IcalParamLens,
+    },
+    value::IcalValueKind,
+    version::IcalVersion,
+};
 
 /// A typed cursor over a content line's value, editing in place and byte
 /// preserving for the components it does not touch.
@@ -41,11 +50,16 @@ impl IcalValueCursor<'_, '_> {
         self.line.value.decode()
     }
 
-    /// Set the whole value to a single text, escaping it. Writes UTF-8; to keep
-    /// a foreign charset, transcode yourself and use
+    /// Set the whole value to a single text, escaping it, or as it is for a
+    /// URI or a calendar user address, a line break percent-encoded. Writes
+    /// UTF-8; to keep a foreign charset, transcode yourself and use
     /// [`set_bytes`](Self::set_bytes).
     pub fn set_text(&mut self, value: impl AsRef<str>) {
-        self.line.value.set(&[value]);
+        if self.is_uri() {
+            self.line.value = verbatim_node(value.as_ref().as_bytes(), self.line.value.escaper);
+        } else {
+            self.line.value.set(&[value]);
+        }
     }
 
     /// The whole value's raw bytes, unescaped but not otherwise decoded.
@@ -59,11 +73,30 @@ impl IcalValueCursor<'_, '_> {
     }
 
     /// Set the whole value to raw bytes (the foreign-charset escape hatch),
-    /// escaping structural separators but writing the bytes verbatim. The
-    /// calendar's `CHARSET` parameter is left untouched: it is the caller's to
-    /// keep consistent.
+    /// escaping structural separators but writing the bytes verbatim, and a URI
+    /// or a calendar user address with no escape at all, as `set_text` does.
+    /// The calendar's `CHARSET` parameter is left untouched: it is the
+    /// caller's to keep consistent.
     pub fn set_bytes(&mut self, value: impl AsRef<[u8]>) {
-        self.line.value.set_bytes(&[value]);
+        if self.is_uri() {
+            self.line.value = verbatim_node(value.as_ref(), self.line.value.escaper);
+        } else {
+            self.line.value.set_bytes(&[value]);
+        }
+    }
+
+    /// Whether the line's value is a URI or a calendar user address, which RFC
+    /// 5545 3.3.13 gives no escapes.
+    fn is_uri(&self) -> bool {
+        let version = match self.line.value.escaper {
+            Escaper::V1_0 => IcalVersion::V1_0,
+            Escaper::Modern => IcalVersion::V2_0,
+        };
+
+        matches!(
+            self.line.value_kind(version),
+            Some(IcalValueKind::Uri | IcalValueKind::CalAddress)
+        )
     }
 
     /// Decode the value's `QUOTED-PRINTABLE` `=XX` octets to raw bytes.
@@ -146,6 +179,61 @@ mod tests {
 
     fn cal(prop_line: &str) -> String {
         format!("{HEAD}{prop_line}\r\n{TAIL}")
+    }
+
+    #[test]
+    fn edits_a_uri_and_a_calendar_address_in_place_as_they_are() {
+        use crate::prop::{organizer::ORGANIZER, url::URL};
+
+        let raw = cal("ORGANIZER;CN=Ada:mailto:ada@example.com\r\nURL:https://example.com");
+        let mut c = IcalCst::parse(&raw).unwrap();
+
+        // NOTE: RFC 5545 3.3.13 gives a URI no escapes, so text escaping the
+        // `,` `;` and `\` on the way in rewrote the address it is.
+        let address = r"mailto:ada,lovelace;x\y@example.com";
+        let url = r"https://example.com/a;b,c\d";
+        c.prop_mut::<ORGANIZER>().unwrap().set_text(address);
+        c.prop_mut::<URL>().unwrap().set_text(url);
+
+        let out = c.to_string();
+        assert!(
+            out.contains(&format!("ORGANIZER;CN=Ada:{address}\r\n")),
+            "{out}"
+        );
+        assert!(out.contains(&format!("URL:{url}\r\n")), "{out}");
+
+        // NOTE: Read back, a `,` and a `;` stay. A backslash, which RFC 3986
+        // keeps out of a URI, is still read as the text escape a producer in
+        // the wild put there.
+        c.prop_mut::<URL>()
+            .unwrap()
+            .set_text("https://example.com/a;b,c");
+        assert_eq!(
+            c.prop_mut::<URL>().unwrap().text(),
+            "https://example.com/a;b,c"
+        );
+    }
+
+    #[test]
+    fn percent_encodes_a_line_break_set_on_a_uri_in_place() {
+        use crate::prop::url::URL;
+
+        let raw = cal("URL:https://example.com");
+        let mut c = IcalCst::parse(&raw).unwrap();
+        c.prop_mut::<URL>()
+            .unwrap()
+            .set_text("https://example.com/a\nb");
+        assert!(c.to_string().contains("URL:https://example.com/a%0Ab\r\n"));
+
+        c.prop_mut::<URL>()
+            .unwrap()
+            .set_bytes(b"https://example.com/a\r\nb,c");
+
+        assert!(
+            c.to_string()
+                .contains("URL:https://example.com/a%0D%0Ab,c\r\n")
+        );
+        assert!(IcalCst::parse(&c.to_bytes()).is_ok());
     }
 
     #[test]

@@ -24,13 +24,15 @@ impl IcalPropSpec for LINK {
         &[IcalValueKind::Uri, IcalValueKind::Text]
     }
 
-    /// RFC 9253 8.1: a link states what it links to with `LINKREL`.
+    /// RFC 9253 8.1: a link states what it links to with `LINKREL`, and its
+    /// label may name a language.
     fn allowed_params(_version: IcalVersion) -> &'static [IcalParamKind] {
         &[
             IcalParamKind::Value,
             IcalParamKind::LinkRel,
             IcalParamKind::Label,
             IcalParamKind::FmtType,
+            IcalParamKind::Language,
         ]
     }
 }

@@ -195,6 +195,133 @@ fn lets_a_repeatable_property_repeat() {
 }
 
 #[test]
+fn accepts_every_value_and_parameter_the_rfcs_give_a_property() {
+    // NOTE: One line per form, each refused once by a contract narrower than
+    // its RFC: whole days, zoned times, an organizer with a name and a proxy,
+    // an inline attachment, and the RFC 7986 and 9073 parameters.
+    let lines = [
+        "DTSTART;VALUE=DATE:20260101",
+        "DTSTART;TZID=Europe/Paris:20260101T090000",
+        "DTEND;VALUE=DATE:20260102",
+        "DTEND;TZID=Europe/Paris:20260101T100000",
+        "RECURRENCE-ID;VALUE=DATE:20260101",
+        "RECURRENCE-ID;TZID=Europe/Paris;RANGE=THISANDFUTURE:20260101T090000",
+        "EXDATE;TZID=Europe/Paris:20260108T090000,20260115T090000",
+        "RDATE;TZID=Europe/Paris:20260120T090000",
+        "RDATE;VALUE=DATE:20260121",
+        "ORGANIZER;CN=Ada;DIR=\"ldap://example.com/cn=Ada\";SENT-BY=\"mailto:bob@example.com\"\
+         ;LANGUAGE=en;EMAIL=ada@example.com;SCHEDULE-AGENT=CLIENT;SCHEDULE-FORCE-SEND=REQUEST\
+         ;SCHEDULE-STATUS=2.0:mailto:ada@example.com",
+        "ATTACH;FMTTYPE=text/plain;ENCODING=BASE64;VALUE=BINARY:SGVsbG8=",
+        "IMAGE;VALUE=URI;FMTTYPE=image/png;DISPLAY=BADGE;ALTREP=\"https://example.com/a\"\
+         :https://example.com/a.png",
+        "IMAGE;ENCODING=BASE64;VALUE=BINARY:iVBORw0KGgo=",
+        "CONFERENCE;VALUE=URI;FEATURE=AUDIO,VIDEO;LABEL=Room;LANGUAGE=en:https://example.com/r",
+        "RELATED-TO;VALUE=URI;RELTYPE=PARENT:https://example.com/parent",
+        "LINK;VALUE=URI;LINKREL=describedby;LABEL=Notes;LANGUAGE=en:https://example.com/n",
+        "STRUCTURED-DATA;VALUE=URI;FMTTYPE=application/ld+json;SCHEMA=\"https://schema.org/Event\"\
+         :https://example.com/e.json",
+        "STRUCTURED-DATA;ENCODING=BASE64;VALUE=BINARY;FMTTYPE=application/json:e30=",
+        "STYLED-DESCRIPTION;VALUE=URI;FMTTYPE=text/html;DERIVED=TRUE:https://example.com/d.html",
+    ];
+
+    for line in lines {
+        let ics = calendar(&format!("{line}\r\n"));
+        assert!(problems(&ics).is_empty(), "{line}: {:?}", problems(&ics));
+    }
+}
+
+#[test]
+fn accepts_the_alarm_journal_and_free_busy_forms_the_rfc_gives() {
+    let ics = "BEGIN:VCALENDAR\r\n\
+         VERSION:2.0\r\n\
+         PRODID:-//Example//EN\r\n\
+         BEGIN:VEVENT\r\n\
+         UID:alarm@example.com\r\n\
+         DTSTAMP:20260101T000000Z\r\n\
+         BEGIN:VALARM\r\n\
+         ACTION:DISPLAY\r\n\
+         TRIGGER;RELATED=END:-PT15M\r\n\
+         END:VALARM\r\n\
+         BEGIN:VALARM\r\n\
+         ACTION:DISPLAY\r\n\
+         TRIGGER;VALUE=DATE-TIME:20260101T080000Z\r\n\
+         END:VALARM\r\n\
+         END:VEVENT\r\n\
+         BEGIN:VJOURNAL\r\n\
+         UID:journal@example.com\r\n\
+         DTSTAMP:20260101T000000Z\r\n\
+         DESCRIPTION:Morning\r\n\
+         DESCRIPTION:Evening\r\n\
+         END:VJOURNAL\r\n\
+         BEGIN:VFREEBUSY\r\n\
+         UID:busy@example.com\r\n\
+         DTSTAMP:20260101T000000Z\r\n\
+         FREEBUSY;FBTYPE=BUSY-TENTATIVE:20260101T090000Z/PT1H\r\n\
+         END:VFREEBUSY\r\n\
+         END:VCALENDAR\r\n";
+
+    // NOTE: An absolute trigger and its RELATED, FBTYPE on a busy period, and
+    // the several descriptions RFC 5545 3.6.3 lets a journal carry.
+    assert!(problems(ics).is_empty(), "{:?}", problems(ics));
+}
+
+#[test]
+fn reports_a_duration_outside_the_grammar_it_still_reads() {
+    let ics = "BEGIN:VCALENDAR\r\n\
+         VERSION:2.0\r\n\
+         PRODID:-//Example//EN\r\n\
+         BEGIN:VEVENT\r\n\
+         UID:duration@example.com\r\n\
+         DTSTAMP:20260101T000000Z\r\n\
+         DURATION:P1H\r\n\
+         RELATED-TO;GAP=PT1H20S:parent@example.com\r\n\
+         BEGIN:VALARM\r\n\
+         ACTION:DISPLAY\r\n\
+         TRIGGER:-pt15m\r\n\
+         END:VALARM\r\n\
+         END:VEVENT\r\n\
+         END:VCALENDAR\r\n";
+
+    let found: Vec<_> = problems(ics)
+        .into_iter()
+        .filter_map(|problem| match problem {
+            IcalValidateError::Duration { prop, duration } => Some((prop, duration)),
+            _ => None,
+        })
+        .collect();
+
+    // NOTE: An hour with no `T`, a second straight after an hour in a GAP
+    // parameter, and lower case: each reads as a length, none conforms.
+    assert_eq!(
+        found,
+        [
+            (IcalPropKind::Duration, "P1H".to_string()),
+            (IcalPropKind::RelatedTo, "PT1H20S".to_string()),
+            (IcalPropKind::Trigger, "-pt15m".to_string()),
+        ]
+    );
+}
+
+#[test]
+fn passes_a_duration_the_grammar_admits() {
+    let ics = calendar("DURATION:P1DT2H\r\nRELATED-TO;GAP=-PT15M:parent@example.com\r\n");
+
+    assert!(problems(&ics).is_empty(), "{:?}", problems(&ics));
+}
+
+#[test]
+fn still_reports_a_parameter_a_date_property_does_not_take() {
+    let ics = calendar("DTSTART;PARTSTAT=ACCEPTED:20260101T090000Z\r\n");
+
+    assert!(problems(&ics).iter().any(|problem| matches!(
+        problem,
+        IcalValidateError::ParamNotAllowed { prop, param }
+            if *prop == IcalPropKind::DtStart && *param == ical::param::IcalParamKind::PartStat
+    )));
+}
+
+#[test]
 fn reports_a_component_nested_where_it_may_not_be() {
     let ics = "BEGIN:VCALENDAR\r\n\
          VERSION:2.0\r\n\
@@ -249,6 +376,7 @@ fn every_calendar_problem_says_what_is_wrong() {
          SUMMARY;VALUE=INTEGER;PARTSTAT=ACCEPTED:1\r\n\
          SUMMARY:Two\r\n\
          RRULE:FREQ=DAILY;BYWEEKNO=3\r\n\
+         DURATION:P1H\r\n\
          BEGIN:VTIMEZONE\r\n\
          TZID:Europe/Berlin\r\n\
          END:VTIMEZONE\r\n\

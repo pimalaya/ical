@@ -165,16 +165,41 @@ The core SHALL transform no content. A transfer encoding (`QUOTED-PRINTABLE`, `B
 
 ### Requirement: A duration and a UTC offset read as numbers
 
-`IcalUtcOffset::seconds` SHALL return the offset in seconds east of UTC, and `IcalDuration::seconds` the duration in seconds, a week counting as seven days. Both SHALL return nothing for text outside their RFC 5545 grammar (3.3.14 and 3.3.6), parsing being liberal enough elsewhere to let one through.
+`IcalUtcOffset::seconds` SHALL return the offset in seconds east of UTC, and nothing for text outside its RFC 5545 3.3.14 grammar.
 
-`IcalDuration::from_seconds` SHALL write a number of seconds back as a duration, such that reading it returns the number written. Neither grammar carries a month or a year, so no calendar is needed to answer.
+`IcalDuration::seconds` SHALL return the duration in seconds, a week counting as seven days, and SHALL read liberally what calendars in the wild write, since every reader of a decoded calendar computing an end leans on it: past the `P`, any run of digits closes on a unit letter in either case and in any order, a `T` is skipped, a fraction of second is dropped, and an `M` is a minute wherever it sits. `P1H`, `p1d`, `PT1H20S` and the RFC 8984 `P1W2D` all read as lengths. It SHALL return nothing only for text naming no length, a missing `P` or a year in it.
+
+Whether a duration follows the RFC 5545 3.3.6 grammar exactly is the validator's question (see [conformance](./conformance.md)), not the reader's.
+
+`IcalDuration::from_seconds` SHALL write a number of seconds back in that grammar, such that reading it returns the number written, spelling the minute between an hour and a second even when there is none. Neither grammar carries a month or a year, so no calendar is needed to answer.
 
 Both types SHALL keep their raw text as the value, so byte-faithful round-tripping is unaffected.
 
 #### Scenario: A duration through a number and back
 - GIVEN a number of seconds
 - WHEN it is written as a duration and read back
-- THEN the number returned is the number written
+- THEN the number returned is the number written, and the duration written conforms
+
+#### Scenario: Each duration form
+- GIVEN `P1H`, `PT1H`, `P1W`, `-PT15M` and `P1DT2H`
+- WHEN each is read as seconds
+- THEN they read as 3600, 3600, 604800, -900 and 93600, and only `P1H` fails the grammar
+
+### Requirement: A calendar address is a URI
+
+A `CAL-ADDRESS` value SHALL be encoded as a URI is, with no text escaping (RFC 5545 3.3.3, 3.3.13), so a `,`, a `;` or a `\` in an address goes out as it is held. The value type SHALL decide the encoding on every path: the model's encode, and an in-place edit through the value cursor's `set_text` and `set_bytes`, which write a URI or a calendar user address as it is and any other value escaped.
+
+Reading stays liberal: a URI is still read through the text unescape, so a `,` or a `;` a producer in the wild escaped reads as itself, and a `\`, which RFC 3986 keeps out of a URI anyway, reads as the escape it most likely is.
+
+#### Scenario: An address carrying separators
+- GIVEN an `ORGANIZER` whose address holds a `,` and a `;`
+- WHEN the calendar is decoded and encoded again
+- THEN the line comes back byte for byte, no backslash added
+
+#### Scenario: An address edited in place
+- GIVEN a parsed `ORGANIZER` and `URL`
+- WHEN each is set through its lens cursor to a value holding a `,`, a `;` and a `\`
+- THEN each goes out exactly as set, no backslash added
 
 ### Requirement: Building a calendar from another representation
 

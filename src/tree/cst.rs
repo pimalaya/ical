@@ -647,7 +647,10 @@ impl fmt::Display for IcalCst<'_> {
 
 #[cfg(test)]
 mod tests {
+    use core::str;
+
     use alloc::{
+        format,
         string::{String, ToString},
         vec::Vec,
     };
@@ -847,6 +850,111 @@ mod tests {
                 "SUMMARY:Dinner\r\n",
                 "END:VEVENT\r\nEND:VCALENDAR\r\n",
             )
+        );
+    }
+
+    /// Every physical line of `bytes`, its break taken off.
+    fn physical(bytes: &[u8]) -> Vec<&str> {
+        str::from_utf8(bytes)
+            .unwrap()
+            .split_terminator('\n')
+            .map(|line| line.strip_suffix('\r').unwrap_or(line))
+            .collect()
+    }
+
+    #[test]
+    fn folds_a_built_line_at_75_octets_and_reads_it_back_whole() {
+        use alloc::vec;
+
+        use crate::prop::{IcalProp, IcalPropKind};
+
+        // NOTE: Long enough for three physical lines, with a comma the text
+        // escape lengthens and a two-octet `é` that keeps a fold off itself.
+        let summary = format!("{}, {}é{}", "a".repeat(60), "b".repeat(3), "c".repeat(80));
+
+        let mut vevent = IcalCst::empty("VEVENT");
+        vevent.push(IcalProp::text(
+            IcalPropKind::Summary,
+            vec![],
+            summary.clone(),
+        ));
+        let bytes = vevent.to_bytes();
+
+        let lines = physical(&bytes);
+        assert_eq!(lines.len(), 5, "{lines:?}");
+        assert!(lines.iter().all(|line| line.len() <= 75), "{lines:?}");
+        assert_eq!(lines[1].len(), 74, "the fold backs off the `é`");
+
+        let parsed = IcalCst::parse(&bytes).unwrap();
+        assert_eq!(parsed.prop::<SUMMARY>().unwrap().0, summary);
+        assert_eq!(parsed.to_bytes(), bytes);
+    }
+
+    #[test]
+    fn keeps_a_long_line_the_input_left_unfolded() {
+        let raw = format!(
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nDESCRIPTION:{}\r\nEND:VCALENDAR\r\n",
+            "x".repeat(100),
+        );
+
+        let cst = IcalCst::parse(&raw).unwrap();
+        assert_eq!(String::from_utf8(cst.to_bytes()).unwrap(), raw);
+    }
+
+    #[test]
+    fn folds_a_line_an_edit_lengthened() {
+        let raw = concat!(
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\n",
+            "SUMMARY:a summary long enough to have been fol\r\n\tded by its exporter\r\n",
+            "END:VEVENT\r\nEND:VCALENDAR\r\n",
+        );
+        let summary = "d".repeat(100);
+
+        let mut cst = IcalCst::parse(raw).unwrap();
+        cst.component_mut::<VEVENT>()
+            .unwrap()
+            .prop_mut::<SUMMARY>()
+            .unwrap()
+            .set_text(&summary);
+        let bytes = cst.to_bytes();
+
+        // NOTE: The recorded fold indexed the old value, so the new one is laid
+        // out afresh rather than at the exporter's column with its tab.
+        let lines = physical(&bytes);
+        assert_eq!(lines[3], format!("SUMMARY:{}", "d".repeat(67)));
+        assert_eq!(lines[4], format!(" {}", "d".repeat(33)));
+
+        let parsed = IcalCst::parse(&bytes).unwrap();
+        let event = parsed.component::<VEVENT>().unwrap();
+        assert_eq!(event.prop::<SUMMARY>().unwrap().0, summary);
+    }
+
+    #[test]
+    fn never_folds_a_quoted_printable_line() {
+        use alloc::vec;
+
+        use crate::{
+            param::IcalParam,
+            prop::{IcalProp, IcalPropKind},
+        };
+
+        // NOTE: A fold landing after one of its `=` would read back as a soft
+        // break and swallow the line after it.
+        let value = "=41".repeat(40);
+        let params = vec![IcalParam::Encoding("QUOTED-PRINTABLE".into())];
+
+        let mut vevent = IcalCst::empty("VEVENT");
+        vevent.push(IcalProp::text(
+            IcalPropKind::Description,
+            params,
+            value.clone(),
+        ));
+
+        assert_eq!(
+            String::from_utf8(vevent.to_bytes()).unwrap(),
+            format!(
+                "BEGIN:VEVENT\r\nDESCRIPTION;ENCODING=QUOTED-PRINTABLE:{value}\r\nEND:VEVENT\r\n"
+            ),
         );
     }
 

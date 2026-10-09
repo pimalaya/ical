@@ -6,6 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Added `IcalValidateError::Duration`, reported for a `DURATION`, a relative `TRIGGER`, a `REFRESH-INTERVAL` or a `GAP` parameter outside the RFC 5545 3.3.6 grammar: a week standing beside other units, an hour with no `T` (`P1H`), lower case, units out of order, or a second straight after an hour (`PT1H20S`).
+
+  This is a breaking change for a caller matching `IcalValidateError` exhaustively, which needs an arm for it. The same duration still reads as a length through `IcalDuration::seconds`, so only the check is strict, as the rest of the validator is.
+
+### Changed
+
+- Changed the encoder to fold a line longer than 75 octets, as RFC 5545 3.1 asks, never inside a UTF-8 sequence.
+
+  A line encoded from the model, built by hand, or edited out of the length it was parsed at used to go out on one physical line of any length. A parsed line still keeps its recorded layout byte for byte, a long unfolded one included, and a `QUOTED-PRINTABLE` line is never folded, since a fold after one of its `=` would read back as a soft break.
+
+- Changed the contracts of `DTSTART`, `DTEND`, `DUE`, `RECURRENCE-ID`, `EXDATE`, `RDATE`, `ORGANIZER`, `ATTACH`, `FREEBUSY`, `TRIGGER`, `IMAGE`, `CONFERENCE` and `STRUCTURED-DATA` to list their parameters as their RFC states them, so a `LANGUAGE` or an `ALTREP` the RFC does not give one of them, which the default parameter set let through, is now reported.
+
+### Fixed
+
+- Fixed the validator and the builder refusing what the RFCs allow.
+
+  `DTSTART`, `DTEND`, `DUE` and `RECURRENCE-ID` take a `DATE` and a `TZID`, and `RECURRENCE-ID` its `RANGE`; `EXDATE` and `RDATE` take a `TZID`; `ORGANIZER` takes `CN`, `DIR`, `SENT-BY`, `EMAIL` and the RFC 6638 scheduling parameters, as `ATTENDEE` does. The rest of section 3.8 had the same kind of gap: `ATTACH` refused its inline `BINARY` form with `FMTTYPE` and `ENCODING`, `FREEBUSY` its `FBTYPE`, `TRIGGER` its absolute `DATE-TIME` form and `RELATED`, and `DESCRIPTION` could not repeat, as a `VJOURNAL` or a multilingual `VCALENDAR` lets it. From the extensions, `IMAGE`, `CONFERENCE`, `LINK`, `RELATED-TO`, `STRUCTURED-DATA` and `STYLED-DESCRIPTION` take the values and parameters RFC 7986, 9073 and 9253 give them.
+
+- Fixed a calendar user address being text-escaped on the way out, so a `,`, `;` or `\` in an `ATTENDEE` or `ORGANIZER` gained a backslash. A `CAL-ADDRESS` is a URI (RFC 5545 3.3.3) and is written as one now.
+
+- Fixed `IcalValueCursor::set_text` and `set_bytes` text-escaping a URI or a calendar user address edited in place, the same bug on the edit path: both now encode by the line's value type, as the model's encode does.
+
+- Fixed a line break written into a URI or a calendar user address ending the line it sits on. It goes out percent-encoded, as RFC 3986 2.1 spells one.
+
+- Fixed `IcalDuration::seconds` overflowing on an amount too large for a length, which panicked in a debug build, and reading a lower-case duration or one with a fraction of second (`PT1.5S`, RFC 8984) as none. It stays a lenient reader of what calendars in the wild write.
+
+- Fixed `IcalDuration::from_seconds` writing a second straight after an hour (`PT1H1S`), which RFC 5545 3.3.6 does not allow: the minute between them is spelled now (`PT1H0M1S`).
+
 ## [0.5.3] - 2026-10-01
 
 ### Added

@@ -4,6 +4,7 @@
 //! overrides (RFC 5545 3.8.4.4).
 
 use crate::{
+    param::IcalParamKind,
     prop::{IcalPropKind, cardinality::IcalPropCardinality, spec::IcalPropSpec},
     value::IcalValueKind,
     version::IcalVersion,
@@ -24,7 +25,18 @@ impl IcalPropSpec for RECURRENCE_ID {
         IcalPropCardinality::AtMostOne
     }
 
+    /// An instance of a whole-day series is a `DATE`, as its `DTSTART` is.
     fn allowed_values(_version: IcalVersion) -> &'static [IcalValueKind] {
-        &[IcalValueKind::DateTime]
+        &[IcalValueKind::DateTime, IcalValueKind::Date]
+    }
+
+    /// A local time names its zone with `TZID`, and `RANGE=THISANDFUTURE`
+    /// stretches the override over every later instance.
+    fn allowed_params(_version: IcalVersion) -> &'static [IcalParamKind] {
+        &[
+            IcalParamKind::Value,
+            IcalParamKind::TzId,
+            IcalParamKind::Range,
+        ]
     }
 }

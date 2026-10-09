@@ -27,7 +27,7 @@ use crate::tree::{
     leaf::{IcalLeaf, IcalValueLeaf},
     param::{lens::IcalParamLens, node::IcalParamNode},
     value::node::IcalValueNode,
-    wire::IcalWire,
+    wire::{FOLD_OCTETS, IcalWire, write_folded},
 };
 
 /// One raw content line: a name, parameters, a value and the line ending.
@@ -211,15 +211,27 @@ impl<'a> IcalLine<'a> {
         String::from_utf8_lossy(self.value.first_value_bytes())
     }
 
-    /// Serialize the whole line to bytes, exactly as parsed: its logical
-    /// content, laid back out in the wire shape it arrived in.
+    /// Serialize the whole line to bytes: its logical content, laid back out in
+    /// the wire shape it arrived in, or folded at 75 octets when it has none
+    /// that still fits it (see [`IcalWire`]).
     pub(crate) fn write_bytes(&self, out: &mut Vec<u8>) {
-        if self.wire.is_empty() {
-            self.write_logical(out);
-        } else {
-            let mut logical = Vec::new();
-            self.write_logical(&mut logical);
+        let start = out.len();
+        self.write_logical(out);
+
+        let logical = &out[start..];
+        let recorded = self.wire.lays_out(logical);
+
+        // NOTE: A QUOTED-PRINTABLE line is never folded: a fold after one of
+        // its `=` would read back as a soft break, and the encoding has soft
+        // breaks of its own for a long value.
+        let fold = !recorded && logical.len() > FOLD_OCTETS && !head_is_quoted_printable(logical);
+
+        if recorded && !self.wire.is_empty() {
+            let logical = out.split_off(start);
             self.wire.write_bytes(&logical, out);
+        } else if fold {
+            let logical = out.split_off(start);
+            write_folded(&logical, self.eol.get() != "\n", out);
         }
 
         out.extend_from_slice(self.eol.get().as_bytes());
@@ -305,16 +317,6 @@ impl fmt::Display for IcalLine<'_> {
     /// The line as text, wire shape included, lossily for a non-UTF-8 value.
     /// `IcalLine::write_bytes` is the byte-faithful path.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.wire.is_empty() {
-            f.write_str(self.name.get())?;
-
-            for param in &self.params {
-                write!(f, ";{param}")?;
-            }
-
-            return write!(f, ":{}{}", self.value, self.eol.get());
-        }
-
         let mut bytes = Vec::new();
         self.write_bytes(&mut bytes);
         f.write_str(&String::from_utf8_lossy(&bytes))

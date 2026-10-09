@@ -64,6 +64,8 @@
 //!
 //! Only an edit that changes a line's length drops that layout, since the
 //! recorded fold points no longer index the bytes they were taken against.
+//! Such a line, like every line encoded from the model, is folded at 75
+//! octets as RFC 5545 3.1 asks.
 //!
 //! [`parse`] reads one calendar and [`parse_many`] iterates a multi-calendar
 //! file, both strict, refusing a calendar they cannot structure.

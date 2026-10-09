@@ -41,7 +41,7 @@ A value node SHALL read the whole value through readers that take no index (`dec
 
 The un-indexed writers (`set`, `set_bytes`) SHALL replace the whole value, so a value read whole and written back comes back unchanged. The component writers (`set_component`, `set_component_bytes`) SHALL rewrite nothing but the component they name.
 
-The value cursor SHALL follow the same split: `text`, `bytes`, `list` and their setters address the whole value, `component` and `set_component` address one slot.
+The value cursor SHALL follow the same split: `text`, `bytes`, `list` and their setters address the whole value, `component` and `set_component` address one slot. The whole-value setters `set_text` and `set_bytes` SHALL encode by the line's value type, a URI or a calendar user address as it is (see [decoded-model](./decoded-model.md)) and any other value escaped.
 
 #### Scenario: A description read past its first semicolon
 - GIVEN a calendar carrying `DESCRIPTION:a;b`
@@ -73,7 +73,7 @@ The parser SHALL resolve the wire shape of a line into logical content for every
 
 A recorded shape SHALL go back out in offset order, whichever of the tokeniser and the line splitter recorded each piece, and two pieces recorded at one offset SHALL keep the order they were recorded in. A value ending on two `=` is recorded by both at once, the soft break past the last logical byte and the dangling `=` before it, and emitting them in list order writes a line break into the middle of the value.
 
-An edited value SHALL drop the recorded shape of its own line rather than re-apply fold points that no longer match its bytes. A line whose length is unchanged keeps its shape, since every offset still indexes what it did.
+An edited value SHALL drop the recorded shape of its own line rather than re-apply fold points that no longer match its bytes, and the line SHALL then be laid out as an encoded one is (see below). A line whose length is unchanged keeps its shape, since every offset still indexes what it did.
 
 #### Scenario: A folded line
 - GIVEN `NOTE:foo\r\n bar\r\n`
@@ -84,6 +84,24 @@ An edited value SHALL drop the recorded shape of its own line rather than re-app
 - GIVEN a `QUOTED-PRINTABLE` line whose value ends `x==`
 - WHEN it is parsed and serialized
 - THEN the output is the input, and it reparses to the same bytes rather than swallowing the line after it
+
+### Requirement: An encoded line is folded
+
+A content line with no recorded shape that still fits it, one encoded from the model or built by hand, or one an edit changed the length of, SHALL be folded when longer than 75 octets (RFC 5545 3.1): a line break and a single space before every continuation, each physical line 75 octets at most, its line ending excluded and the continuation space included. A fold SHALL NOT land inside a UTF-8 sequence. The break SHALL be the line's own ending, `\r\n` unless the line ends on a bare `\n`.
+
+A parsed line SHALL keep its recorded layout byte for byte, folded or not, however long: the fold is how the crate writes, never a rewrite of what it read.
+
+A `QUOTED-PRINTABLE` line SHALL NOT be folded, since a fold after one of its `=` would read back as a soft break, and the encoding carries soft breaks of its own for a long value.
+
+#### Scenario: A long text property encoded
+- GIVEN a `SUMMARY` of more than 150 octets pushed into an empty component, a two-octet character straddling octet 75
+- WHEN the component is serialized
+- THEN no physical line exceeds 75 octets, the first fold backs off before the character, and the output reparses to the same value and serializes to the same bytes
+
+#### Scenario: A long line the input left unfolded
+- GIVEN a parsed calendar carrying a 112-octet line on one physical line
+- WHEN it is serialized
+- THEN the line is still one physical line
 
 ### Requirement: Raw value bytes
 
@@ -157,6 +175,8 @@ A head carrying an unbalanced quote SHALL still parse: with no `:` outside quote
 Serializing a value SHALL NOT emit a byte that ends the line it sits on, whatever the caller wrote into it. A newline is the one such byte the escapes exist for, and every version SHALL write it escaped.
 
 vCalendar 1.0 has no newline escape, so a newline written into a 1.0 value SHALL go out as `\n` and read back as those two characters. That is the closest versit can carry, and the alternative is a calendar its own parser refuses.
+
+A URI and a calendar user address take no text escape, so a line break written into one SHALL go out percent-encoded, `%0D` and `%0A`, the only way RFC 3986 section 2.1 lets a URI carry one.
 
 #### Scenario: A newline set on a vCalendar 1.0 property
 - GIVEN a 1.0 calendar and a caller setting a value holding a newline
