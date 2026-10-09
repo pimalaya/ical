@@ -384,7 +384,7 @@ The parameters are those that say how the value is read: `VALUE` (RFC 5545 3.2.2
 
 A value that does not read as a date-time or a number SHALL be left to the ordinary rules, and contested as any other value is.
 
-vcard-rs's twin of the rule is `REV` (RFC 6350 6.7.4), the later revision standing. vcard-rs does not state it yet, and the two crates' contracts align only once it does.
+vcard-rs's twin of the rule is `REV` (RFC 6350 6.7.4), the later revision standing. vcard-rs states it since 0.5.2, so the two crates' contracts align.
 
 #### Scenario: Two edits each restamping the event
 
