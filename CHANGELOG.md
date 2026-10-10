@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-10
+
 ### Added
 
 - Added `IcalJscalendarVersion` and `Ical::to_jscalendar_as`, which writes JSCalendar 2.0 (draft-ietf-calext-jscalendarbis-22), the model draft-ietf-jmap-calendars builds on, beside RFC 8984, which `to_jscalendar` still writes.
@@ -342,7 +344,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Added 190 real-world fixtures from the libical, ical4j and ical.js suites, swept for round-trip fidelity and cross-checked against calcard.
 
-[unreleased]: https://github.com/pimalaya/ical/compare/v0.6.0..HEAD
+[unreleased]: https://github.com/pimalaya/ical/compare/v0.6.1..HEAD
+[0.6.1]: https://github.com/pimalaya/ical/compare/v0.6.0..v0.6.1
 [0.6.0]: https://github.com/pimalaya/ical/compare/v0.5.3..v0.6.0
 [0.5.3]: https://github.com/pimalaya/ical/compare/v0.5.2..v0.5.3
 [0.5.2]: https://github.com/pimalaya/ical/compare/v0.5.1..v0.5.2
