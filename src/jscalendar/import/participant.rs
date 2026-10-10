@@ -8,7 +8,6 @@ use alloc::{
     borrow::{Cow, ToOwned},
     format,
     string::String,
-    vec,
     vec::Vec,
 };
 
@@ -28,17 +27,18 @@ use crate::{
 
 /// A Participant as an `ATTENDEE` or `ORGANIZER` property, or as the
 /// `PARTICIPANT` component it came from when it owns a hatch of its own.
+///
+/// `organizing` is set for a JSCalendar 2.0 object, saying whether this is
+/// the organizer's Participant: there an `ATTENDEE` is always an `ATTENDEE`,
+/// the `ORGANIZER` coming from `organizerCalendarAddress` instead.
 pub(super) fn participant(
     hatch: Option<&Map<String, Value>>,
     component: &str,
     key: &str,
     participant: &Value,
+    organizing: Option<bool>,
 ) -> Result<IcalProp<'static>, IcalComponent<'static>> {
-    let address = participant
-        .get("sendTo")
-        .and_then(|to| to.get("imip"))
-        .and_then(Value::as_str)
-        .unwrap_or_default();
+    let address = address(participant).unwrap_or_default();
 
     if participant.get("iCalendar").is_some() {
         return Err(vparticipant(participant, address));
@@ -52,7 +52,7 @@ pub(super) fn participant(
     // NOTE: An owning participant is the ORGANIZER, and that is where the
     // export recorded its leftovers: under the reply address it also wrote, not
     // under the participant.
-    let (pointer, fallback) = match owner {
+    let (pointer, fallback) = match owner && organizing.is_none() {
         true => ("replyTo/imip".to_owned(), IcalPropKind::Organizer),
         false => (format!("participants/{key}"), IcalPropKind::Attendee),
     };
@@ -114,8 +114,25 @@ pub(super) fn participant(
 
     let roles: Vec<String> = keys(participant.get("roles").unwrap_or(&Value::Null)).collect();
 
-    if let Some(role) = role(&roles) {
+    let role = match organizing {
+        Some(organizing) => role_v2(&roles, organizing),
+        None => role(&roles),
+    };
+
+    if let Some(role) = role {
         prop.params.push(IcalParam::Role(Cow::Owned(role)));
+    }
+
+    // NOTE: A 2.0 task attendee's progress is a PARTSTAT of its own, beside an
+    // `accepted` participation status (conversion draft Table 13).
+    if organizing.is_some()
+        && let Some(progress) = participant.get("progress").and_then(Value::as_str)
+    {
+        prop.params
+            .retain(|param| !matches!(param, IcalParam::PartStat(_)));
+        prop.params.push(IcalParam::PartStat(Cow::Owned(
+            progress.to_ascii_uppercase(),
+        )));
     }
 
     let sets = [
@@ -149,7 +166,11 @@ pub(super) fn participant(
 pub(super) fn vparticipant(participant: &Value, address: &str) -> IcalComponent<'static> {
     let hatch = participant.as_object().and_then(hatch_of);
 
-    let mut props = vec![plain(IcalPropKind::CalendarAddress, address.to_owned())];
+    let mut props = Vec::new();
+
+    if !address.is_empty() {
+        props.push(plain(IcalPropKind::CalendarAddress, address.to_owned()));
+    }
 
     if let Some(name) = participant.get("name").and_then(Value::as_str) {
         props.push(plain(IcalPropKind::Summary, name.to_owned()));
@@ -197,4 +218,124 @@ pub(super) fn role(roles: &[String]) -> Option<String> {
     };
 
     Some(role.to_owned())
+}
+
+/// The JSCalendar 2.0 `ROLE`: the first of `chair`, `required`, `optional`
+/// and `informational` the set holds (bis draft 3.4.6), else a role iCalendar
+/// has no word for, else `OWNER` for an owner that is not the organizer
+/// (conversion draft 2.3.4).
+pub(super) fn role_v2(roles: &[String], organizing: bool) -> Option<String> {
+    let has = |role: &str| roles.iter().any(|held| held == role);
+
+    let known = [
+        ("chair", "CHAIR"),
+        ("required", "REQ-PARTICIPANT"),
+        ("optional", "OPT-PARTICIPANT"),
+        ("informational", "NON-PARTICIPANT"),
+    ];
+
+    if let Some((_, role)) = known.iter().find(|(role, _)| has(role)) {
+        return Some((*role).to_owned());
+    }
+
+    // NOTE: `attendee` is RFC 8984's default role, which iCalendar leaves
+    // unwritten.
+    let other = roles
+        .iter()
+        .find(|role| !matches!(role.as_str(), "attendee" | "owner"));
+
+    match (other, has("owner") && !organizing) {
+        (Some(role), _) => Some(role.to_ascii_uppercase()),
+        (None, true) => Some("OWNER".to_owned()),
+        (None, false) => None,
+    }
+}
+
+/// The calendar address a Participant states: its 2.0 `calendarAddress`, else
+/// its RFC 8984 `sendTo` iMIP one.
+pub(super) fn address(participant: &Value) -> Option<&str> {
+    participant
+        .get("calendarAddress")
+        .or_else(|| participant.get("sendTo").and_then(|to| to.get("imip")))
+        .and_then(Value::as_str)
+}
+
+/// Whether the organizer's Participant says nothing an `ORGANIZER` cannot, so
+/// it converts to no `ATTENDEE` (conversion draft 3.6).
+///
+/// The export records a Participant that was an `ATTENDEE` as well, which is
+/// how a plain attendee organizing its own event keeps its line.
+pub(super) fn represented(
+    hatch: Option<&Map<String, Value>>,
+    key: &str,
+    participant: &Value,
+) -> bool {
+    const MEMBERS: [&str; 6] = [
+        "@type",
+        "calendarAddress",
+        "sendTo",
+        "roles",
+        "name",
+        "email",
+    ];
+
+    let Some(object) = participant.as_object() else {
+        return false;
+    };
+
+    let owner = object
+        .get("roles")
+        .and_then(Value::as_object)
+        .is_some_and(|roles| roles.len() == 1 && roles.contains_key("owner"));
+
+    let recorded = hatch
+        .and_then(|hatch| hatch.get("convertedProperties"))
+        .and_then(Value::as_object)
+        .is_some_and(|converted| converted.contains_key(&format!("participants/{key}")));
+
+    owner
+        && !recorded
+        && object
+            .keys()
+            .all(|member| MEMBERS.contains(&member.as_str()))
+}
+
+/// The 2.0 `ORGANIZER`, from `organizerCalendarAddress`, with the name and
+/// email of the organizer's Participant where the record carries none.
+pub(super) fn organizer(
+    hatch: Option<&Map<String, Value>>,
+    component: &str,
+    address: &str,
+    participant: Option<&Value>,
+) -> IcalProp<'static> {
+    let mut prop = text_prop(
+        named(
+            hatch,
+            component,
+            "organizerCalendarAddress",
+            IcalPropKind::Organizer,
+        ),
+        address.to_owned(),
+    );
+    prop.value = IcalValue::CalAddress(IcalCalAddress(Cow::Owned(address.to_owned())));
+
+    for (member, slot) in [("name", 0usize), ("email", 1)] {
+        let Some(text) = participant
+            .and_then(|participant| participant.get(member))
+            .and_then(Value::as_str)
+        else {
+            continue;
+        };
+
+        let param = match slot {
+            0 => IcalParam::Cn(Cow::Owned(text.to_owned())),
+            _ => IcalParam::Email(Cow::Owned(text.to_owned())),
+        };
+
+        if !prop.params.iter().any(|held| held.kind() == param.kind()) {
+            prop.params.push(param);
+        }
+    }
+
+    prop
 }

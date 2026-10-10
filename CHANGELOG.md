@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Added `IcalJscalendarVersion` and `Ical::to_jscalendar_as`, which writes JSCalendar 2.0 (draft-ietf-calext-jscalendarbis-22), the model draft-ietf-jmap-calendars builds on, beside RFC 8984, which `to_jscalendar` still writes.
+
+  Written as 2.0, the Group states its `version` and every entry the calendar's `method`. One `RRULE` is the `recurrenceRule`; `ORGANIZER` is the `organizerCalendarAddress` and an owner Participant, the same one as the `ATTENDEE` of that address when the two agree on its name and email; a Participant's address is its `calendarAddress`, its roles have no default and `REQ-PARTICIPANT` is `required`, and a task attendee's progress is its own. What 2.0 obsoletes or reserves stays in the `iCalendar` escape hatch: a further `RRULE`, an `EXRULE`, `REQUEST-STATUS`, `COMPLETED`, a `VLOCATION`'s `DESCRIPTION`, and a participant's `LANGUAGE` and `SCHEDULE-*` parameters. A Link's `display` is a set, and an override patch never touches what 2.0 forbids.
+
+### Changed
+
+- Changed `Ical::from_jscalendar` to read JSCalendar 2.0 as well as RFC 8984: `recurrenceRule`, `calendarAddress`, `organizerCalendarAddress`, the `required` role, a participant's `progress` and a set of `display` purposes. An object is read as 2.0 when it or its Group states a `version` other than 1.0 or carries a member only 2.0 has; RFC 8984 input reads as before.
+
+### Fixed
+
+- Fixed a `REQUEST-STATUS` with no extra data being encoded with a trailing `;`.
+
+- Fixed a JSCalendar Location that came from a `VLOCATION` reading back as a `LOCATION` and losing what its escape hatch held, its `UID` included, and a Participant with no address reading back as a `PARTICIPANT` with an empty `CALENDAR-ADDRESS`.
+
 ## [0.6.0] - 2026-10-09
 
 ### Added

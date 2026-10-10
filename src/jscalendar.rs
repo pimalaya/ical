@@ -1,7 +1,7 @@
 //! # JSCalendar
 //!
-//! The RFC 8984 conversion: the decoded calendar as a JSCalendar `Group`, and
-//! back.
+//! The JSCalendar conversion, RFC 8984 and 2.0: the decoded calendar as a
+//! JSCalendar `Group`, and back.
 //!
 //! [`Ical::to_jscalendar`] writes the decoded model as the JSON object a JMAP
 //! calendar server exchanges; [`Ical::from_jscalendar`] reads one back,
@@ -21,12 +21,23 @@
 //! An overriding `VEVENT` is not a component at all, but a patch inside the
 //! series it overrides.
 //!
-//! The conversion rules are those of [the conversion draft], read against the
-//! published RFC 8984 rather than its successor.
+//! The conversion rules are those of [the conversion draft].
 //!
-//! Where the draft names a member only JSCalendar 2.0 has, this crate writes
-//! RFC 8984's: `recurrenceRules` rather than `recurrenceRule`, `sendTo` and
-//! `replyTo` rather than `calendarAddress`.
+//! ## Two versions
+//!
+//! [`Ical::to_jscalendar`] writes RFC 8984, which the draft calls version
+//! 1.0 and other producers write: `recurrenceRules`, a Participant's `sendTo`
+//! and the object's `replyTo`.
+//!
+//! [`Ical::to_jscalendar_as`] can write [JSCalendar 2.0] instead, the model
+//! draft-ietf-jmap-calendars builds on: one `recurrenceRule`, `calendarAddress`
+//! and `organizerCalendarAddress`, the organizer and its attendee as one
+//! Participant, and none of the members 2.0 obsoletes or reserves, which stay
+//! in the escape hatch instead. See [`IcalJscalendarVersion`].
+//!
+//! [`Ical::from_jscalendar`] reads both. An object is read as 2.0 when it or
+//! its Group states `version` 2.0, or when it carries a member only 2.0 has,
+//! and as RFC 8984 otherwise, so RFC 8984 input reads as it always did.
 //!
 //! ## Nothing is dropped
 //!
@@ -66,19 +77,24 @@
 //! A `DTEND` becomes a duration, so an event that ended in another time zone
 //! than it started in comes back with the start's zone on both ends.
 //!
+//! 2.0 can name that end zone in `endTimeZone`, but a span between two zones
+//! needs the time-zone database too, so it is not written. Read, it rides a
+//! `JSPROP` and the `DTEND` stays in the start's zone.
+//!
 //! Ordering inside a component is lost, since a JSCalendar object is a set of
 //! members rather than a list of lines. Byte fidelity is the syntax tree's
 //! job; JSCalendar is a projection of the decoded model, one further removed
 //! than jCal is.
 //!
 //! [the conversion draft]: https://datatracker.ietf.org/doc/draft-ietf-calext-jscalendar-icalendar/
+//! [JSCalendar 2.0]: https://datatracker.ietf.org/doc/draft-ietf-calext-jscalendarbis/
 
 mod export;
 mod hatch;
 mod import;
 mod patch;
 
-use core::{error, fmt};
+use core::{error, fmt, ops};
 
 use alloc::string::{String, ToString};
 
@@ -113,23 +129,73 @@ impl fmt::Display for IcalJscalendarError {
 
 impl error::Error for IcalJscalendarError {}
 
+/// The JSCalendar version a conversion writes (bis draft 1.9).
+///
+/// Reading needs none: [`Ical::from_jscalendar`] reads both.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum IcalJscalendarVersion {
+    /// JSCalendar 1.0, RFC 8984.
+    #[default]
+    V1_0,
+    /// JSCalendar 2.0, draft-ietf-calext-jscalendarbis-22, which
+    /// draft-ietf-jmap-calendars builds on.
+    ///
+    /// The Group states its `version`. One `RRULE` is the `recurrenceRule`;
+    /// a further `RRULE` and an `EXRULE` stay in the escape hatch. `ORGANIZER`
+    /// is the `organizerCalendarAddress` and an owner Participant, the same
+    /// one as the `ATTENDEE` of that address when the two agree on its name
+    /// and email. A Participant's address is its `calendarAddress`, its roles
+    /// have no default and `REQ-PARTICIPANT` is `required`, and a task
+    /// attendee's progress is its own. `METHOD` is every entry's `method`.
+    ///
+    /// What 2.0 obsoletes or reserves is never written and stays in the
+    /// escape hatch: a participant's `LANGUAGE` and `SCHEDULE-*` parameters,
+    /// `REQUEST-STATUS`, `COMPLETED` and a `VLOCATION`'s `DESCRIPTION`.
+    V2_0,
+}
+
+impl ops::Deref for IcalJscalendarVersion {
+    type Target = str;
+
+    /// The `version` value this version is spelled as.
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::V1_0 => "1.0",
+            Self::V2_0 => "2.0",
+        }
+    }
+}
+
 impl Ical<'_> {
     /// The calendar as an RFC 8984 JSCalendar `Group` value.
     ///
     /// Infallible: what the mapping cannot express is preserved in the
     /// `iCalendar` escape hatch rather than dropped.
     pub fn to_jscalendar(&self) -> Value {
-        export::group(self)
+        export::group(self, IcalJscalendarVersion::V1_0)
+    }
+
+    /// The calendar as a JSCalendar `Group` value of the given version.
+    ///
+    /// Infallible, as [`to_jscalendar`](Self::to_jscalendar) is, which this
+    /// is at [`V1_0`](IcalJscalendarVersion::V1_0).
+    pub fn to_jscalendar_as(&self, version: IcalJscalendarVersion) -> Value {
+        export::group(self, version)
     }
 }
 
 impl<'a> Ical<'a> {
-    /// Read a calendar back from an RFC 8984 JSCalendar value.
+    /// Read a calendar back from a JSCalendar value, RFC 8984 or 2.0.
     ///
     /// A `Group` is a whole calendar, and a lone `Event` or `Task` is the
     /// calendar holding it, since that is what a JMAP calendar server hands
     /// out one object at a time. Only a root that is neither errors; a member
     /// with no iCalendar counterpart is preserved as a `JSPROP` property.
+    ///
+    /// An object is 2.0 when it or its Group states a `version` other than
+    /// 1.0, or when it carries `recurrenceRule`, `organizerCalendarAddress`,
+    /// `endTimeZone`, `mainLocationId` or a Participant's `calendarAddress`.
+    /// Either way the RFC 8984 names are read too.
     pub fn from_jscalendar(jscalendar: &'a Value) -> Result<Self, IcalJscalendarError> {
         let object = jscalendar
             .as_object()

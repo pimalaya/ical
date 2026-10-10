@@ -11,6 +11,7 @@ use serde_json::{Map, Value};
 use crate::{
     component::IcalComponent,
     jscalendar::{
+        IcalJscalendarVersion,
         export::{Builder, component_key, key, list, param, set, text, values},
         hatch::IcalHatch,
     },
@@ -115,8 +116,17 @@ impl Builder {
             object.insert("contentType".to_owned(), Value::String(media.into_owned()));
         }
 
+        // NOTE: 2.0 states a set of purposes, as DISPLAY does (bis draft A.2.3).
         if let Some(display) = param(prop, IcalParamKind::Display) {
-            object.insert("display".to_owned(), Value::String(display.to_lowercase()));
+            let display = display.to_lowercase();
+            let display = match self.version {
+                IcalJscalendarVersion::V1_0 => Value::String(display),
+                IcalJscalendarVersion::V2_0 => {
+                    Value::Object(set(display.split(',').map(str::to_owned).collect()))
+                }
+            };
+
+            object.insert("display".to_owned(), display);
         }
 
         if let Some(label) = param(prop, IcalParamKind::Label) {
@@ -161,7 +171,11 @@ impl Builder {
                     object.insert("name".to_owned(), Value::String(name));
                     hatch.note("name", prop, &[]);
                 }
-                (IcalPropKind::Description, Some(description)) => {
+                // NOTE: 2.0 reserves a Location's description (bis draft
+                // A.2.2.4).
+                (IcalPropKind::Description, Some(description))
+                    if self.version == IcalJscalendarVersion::V1_0 =>
+                {
                     object.insert("description".to_owned(), Value::String(description));
                     hatch.note("description", prop, &[]);
                 }

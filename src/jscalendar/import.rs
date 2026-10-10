@@ -53,8 +53,9 @@ use crate::{
 
 /// The members a Group holds itself, so everything else in it is a JSCalendar
 /// property with no iCalendar counterpart.
-const GROUP_MEMBERS: [&str; 11] = [
+const GROUP_MEMBERS: [&str; 12] = [
     "@type",
+    "version",
     "entries",
     "iCalendar",
     "uid",
@@ -130,11 +131,38 @@ pub(crate) fn ical(group: &Map<String, Value>) -> Ical<'static> {
         props.push(text_prop(record, text));
     }
 
-    let mut components: Vec<IcalComponent<'_>> = group
+    let v2 = group
+        .get("version")
+        .and_then(Value::as_str)
+        .is_some_and(|version| version != "1.0");
+
+    let entries = group
         .get("entries")
         .and_then(Value::as_array)
-        .map(|entries| entries.iter().flat_map(entry).collect())
+        .map(Vec::as_slice)
         .unwrap_or_default();
+
+    let mut components: Vec<IcalComponent<'_>> = Vec::new();
+    let mut method = None;
+
+    for object in entries {
+        let v2 = is_v2(object, v2);
+
+        if v2 && method.is_none() {
+            method = object.get("method").and_then(Value::as_str);
+        }
+
+        components.extend(entry(object, v2));
+    }
+
+    // NOTE: A 2.0 Group has no method; the entries' is the calendar's
+    // (conversion draft 2.3.27), and they are expected to agree.
+    if let Some(method) = method.filter(|_| !group.contains_key("method")) {
+        props.push(text_prop(
+            named(hatch, "vcalendar", "method", IcalPropKind::Method),
+            method.to_ascii_uppercase(),
+        ));
+    }
 
     components.extend(
         kept_components(hatch, version)
@@ -151,11 +179,50 @@ pub(crate) fn ical(group: &Map<String, Value>) -> Ical<'static> {
 
 /// A lone Event or Task as the calendar holding it.
 pub(crate) fn of_entry(object: &Value) -> Ical<'static> {
+    let v2 = is_v2(object, false);
+
+    // NOTE: A 2.0 method belongs to the calendar the entry stands in.
+    let props = object
+        .get("method")
+        .and_then(Value::as_str)
+        .filter(|_| v2)
+        .map(|method| plain(IcalPropKind::Method, method.to_ascii_uppercase()))
+        .into_iter()
+        .collect();
+
     Ical {
         version: IcalVersion::V2_0,
-        props: Vec::new(),
-        components: entry(object),
+        props,
+        components: entry(object, v2),
     }
+}
+
+/// Whether an entry is JSCalendar 2.0: its Group or itself states a version
+/// other than 1.0 (bis draft 3.1.2), or it carries a member only 2.0 has.
+fn is_v2(object: &Value, group: bool) -> bool {
+    if let Some(version) = object.get("version").and_then(Value::as_str) {
+        return version != "1.0";
+    }
+
+    let addressed = object
+        .get("participants")
+        .and_then(Value::as_object)
+        .is_some_and(|participants| {
+            participants
+                .values()
+                .any(|participant| participant.get("calendarAddress").is_some())
+        });
+
+    group
+        || addressed
+        || [
+            "recurrenceRule",
+            "organizerCalendarAddress",
+            "endTimeZone",
+            "mainLocationId",
+        ]
+        .iter()
+        .any(|member| object.get(member).is_some())
 }
 
 /// One Group entry as the component (or components) it converts back to.
@@ -163,7 +230,7 @@ pub(crate) fn of_entry(object: &Value) -> Ical<'static> {
 /// A series carrying overrides comes back as several components: the series
 /// itself, then one overriding component per patch, which is how iCalendar
 /// states what JSCalendar folds into one object (draft 2.1.2).
-fn entry(entry: &Value) -> Vec<IcalComponent<'static>> {
+fn entry(entry: &Value, v2: bool) -> Vec<IcalComponent<'static>> {
     let Some(object) = entry.as_object() else {
         return Vec::new();
     };
@@ -185,7 +252,7 @@ fn entry(entry: &Value) -> Vec<IcalComponent<'static>> {
 
     let zone = series.get("timeZone").and_then(Value::as_str);
     let date_only = all_day(&series);
-    let mut components = vec![component(&series, name, task)];
+    let mut components = vec![component(&series, name, task, v2)];
 
     for (id, over) in &overrides {
         let Some(patch) = over.as_object() else {
@@ -210,10 +277,11 @@ fn entry(entry: &Value) -> Vec<IcalComponent<'static>> {
 
         let mut instance = series.clone();
         patch::apply(&mut instance, patch);
+        instance.remove("recurrenceRule");
         instance.remove("recurrenceRules");
         instance.remove("excludedRecurrenceRules");
 
-        let mut overriding = component(&instance, name, task);
+        let mut overriding = component(&instance, name, task, v2);
         overriding
             .props
             .push(occurrence(IcalPropKind::RecurrenceId, id, zone, date_only));
@@ -224,8 +292,10 @@ fn entry(entry: &Value) -> Vec<IcalComponent<'static>> {
 }
 
 /// The members an Event or Task holds itself.
-const ENTRY_MEMBERS: [&str; 13] = [
+const ENTRY_MEMBERS: [&str; 15] = [
     "@type",
+    "version",
+    "organizerCalendarAddress",
     "iCalendar",
     "duration",
     "timeZone",
@@ -240,11 +310,13 @@ const ENTRY_MEMBERS: [&str; 13] = [
     "requestStatus",
 ];
 
-/// One Event or Task as a `VEVENT` or `VTODO`.
+/// One Event or Task as a `VEVENT` or `VTODO`, read as JSCalendar 2.0 when
+/// `v2` says so.
 fn component(
     object: &Map<String, Value>,
     name: IcalComponentKind,
     task: bool,
+    v2: bool,
 ) -> IcalComponent<'static> {
     let hatch = hatch_of(object);
     let component = match task {
@@ -256,6 +328,32 @@ fn component(
     let mut props: Vec<IcalProp<'static>> = Vec::new();
     let mut components: Vec<IcalComponent<'static>> = Vec::new();
     let mut organizer = false;
+
+    // NOTE: A 2.0 organizer is an address, and its Participant the first owner
+    // of that address (bis draft 3.4.4, conversion draft 3.6).
+    let organizer_address = v2
+        .then(|| {
+            object
+                .get("organizerCalendarAddress")
+                .or_else(|| object.get("replyTo").and_then(|to| to.get("imip")))
+                .and_then(Value::as_str)
+        })
+        .flatten();
+
+    let organizer_key = organizer_address.and_then(|address| {
+        object
+            .get("participants")
+            .and_then(Value::as_object)?
+            .iter()
+            .find(|(_, participant)| {
+                participant::address(participant) == Some(address)
+                    && participant
+                        .get("roles")
+                        .and_then(Value::as_object)
+                        .is_some_and(|roles| roles.contains_key("owner"))
+            })
+            .map(|(key, _)| key.as_str())
+    });
 
     for (member, value) in object {
         if ENTRY_MEMBERS.contains(&member.as_str()) {
@@ -277,6 +375,8 @@ fn component(
             ("color", Value::String(text)) => {
                 props.push(text_prop(record(IcalPropKind::Color), text.clone()))
             }
+            // NOTE: A 2.0 method is the calendar's, which the caller writes.
+            ("method", _) if v2 => {}
             ("method", Value::String(text)) => props.push(text_prop(
                 record(IcalPropKind::Method),
                 text.to_ascii_uppercase(),
@@ -348,6 +448,17 @@ fn component(
                     props.push(prop);
                 }
             }
+            ("recurrenceRule", Value::Object(_)) => {
+                let mut prop = text_prop(
+                    named(hatch, component, member, IcalPropKind::RRule),
+                    rule_from_json(value, zone),
+                );
+                prop.value = IcalValue::Recur(IcalRecur(match &prop.value {
+                    IcalValue::Text(text) => text.0.clone(),
+                    _ => Cow::Borrowed(""),
+                }));
+                props.push(prop);
+            }
             ("links", Value::Object(links)) => props.extend(
                 links
                     .iter()
@@ -368,7 +479,15 @@ fn component(
             ),
             ("participants", Value::Object(participants)) => {
                 for (key, participant) in participants {
-                    match self::participant(hatch, component, key, participant) {
+                    let organizing = organizer_key == Some(key.as_str());
+
+                    if organizing && participant::represented(hatch, key, participant) {
+                        continue;
+                    }
+
+                    let organizing = v2.then_some(organizing);
+
+                    match self::participant(hatch, component, key, participant, organizing) {
                         Ok(prop) => {
                             organizer |= prop.name.eq_ignore_ascii_case("ORGANIZER");
                             props.push(prop)
@@ -455,7 +574,19 @@ fn component(
     // object, and iCalendar has one line for the pair. The participant is where
     // it comes from when there is one, since only that carries the parameters;
     // `replyTo` alone writes a bare ORGANIZER.
-    if let Some(address) = object
+    if let Some(address) = organizer_address {
+        let held = organizer_key.and_then(|key| Some((key, object.get("participants")?.get(key)?)));
+        let mut prop =
+            participant::organizer(hatch, component, address, held.map(|(_, held)| held));
+
+        if let Some((key, held)) = held
+            && participant::represented(hatch, key, held)
+        {
+            prop = keyed(prop, key);
+        }
+
+        props.push(prop);
+    } else if let Some(address) = object
         .get("replyTo")
         .and_then(|to| to.get("imip"))
         .and_then(Value::as_str)

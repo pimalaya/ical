@@ -78,6 +78,29 @@ impl IcalHatch {
     /// would otherwise assume: a property under an unexpected name, a declared
     /// value type, or parameters the mapping did not consume.
     pub(crate) fn note(&mut self, pointer: &str, prop: &IcalProp<'_>, consumed: &[IcalParamKind]) {
+        self.record(pointer, prop, consumed, false);
+    }
+
+    /// Record what a converted member came from even when a reader would
+    /// assume it, because the record itself says the property was there.
+    pub(crate) fn note_always(
+        &mut self,
+        pointer: &str,
+        prop: &IcalProp<'_>,
+        consumed: &[IcalParamKind],
+    ) {
+        self.record(pointer, prop, consumed, true);
+    }
+
+    /// The record behind [`note`](Self::note) and
+    /// [`note_always`](Self::note_always).
+    fn record(
+        &mut self,
+        pointer: &str,
+        prop: &IcalProp<'_>,
+        consumed: &[IcalParamKind],
+        always: bool,
+    ) {
         let mut params = Map::new();
 
         for param in &prop.params {
@@ -108,7 +131,7 @@ impl IcalHatch {
                 .iter()
                 .any(|param| matches!(param.kind(), Some(IcalParamKind::Value)));
 
-        if params.is_empty() && !declared && expected == Some(name.as_str()) {
+        if !always && params.is_empty() && !declared && expected == Some(name.as_str()) {
             return;
         }
 
@@ -302,6 +325,7 @@ pub(crate) fn default_name(component: &str, pointer: &str) -> Option<&'static st
         "percentComplete" => "percent-complete",
         "progressUpdated" => "completed",
         "recurrenceRules" => "rrule",
+        "recurrenceRule" => "rrule",
         "excludedRecurrenceRules" => "exrule",
         "recurrenceId" => "recurrence-id",
         "source" => "source",
@@ -317,6 +341,7 @@ pub(crate) fn default_name(component: &str, pointer: &str) -> Option<&'static st
         "participants/*" => "attendee",
         "relatedTo/*" => "related-to",
         "replyTo/imip" => "organizer",
+        "organizerCalendarAddress" => "organizer",
         _ => return None,
     };
 

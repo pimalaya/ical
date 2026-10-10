@@ -6,13 +6,13 @@ status: current
 
 # JSCalendar
 
-The RFC 8984 JSON data model of a calendar, behind the opt-in `jscalendar` feature, built on `jcal`. A `VCALENDAR` is a Group, a `VEVENT` an Event, a `VTODO` a Task; the boundary is a raw `serde_json::Value`, for the same reason jCal's is.
+The JSCalendar JSON data model of a calendar, RFC 8984 and its 2.0 successor, behind the opt-in `jscalendar` feature, built on `jcal`. A `VCALENDAR` is a Group, a `VEVENT` an Event, a `VTODO` a Task; the boundary is a raw `serde_json::Value`, for the same reason jCal's is.
 
-Unlike jCal, this is a re-modelling rather than a re-encoding: a `DTEND` is a duration, an `ATTENDEE` line is a Participant object, a `VALARM` is an Alert, and an overriding `VEVENT` is a patch inside the series it overrides rather than a component of its own. The conversion rules are those of draft-ietf-calext-jscalendar-icalendar, read against the published RFC 8984 rather than its successor: where the draft names a member only JSCalendar 2.0 has, the crate writes RFC 8984's.
+Unlike jCal, this is a re-modelling rather than a re-encoding: a `DTEND` is a duration, an `ATTENDEE` line is a Participant object, a `VALARM` is an Alert, and an overriding `VEVENT` is a patch inside the series it overrides rather than a component of its own. The conversion rules are those of draft-ietf-calext-jscalendar-icalendar, written against RFC 8984 by default, which is what other producers write, and against JSCalendar 2.0 (draft-ietf-calext-jscalendarbis-22) on request, which is what draft-ietf-jmap-calendars builds on.
 
 ### Requirement: JSCalendar conversion
 
-A decoded calendar SHALL convert to and from the RFC 8984 data model. A `Group` is a whole calendar; a lone `Event` or `Task` is the calendar holding it, since that is what a JMAP calendar server hands out one object at a time. Only a root that is none of the three SHALL fail the import.
+A decoded calendar SHALL convert to and from the RFC 8984 data model, and to JSCalendar 2.0 on request. A `Group` is a whole calendar; a lone `Event` or `Task` is the calendar holding it, since that is what a JMAP calendar server hands out one object at a time. Only a root that is none of the three SHALL fail the import.
 
 #### Scenario: A calendar of events
 
@@ -33,6 +33,8 @@ Everything the mapping cannot express SHALL be carried rather than dropped, and 
 Exporting, a property or component with no JSCalendar counterpart is kept whole in the object's `iCalendar` member, in jCal syntax, and a parameter left over after a property converts is kept in that member's `convertedProperties` record. The same record names the property a member came from wherever more than one could have, so `updated` knows whether it was a `DTSTAMP` or a `LAST-MODIFIED`.
 
 Importing, the mirror hatch applies: a member with no iCalendar counterpart becomes a `JSPROP` property holding its JSON, located by a `JSPTR` parameter, and a collection key becomes a `JSID` parameter or property so it survives the next conversion.
+
+A Location or Participant carrying a hatch of its own SHALL read back as the `VLOCATION` or `PARTICIPANT` it came from, with what the hatch holds.
 
 #### Scenario: A property outside the mapping
 
@@ -85,6 +87,36 @@ Ordering inside a component is lost, since a JSCalendar object is a set of membe
 - GIVEN `DTSTART;TZID=Europe/Berlin` and `DTEND;TZID=Europe/Berlin` an hour and a half later
 - WHEN the event is converted
 - THEN it states `PT1H30M` and the zone once
+
+### Requirement: JSCalendar 2.0
+
+A calendar SHALL convert to JSCalendar 2.0 on request, RFC 8984 staying the default, and the import SHALL read both. An object is read as 2.0 when it or its Group states a `version` other than 1.0, or when it carries `recurrenceRule`, `organizerCalendarAddress`, `endTimeZone`, `mainLocationId` or a Participant's `calendarAddress`; the RFC 8984 names are read either way, and an RFC 8984 object reads as it always did.
+
+Written as 2.0, the Group states `version` and no entry does (bis 3.1.2); the calendar's `METHOD` is every entry's `method`, since a 2.0 Group has none (bis 4.3, conversion 2.3.27). One `RRULE` is the `recurrenceRule`. `ORGANIZER` is the `organizerCalendarAddress` and an owner Participant addressed by its `calendarAddress` (conversion 2.3.29), which is the same Participant as the `ATTENDEE` of that address when the two agree on its name and email; the attendee's record then says the line was there, so it comes back. Roles have no default, `REQ-PARTICIPANT` is `required`, a `VTODO` attendee's progress is the Participant's beside an `accepted` status (conversion Table 13), and a Link's `display` is a set. An override patch never touches what 2.0 forbids (bis 3.3.4): a readdressed participant goes whole, and `relatedTo` may now change.
+
+Written as 2.0, an object SHALL set no member 2.0 obsoletes or reserves (bis A.2.1, A.2.2). What such a member would have held stays in the escape hatch: a further `RRULE`, an `EXRULE`, `REQUEST-STATUS`, `COMPLETED`, a `VLOCATION`'s `DESCRIPTION`, a participant's `LANGUAGE` and `SCHEDULE-*` parameters, and a `JSPROP` carrying a retired member. A calendar holding no entry keeps its `METHOD` whole.
+
+Read as 2.0, the organizer is `organizerCalendarAddress`, its Participant the first owner of that address; that Participant is no `ATTENDEE` when it holds the owner role alone, says nothing an `ORGANIZER` cannot and carries no record (conversion 3.6). The `ROLE` is the first of `chair`, `required`, `optional` and `informational`, else a role iCalendar has no word for, else `OWNER` for an owner that is not the organizer. An entry's `method` is the calendar's `METHOD`.
+
+`endTimeZone` is not written, since a span between two zones needs the time-zone database; read, it rides a `JSPROP` and the `DTEND` stays in the start's zone.
+
+#### Scenario: A scheduled series
+
+- GIVEN a zoned weekly series with an `EXDATE`, a moved occurrence, an `ORGANIZER` that also attends, two more attendees, an alarm and a location
+- WHEN it is converted to JSCalendar 2.0 and back
+- THEN the Event holds `recurrenceRule`, `organizerCalendarAddress` and three Participants addressed by `calendarAddress`, none of the retired members, and the calendar comes back line for line
+
+#### Scenario: An event a JMAP server wrote
+
+- GIVEN a lone 2.0 Event with no `version`, its organizer's Participant holding its attendance, a monthly `recurrenceRule` and overrides
+- WHEN it is read
+- THEN it is one series and one moved occurrence, each with one `ORGANIZER` and an `ATTENDEE` per Participant, and no `JSPROP`
+
+#### Scenario: The whole corpus at 2.0
+
+- GIVEN every fixture in the corpus that parses
+- WHEN each is converted to JSCalendar 2.0, back, and to 2.0 again
+- THEN the second conversion equals the first, and neither sets a retired member
 
 ### Requirement: JSCalendar needs no parser
 

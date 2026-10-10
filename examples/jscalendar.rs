@@ -11,9 +11,13 @@
 //! jCal syntax, and a JSCalendar member with no iCalendar counterpart comes
 //! back as a `JSPROP` property located by a `JSPTR` parameter.
 //!
+//! RFC 8984 is what `to_jscalendar` writes; `to_jscalendar_as` can write
+//! JSCalendar 2.0 instead, the model a JMAP calendar server speaks, and
+//! `from_jscalendar` reads both.
+//!
 //! Run with: `cargo run --example jscalendar --features jscalendar`
 
-use ical::{ical::Ical, tree::cst::IcalCst};
+use ical::{ical::Ical, jscalendar::IcalJscalendarVersion, tree::cst::IcalCst};
 
 fn main() {
     let raw = concat!(
@@ -57,4 +61,10 @@ fn main() {
         "\nsecond pass changes nothing: {}",
         back.to_jscalendar() == group
     );
+
+    // JSCalendar 2.0: the organizer is `organizerCalendarAddress`, each
+    // Participant is addressed by its `calendarAddress`, and the Group states
+    // its version.
+    let group = cal.to_jscalendar_as(IcalJscalendarVersion::V2_0);
+    println!("\n{}", serde_json::to_string_pretty(&group).unwrap());
 }

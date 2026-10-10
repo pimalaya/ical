@@ -66,6 +66,11 @@ Only the kinds the specification structures with `;` (`GEO`, `REQUEST-STATUS`, a
 - WHEN it is decoded
 - THEN the extra data reads `rcpt,two` rather than stopping at the comma
 
+#### Scenario: A request status with no extra data
+- GIVEN a `REQUEST-STATUS` whose extra data is empty
+- WHEN it is encoded
+- THEN it writes `code;description`, with no trailing `;`, since the extra data is optional (RFC 5545 3.8.8.3)
+
 ### Requirement: A parameter value is encoded by RFC 6868, not by the text escapes
 
 A parameter value SHALL be decoded and encoded by RFC 6868 section 3.1: `^n` reads as a newline, `^^` as a caret, `^'` as a double quote, and any other caret sequence, a trailing lone caret included, stays exactly as written, which section 3.1 requires rather than merely permits. A backslash SHALL be content in both directions, since RFC 5545 section 3.2 gives a parameter value no escapes at all and RFC 6868 section 3.2 forbids adding the backslash ones.

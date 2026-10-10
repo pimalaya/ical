@@ -20,7 +20,10 @@ use serde_json::{Map, Value, json};
 
 use crate::{
     jcal::datetime::datetime_to_json,
-    jscalendar::export::{Builder, list, param, text},
+    jscalendar::{
+        IcalJscalendarVersion,
+        export::{Builder, list, param, text},
+    },
     param::IcalParamKind,
     prop::IcalProp,
     recur::IcalRecurDateTime,
@@ -104,22 +107,30 @@ impl Builder {
     }
 
     /// `RRULE` and `EXRULE` are the recurrence rules (draft 2.3.36).
+    ///
+    /// JSCalendar 2.0 holds one rule and no excluded one (bis draft 3.3.3,
+    /// A.2.1), so a second `RRULE` stays whole in the hatch.
     pub(super) fn rule(&mut self, prop: &IcalProp<'_>, excluded: bool) {
         let Some(text) = text(prop) else {
             return self.hatch.keep(prop);
         };
 
-        let pointer = match excluded {
-            true => "excludedRecurrenceRules",
-            false => "recurrenceRules",
+        let v2 = self.version == IcalJscalendarVersion::V2_0;
+        self.series |= !excluded;
+
+        if v2 && !self.rules.is_empty() {
+            return self.hatch.keep(prop);
+        }
+
+        let pointer = match (excluded, v2) {
+            (true, _) => "excludedRecurrenceRules",
+            (false, true) => "recurrenceRule",
+            (false, false) => "recurrenceRules",
         };
 
         match excluded {
             true => self.excluded_rules.push(rule_to_json(&text)),
-            false => {
-                self.series = true;
-                self.rules.push(rule_to_json(&text));
-            }
+            false => self.rules.push(rule_to_json(&text)),
         }
 
         self.hatch.note(pointer, prop, &[]);

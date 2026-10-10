@@ -24,13 +24,17 @@ impl<'v> Codec<'v> for IcalRequestStatus<'v> {
     }
 
     fn encode(&self, escaper: Escaper) -> IcalValueNode<'static> {
-        IcalValueNode::from_components(
-            vec![
-                encode_component(&[self.code.as_ref()], escaper),
-                encode_component(&[self.description.as_ref()], escaper),
-                encode_component(&[self.extra.as_ref()], escaper),
-            ],
-            escaper,
-        )
+        let mut components = vec![
+            encode_component(&[self.code.as_ref()], escaper),
+            encode_component(&[self.description.as_ref()], escaper),
+        ];
+
+        // NOTE: The extra data is optional (RFC 5545 3.8.8.3), and an empty
+        // one is no extra data, so it writes as none.
+        if !self.extra.is_empty() {
+            components.push(encode_component(&[self.extra.as_ref()], escaper));
+        }
+
+        IcalValueNode::from_components(components, escaper)
     }
 }

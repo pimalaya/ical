@@ -14,10 +14,14 @@ use serde_json::{Map, Value};
 
 use crate::{
     component::{IcalComponent, IcalComponentKind, IcalComponentName},
-    jscalendar::import::{keyed, keys, named, plain, text_prop},
+    jscalendar::{
+        hatch::{hatch_of, kept_components, kept_props},
+        import::{keyed, keys, named, plain, text_prop},
+    },
     param::IcalParam,
     prop::{IcalProp, IcalPropKind},
     value::{IcalValue, geo::IcalGeo, text::IcalTextList, uri::IcalUri},
+    version::IcalVersion,
 };
 
 /// A Link as the property it came from (`ATTACH` unless recorded otherwise).
@@ -42,9 +46,18 @@ pub(super) fn link(
             .push(IcalParam::FmtType(Cow::Owned(media.to_owned())));
     }
 
-    if let Some(display) = link.get("display").and_then(Value::as_str) {
-        prop.params
-            .push(IcalParam::Display(Cow::Owned(display.to_ascii_uppercase())));
+    // NOTE: RFC 8984 states one purpose, 2.0 a set of them (bis draft A.2.3).
+    let display = match link.get("display") {
+        Some(Value::String(display)) => display.to_ascii_uppercase(),
+        Some(display) => keys(display)
+            .map(|purpose| purpose.to_ascii_uppercase())
+            .collect::<Vec<_>>()
+            .join(","),
+        None => String::new(),
+    };
+
+    if !display.is_empty() {
+        prop.params.push(IcalParam::Display(Cow::Owned(display)));
     }
 
     if let Some(title) = link.get("title").and_then(Value::as_str) {
@@ -74,8 +87,11 @@ pub(super) fn location(
 ) -> Result<IcalProp<'static>, IcalComponent<'static>> {
     let name = location.get("name").and_then(Value::as_str);
     let coordinates = location.get("coordinates").and_then(Value::as_str);
-    let described =
-        location.get("description").is_some() || location.get("locationTypes").is_some();
+    // NOTE: A Location carrying a hatch came from a VLOCATION, which is where
+    // the hatch goes back to (conversion draft 3.5).
+    let described = location.get("description").is_some()
+        || location.get("locationTypes").is_some()
+        || location.get("iCalendar").is_some();
 
     if described || (name.is_some() && coordinates.is_some()) {
         return Err(vlocation(location, name, coordinates));
@@ -138,10 +154,21 @@ pub(super) fn vlocation(
         props.push(prop);
     }
 
+    let hatch = location.as_object().and_then(hatch_of);
+
+    props.extend(
+        kept_props(hatch, IcalVersion::V2_0)
+            .into_iter()
+            .map(IcalProp::into_owned),
+    );
+
     IcalComponent {
         name: IcalComponentName::Kind(IcalComponentKind::VLocation),
         props,
-        components: Vec::new(),
+        components: kept_components(hatch, IcalVersion::V2_0)
+            .into_iter()
+            .map(IcalComponent::into_owned)
+            .collect(),
     }
 }
 

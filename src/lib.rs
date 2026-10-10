@@ -137,10 +137,10 @@
 //! [`jcal`] is the RFC 7265 spelling of this model in JSON, member for
 //! member.
 //!
-//! [`jscalendar`] is the RFC 8984 data model, which is a different model: a
-//! `VCALENDAR` is a Group of Events and Tasks, a `DTEND` is a duration, an
-//! `ATTENDEE` line is a Participant object, and an overriding `VEVENT` is a
-//! patch inside the series it overrides.
+//! [`jscalendar`] is the RFC 8984 data model and its 2.0 successor, which is a
+//! different model: a `VCALENDAR` is a Group of Events and Tasks, a `DTEND`
+//! is a duration, an `ATTENDEE` line is a Participant object, and an
+//! overriding `VEVENT` is a patch inside the series it overrides.
 //!
 //! Both are lossless, each through an escape hatch of its own, and both take
 //! a raw [`serde_json::Value`] at the boundary rather than a serde
@@ -160,8 +160,9 @@
 //! `CHARSET` to text through `encoding_rs` (the WHATWG Encoding Standard).
 //!
 //! `jcal` adds the RFC 7265 JSON representation, via the `serde_json` crate.
-//! `jscalendar` adds the RFC 8984 JSON data model, implies `jcal`, whose
-//! syntax carries the escape hatch, and pulls no crate of its own.
+//! `jscalendar` adds the JSCalendar JSON data model, RFC 8984 and 2.0, implies
+//! `jcal`, whose syntax carries the escape hatch, and pulls no crate of its
+//! own.
 //!
 //! [`IcalComponentKind`]: component::IcalComponentKind
 //! [`IcalPropKind`]: prop::IcalPropKind

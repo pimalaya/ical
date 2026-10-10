@@ -43,7 +43,7 @@ iCalendar parser, validator, editor, merger and builder library for Rust
 | [7529] | Non-Gregorian recurrence: `SKIP` is expanded for the Gregorian scale; another scale is carried, not expanded |
 | [7953] | Availability: the availability window and the periods inside it                                           |
 | [7986] | Calendar extensions: the newer calendar-level properties                                                  |
-| [8984] | JSCalendar: the JSON data model a JMAP calendar server exchanges, converted both ways                     |
+| [8984] | JSCalendar: the JSON data model a JMAP calendar server exchanges, converted both ways, and its 2.0 revision ([jscalendarbis]) |
 | [9073] | Event publishing extensions: participants, locations, resources and structured data                       |
 | [9074] | Alarm extensions: acknowledgement, proximity and the alarm relations                                      |
 | [9253] | Relationships: typed links, reference identifiers and concepts                                            |
@@ -57,6 +57,7 @@ iCalendar parser, validator, editor, merger and builder library for Rust
 [7953]: https://www.rfc-editor.org/rfc/rfc7953
 [7986]: https://www.rfc-editor.org/rfc/rfc7986
 [8984]: https://www.rfc-editor.org/rfc/rfc8984
+[jscalendarbis]: https://datatracker.ietf.org/doc/draft-ietf-calext-jscalendarbis/
 [9073]: https://www.rfc-editor.org/rfc/rfc9073
 [9074]: https://www.rfc-editor.org/rfc/rfc9074
 [9253]: https://www.rfc-editor.org/rfc/rfc9253

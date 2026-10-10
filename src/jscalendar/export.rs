@@ -24,7 +24,7 @@ use serde_json::{Map, Value, json};
 use crate::{
     component::{IcalComponent, IcalComponentKind, IcalComponentName},
     ical::Ical,
-    jscalendar::{export::temporal::utc, hatch::IcalHatch, patch},
+    jscalendar::{IcalJscalendarVersion, export::temporal::utc, hatch::IcalHatch, patch},
     param::{IcalParam, IcalParamKind},
     prop::{IcalProp, IcalPropKind, IcalPropName},
     value::IcalValue,
@@ -32,10 +32,16 @@ use crate::{
     version::IcalVersion,
 };
 
-/// The calendar as a JSCalendar `Group` value.
-pub(crate) fn group(ical: &Ical<'_>) -> Value {
+/// The calendar as a JSCalendar `Group` value of this version.
+pub(crate) fn group(ical: &Ical<'_>, version: IcalJscalendarVersion) -> Value {
     let mut group = Map::new();
     group.insert("@type".to_owned(), Value::String("Group".to_owned()));
+
+    // NOTE: A 2.0 Group states its version and its entries never do (bis
+    // draft 3.1.2); without one, a Group is 1.0.
+    if version == IcalJscalendarVersion::V2_0 {
+        group.insert("version".to_owned(), Value::String((*version).to_owned()));
+    }
 
     let mut hatch = IcalHatch::new("vcalendar");
 
@@ -49,14 +55,25 @@ pub(crate) fn group(ical: &Ical<'_>) -> Value {
 
     let mut jsprops = Map::new();
 
+    // NOTE: A 2.0 method rides the entries, so a calendar with none keeps its
+    // METHOD whole.
+    let entryless = version == IcalJscalendarVersion::V2_0
+        && !ical
+            .components
+            .iter()
+            .any(|component| entry_kind(component).is_some());
+
     for prop in &ical.props {
-        calendar_prop(&mut group, &mut hatch, &mut jsprops, prop);
+        match &prop.name {
+            IcalPropName::Kind(IcalPropKind::Method) if entryless => hatch.keep(prop),
+            _ => calendar_prop(&mut group, &mut hatch, &mut jsprops, prop),
+        }
     }
 
     let converted: Vec<Option<Entry>> = ical
         .components
         .iter()
-        .map(|component| entry_kind(component).map(|task| entry(component, task)))
+        .map(|component| entry_kind(component).map(|task| entry(component, task, version)))
         .collect();
 
     // NOTE: An overriding component folds into the series it overrides, so its
@@ -100,10 +117,17 @@ pub(crate) fn group(ical: &Ical<'_>) -> Value {
                 continue;
             }
 
-            merged.extend(patch::diff(base, &over.object));
+            merged.extend(patch::diff(base, &over.object, version));
             overrides.insert(id.clone(), Value::Object(merged));
         }
     }
+
+    // NOTE: A 2.0 Group has no method; the calendar's is every entry's
+    // (conversion draft 2.3.27).
+    let method = match version {
+        IcalJscalendarVersion::V1_0 => None,
+        IcalJscalendarVersion::V2_0 => group.remove("method"),
+    };
 
     let mut entries = Vec::new();
 
@@ -111,7 +135,13 @@ pub(crate) fn group(ical: &Ical<'_>) -> Value {
         match (objects[index].take(), mains[index]) {
             // NOTE: An override that folded is already inside its series.
             (Some(_), Some(_)) => continue,
-            (Some(object), None) => entries.push(Value::Object(object)),
+            (Some(mut object), None) => {
+                if let Some(method) = &method {
+                    object.entry("method").or_insert_with(|| method.clone());
+                }
+
+                entries.push(Value::Object(object));
+            }
             (None, _) => hatch.keep_component(component),
         }
     }
@@ -233,7 +263,7 @@ fn calendar_prop(
 }
 
 /// One `VEVENT` or `VTODO` as an Event or Task object.
-fn entry(component: &IcalComponent<'_>, task: bool) -> Entry {
+fn entry(component: &IcalComponent<'_>, task: bool, version: IcalJscalendarVersion) -> Entry {
     let mut builder = Builder {
         object: Map::new(),
         hatch: IcalHatch::new(&component.name),
@@ -256,6 +286,8 @@ fn entry(component: &IcalComponent<'_>, task: bool) -> Entry {
         task,
         zone: None,
         jsprops: Map::new(),
+        version,
+        organizer: None,
     };
 
     builder.object.insert(
@@ -268,14 +300,18 @@ fn entry(component: &IcalComponent<'_>, task: bool) -> Entry {
 
     // NOTE: A DTEND is a span from the start, so it cannot convert until the
     // start has, and iCalendar does not say in which order the two are written.
-    let end = |prop: &IcalProp<'_>| matches!(prop.name, IcalPropName::Kind(IcalPropKind::DtEnd));
+    // A 2.0 ORGANIZER goes first, so the ATTENDEE of its address can join the
+    // Participant it made.
+    let rank = |prop: &IcalProp<'_>| match prop.name {
+        IcalPropName::Kind(IcalPropKind::Organizer) if version == IcalJscalendarVersion::V2_0 => 0,
+        IcalPropName::Kind(IcalPropKind::DtEnd) => 2,
+        _ => 1,
+    };
 
-    for prop in component.props.iter().filter(|prop| !end(prop)) {
-        builder.prop(prop);
-    }
-
-    for prop in component.props.iter().filter(|prop| end(prop)) {
-        builder.prop(prop);
+    for pass in 0..3 {
+        for prop in component.props.iter().filter(|prop| rank(prop) == pass) {
+            builder.prop(prop);
+        }
     }
 
     for child in &component.components {
@@ -313,13 +349,29 @@ pub(super) struct Builder {
     /// The members carried in JSPROP properties, grafted on once everything
     /// else has converted (draft 4.1.2).
     jsprops: Map<String, Value>,
+    version: IcalJscalendarVersion,
+    /// The 2.0 organizer, until an `ATTENDEE` of its address joins it.
+    organizer: Option<Organizer>,
+}
+
+/// The Participant a 2.0 `ORGANIZER` made.
+pub(super) struct Organizer {
+    key: String,
+    address: String,
+    /// Whether a `JSID` named the key, which an `ATTENDEE` must then share.
+    named: bool,
 }
 
 impl Builder {
     /// Convert one property, keeping it whole when nothing holds it.
     fn prop(&mut self, prop: &IcalProp<'_>) {
+        let v2 = self.version == IcalJscalendarVersion::V2_0;
+
         let IcalPropName::Kind(kind) = &prop.name else {
             match jsprop(prop) {
+                // NOTE: A member 2.0 obsoletes or reserves would make the
+                // object invalid (bis draft 1.7.3), so it stays a property.
+                Some((pointer, _)) if v2 && retired(&pointer) => self.hatch.keep(prop),
                 Some((pointer, value)) => {
                     self.jsprops.insert(pointer, value);
                 }
@@ -330,6 +382,12 @@ impl Builder {
         };
 
         match kind {
+            // NOTE: What 2.0 obsoletes (progressUpdated, excludedRecurrenceRules)
+            // or reserves (requestStatus) has no member to go to (bis draft
+            // A.2.1, A.2.2.2).
+            IcalPropKind::Completed | IcalPropKind::ExRule | IcalPropKind::RequestStatus if v2 => {
+                self.hatch.keep(prop)
+            }
             IcalPropKind::Uid => {
                 self.uid = text(prop).unwrap_or_default();
                 self.member("uid", Value::String(self.uid.clone()), prop, &[]);
@@ -441,6 +499,13 @@ impl Builder {
             }
         }
 
+        // NOTE: 2.0 holds one rule, and `rule` keeps any other in the hatch.
+        if self.version == IcalJscalendarVersion::V2_0
+            && let Some(rule) = self.rules.pop()
+        {
+            self.object.insert("recurrenceRule".to_owned(), rule);
+        }
+
         let lists = [
             ("recurrenceRules", self.rules),
             ("excludedRecurrenceRules", self.excluded_rules),
@@ -487,6 +552,21 @@ pub(super) const PARTICIPANT_PARAMS: &[IcalParamKind] = &[
     IcalParamKind::ScheduleStatus,
 ];
 
+/// The same for JSCalendar 2.0, which obsoletes `language` and reserves the
+/// scheduling members (bis draft A.2.1, A.2.2.2), so their parameters stay
+/// parameters.
+pub(super) const PARTICIPANT_PARAMS_V2: &[IcalParamKind] = &[
+    IcalParamKind::Cn,
+    IcalParamKind::CuType,
+    IcalParamKind::DelegatedFrom,
+    IcalParamKind::DelegatedTo,
+    IcalParamKind::Email,
+    IcalParamKind::Member,
+    IcalParamKind::PartStat,
+    IcalParamKind::Role,
+    IcalParamKind::Rsvp,
+];
+
 /// The key an element takes in the collection it joins: what its `JSID` says,
 /// else its position, which is stable for as long as the source is (draft
 /// 2.1.3).
@@ -515,7 +595,7 @@ pub(super) fn component_key(
 }
 
 /// The `JSID` parameter a property carries, if any.
-fn jsid_param(prop: &IcalProp<'_>) -> Option<String> {
+pub(super) fn jsid_param(prop: &IcalProp<'_>) -> Option<String> {
     prop.params.iter().find_map(|param| match param {
         IcalParam::Unknown { name, values } if name.eq_ignore_ascii_case("JSID") => {
             values.first().map(|value| value.to_string())
@@ -539,6 +619,24 @@ fn jsprop(prop: &IcalProp<'_>) -> Option<(String, Value)> {
     let value = serde_json::from_str(&text(prop)?).ok()?;
 
     Some((pointer.to_string(), value))
+}
+
+/// The members JSCalendar 2.0 obsoletes or reserves on an Event or Task (bis
+/// draft A.2.1, A.2.2).
+const RETIRED: [&str; 7] = [
+    "excludedRecurrenceRules",
+    "localizations",
+    "progressUpdated",
+    "recurrenceRules",
+    "replyTo",
+    "requestStatus",
+    "timeZones",
+];
+
+/// Whether a pointer falls inside a member JSCalendar 2.0 retired.
+fn retired(pointer: &str) -> bool {
+    let head = pointer.split('/').next().unwrap_or(pointer);
+    RETIRED.contains(&head)
 }
 
 /// Graft the members `JSPROP` properties carried onto a converted object.

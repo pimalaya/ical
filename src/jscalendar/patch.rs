@@ -17,7 +17,9 @@ use alloc::{
 
 use serde_json::{Map, Value};
 
-/// The members a recurrence override patch must not touch (RFC 8984 4.3.5).
+use crate::jscalendar::IcalJscalendarVersion;
+
+/// The members an RFC 8984 recurrence override patch must not touch (4.3.5).
 ///
 /// They belong to the series rather than to one instance, so a difference
 /// falling on one of them is dropped rather than written into the override.
@@ -38,15 +40,77 @@ const UNPATCHABLE: [&str; 14] = [
     "uid",
 ];
 
+/// The same for JSCalendar 2.0 (bis draft 3.3.4), which lets an override
+/// change what it relates to.
+const UNPATCHABLE_V2: [&str; 11] = [
+    "@type",
+    "method",
+    "organizerCalendarAddress",
+    "privacy",
+    "prodId",
+    "recurrenceId",
+    "recurrenceIdTimeZone",
+    "recurrenceOverrides",
+    "recurrenceRule",
+    "sentBy",
+    "uid",
+];
+
 /// The patch that turns `base` into `over`.
 ///
 /// Nested objects are walked so the patch names the smallest member that
 /// actually changed, which is what makes an override readable; an array is
 /// replaced whole, since RFC 8984 forbids a pointer into one.
-pub(crate) fn diff(base: &Map<String, Value>, over: &Map<String, Value>) -> Map<String, Value> {
+///
+/// JSCalendar 2.0 forbids a pointer onto a participant's `calendarAddress`
+/// too, so an override that readdresses one replaces it whole.
+pub(crate) fn diff(
+    base: &Map<String, Value>,
+    over: &Map<String, Value>,
+    version: IcalJscalendarVersion,
+) -> Map<String, Value> {
     let mut patch = Map::new();
     walk(base, over, "", &mut patch);
-    patch.retain(|pointer, _| !unpatchable(pointer));
+
+    let unpatchable: &[&str] = match version {
+        IcalJscalendarVersion::V1_0 => &UNPATCHABLE,
+        IcalJscalendarVersion::V2_0 => &UNPATCHABLE_V2,
+    };
+
+    patch.retain(|pointer, _| {
+        let head = pointer.split('/').next().unwrap_or(pointer);
+        !unpatchable.contains(&head)
+    });
+
+    if version == IcalJscalendarVersion::V1_0 {
+        return patch;
+    }
+
+    let readdressed: Vec<String> = patch
+        .keys()
+        .filter_map(|pointer| pointer.strip_suffix("/calendarAddress"))
+        .filter(|participant| {
+            participant
+                .strip_prefix("participants/")
+                .is_some_and(|key| !key.contains('/'))
+        })
+        .map(str::to_owned)
+        .collect();
+
+    for participant in readdressed {
+        let prefix = format!("{participant}/");
+        patch.retain(|pointer, _| !pointer.starts_with(&prefix));
+
+        let key = unescape(&participant["participants/".len()..]);
+        let whole = over
+            .get("participants")
+            .and_then(|participants| participants.get(&key))
+            .cloned()
+            .unwrap_or(Value::Null);
+
+        patch.insert(participant, whole);
+    }
+
     patch
 }
 
@@ -118,12 +182,6 @@ fn set(target: &mut Map<String, Value>, pointer: &str, value: Value) {
     set(inner, rest, value);
 }
 
-/// Whether a pointer falls on a member an override may not carry.
-fn unpatchable(pointer: &str) -> bool {
-    let head = pointer.split('/').next().unwrap_or(pointer);
-    UNPATCHABLE.contains(&head)
-}
-
 /// One pointer segment appended to a prefix.
 fn join(prefix: &str, key: &str) -> String {
     match prefix.is_empty() {
@@ -151,7 +209,10 @@ mod tests {
 
     use serde_json::json;
 
-    use crate::jscalendar::patch::{apply, diff};
+    use crate::jscalendar::{
+        IcalJscalendarVersion,
+        patch::{apply, diff},
+    };
 
     fn object(value: serde_json::Value) -> serde_json::Map<String, serde_json::Value> {
         value.as_object().expect("an object").clone()
@@ -169,7 +230,7 @@ mod tests {
         }));
 
         assert_eq!(
-            diff(&base, &over),
+            diff(&base, &over, IcalJscalendarVersion::V1_0),
             object(json!({
                 "start": "2024-01-08T10:00:00",
                 "locations/1/name": "Room B"
@@ -182,7 +243,10 @@ mod tests {
         let base = object(json!({"title": "Weekly", "description": "Bring notes"}));
         let over = object(json!({"title": "Weekly"}));
 
-        assert_eq!(diff(&base, &over), object(json!({"description": null})));
+        assert_eq!(
+            diff(&base, &over, IcalJscalendarVersion::V1_0),
+            object(json!({"description": null}))
+        );
     }
 
     #[test]
@@ -190,7 +254,7 @@ mod tests {
         let base = object(json!({"uid": "a", "recurrenceRules": [{"frequency": "daily"}]}));
         let over = object(json!({"uid": "b"}));
 
-        assert!(diff(&base, &over).is_empty());
+        assert!(diff(&base, &over, IcalJscalendarVersion::V1_0).is_empty());
     }
 
     #[test]
@@ -199,7 +263,7 @@ mod tests {
         let over = object(json!({"requestStatus": ["2.0;Success", "3.7;Invalid"]}));
 
         assert_eq!(
-            diff(&base, &over),
+            diff(&base, &over, IcalJscalendarVersion::V1_0),
             object(json!({"requestStatus": ["2.0;Success", "3.7;Invalid"]}))
         );
     }
@@ -216,7 +280,10 @@ mod tests {
         }));
 
         let mut patched = base.clone();
-        apply(&mut patched, &diff(&base, &over));
+        apply(
+            &mut patched,
+            &diff(&base, &over, IcalJscalendarVersion::V1_0),
+        );
 
         assert_eq!(patched, over);
     }
@@ -234,11 +301,47 @@ mod tests {
         let base = object(json!({"links": {}}));
         let over = object(json!({"links": {"a/b": {"href": "https://example.com"}}}));
 
-        let patch = diff(&base, &over);
+        let patch = diff(&base, &over, IcalJscalendarVersion::V1_0);
         assert_eq!(patch.keys().next().map(String::as_str), Some("links/a~1b"));
 
         let mut patched = base.clone();
         apply(&mut patched, &patch);
         assert_eq!(patched, over);
+    }
+
+    #[test]
+    fn replaces_a_participant_whole_when_its_address_changes() {
+        let base = object(json!({"participants": {"2": {
+            "calendarAddress": "mailto:bob@example.com", "name": "Bob", "roles": {"required": true}
+        }}}));
+        let over = object(json!({"participants": {"2": {
+            "calendarAddress": "mailto:cy@example.com", "name": "Cy", "roles": {"required": true}
+        }}}));
+
+        // NOTE: 2.0 forbids a pointer onto `participants/*/calendarAddress`
+        // (bis draft 3.3.4), so the participant goes whole.
+        assert_eq!(
+            diff(&base, &over, IcalJscalendarVersion::V2_0),
+            object(json!({"participants/2": over["participants"]["2"]}))
+        );
+        assert_eq!(
+            diff(&base, &over, IcalJscalendarVersion::V1_0),
+            object(json!({
+                "participants/2/calendarAddress": "mailto:cy@example.com",
+                "participants/2/name": "Cy",
+            }))
+        );
+    }
+
+    #[test]
+    fn lets_a_two_point_zero_override_change_its_relations() {
+        let base = object(json!({"relatedTo": {"a": {"@type": "Relation"}}}));
+        let over = object(json!({"relatedTo": {"b": {"@type": "Relation"}}}));
+
+        assert!(diff(&base, &over, IcalJscalendarVersion::V1_0).is_empty());
+        assert_eq!(
+            diff(&base, &over, IcalJscalendarVersion::V2_0),
+            object(json!({"relatedTo/b": {"@type": "Relation"}, "relatedTo/a": null}))
+        );
     }
 }
