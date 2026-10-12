@@ -132,6 +132,7 @@ pub struct IcalRecurExpand {
     buffer: Vec<IcalRecurDateTime>,
     index: usize,
     emitted: u32,
+    floor: Option<IcalRecurDateTime>,
     done: bool,
     zone: Option<IcalTzTransitions>,
 }
@@ -162,6 +163,7 @@ impl IcalRecurExpand {
             buffer: Vec::new(),
             index: 0,
             emitted: 0,
+            floor: None,
             done: alien,
             zone: None,
             rule,
@@ -180,6 +182,77 @@ impl IcalRecurExpand {
     /// the same type it was without one.
     pub fn in_zone(mut self, zone: IcalTz) -> Self {
         self.zone = Some(IcalTzTransitions::of_zone(zone));
+        self
+    }
+
+    /// Skips every occurrence before `from`, so that the next one yielded is
+    /// the first at or after it.
+    ///
+    /// Where `skip_while` steps through every earlier occurrence, of which a
+    /// `FREQ=SECONDLY` rule started in 1970 holds billions, this jumps the
+    /// walk to the period `from` falls in, on the `INTERVAL` lattice, so the
+    /// cost no longer grows with the distance from the start and what is
+    /// yielded is what the full walk yields.
+    ///
+    /// A rule bounded by `COUNT` cannot jump, since which occurrence is the
+    /// last depends on every one before it: it still walks them, counting
+    /// them without yielding them, a walk `COUNT` itself bounds.
+    pub fn skip_to(&mut self, from: IcalRecurDateTime) -> &mut Self {
+        self.floor = Some(self.floor.map_or(from, |floor| floor.max(from)));
+
+        if self.rule.count.is_some() || self.done {
+            return self;
+        }
+
+        if from.year > MAX_YEAR {
+            self.done = true;
+            return self;
+        }
+
+        let interval = i64::from(self.rule.interval.max(1));
+        let step = self.step_seconds().unwrap_or(1).max(1);
+        let months = |at: IcalRecurDateTime| i64::from(at.year) * 12 + i64::from(at.month) - 1;
+
+        // NOTE: The whole periods between the cursor and the one `from` falls
+        // in, less one: a period can yield a day past its own end (a
+        // `BYWEEKNO` week straddling the year, an RFC 7529 `SKIP=FORWARD`), so
+        // the period before is walked too.
+        let periods = match self.rule.freq {
+            IcalRecurFreq::Secondly | IcalRecurFreq::Minutely | IcalRecurFreq::Hourly => {
+                (seconds_of(from) - seconds_of(self.cursor)).div_euclid(step)
+            }
+            IcalRecurFreq::Daily => (day_of(from) - day_of(self.cursor)).div_euclid(interval),
+            IcalRecurFreq::Weekly => (day_of(from) - day_of(self.cursor)).div_euclid(interval * 7),
+            IcalRecurFreq::Monthly => (months(from) - months(self.cursor)).div_euclid(interval),
+            IcalRecurFreq::Yearly => {
+                (i64::from(from.year) - i64::from(self.cursor.year)).div_euclid(interval)
+            }
+        } - 1;
+
+        if periods <= 0 {
+            return self;
+        }
+
+        self.cursor = match self.rule.freq {
+            IcalRecurFreq::Secondly | IcalRecurFreq::Minutely | IcalRecurFreq::Hourly => {
+                instant_of(seconds_of(self.cursor) + periods * step)
+            }
+            IcalRecurFreq::Daily => date_of(day_of(self.cursor) + periods * interval),
+            IcalRecurFreq::Weekly => date_of(day_of(self.cursor) + periods * interval * 7),
+            IcalRecurFreq::Monthly => {
+                let month = months(self.cursor) + periods * interval;
+                IcalRecurDateTime::date(
+                    month.div_euclid(12) as i32,
+                    month.rem_euclid(12) as u8 + 1,
+                    1,
+                )
+            }
+            IcalRecurFreq::Yearly => {
+                let year = i64::from(self.cursor.year) + periods * interval;
+                IcalRecurDateTime::date(year as i32, 1, 1)
+            }
+        };
+
         self
     }
 
@@ -634,6 +707,11 @@ impl Iterator for IcalRecurExpand {
                 }
 
                 self.emitted += 1;
+
+                if self.floor.is_some_and(|floor| candidate < floor) {
+                    continue;
+                }
+
                 return Some(candidate);
             }
 

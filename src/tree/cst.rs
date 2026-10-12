@@ -94,6 +94,18 @@ pub struct IcalCst<'a> {
 }
 
 impl<'a> IcalCst<'a> {
+    /// The deepest a parsed component may nest, the root calendar counting as
+    /// one.
+    ///
+    /// RFC 5545 needs three (`VCALENDAR`, `VEVENT`, `VALARM`) and its
+    /// extensions little more, while everything walking the tree recurses
+    /// once per level, so input nesting further would let a few kilobytes of
+    /// `BEGIN` lines exhaust the stack. The strict parsers refuse it with
+    /// [`TooDeep`](IcalParseError::TooDeep);
+    /// [`parse_recovering`](Self::parse_recovering) keeps the deeper lines as
+    /// raw lines of the deepest component it admits.
+    pub const DEPTH_MAX: usize = 16;
+
     /// Start an empty iCalendar 2.0 calendar, BEGIN/VERSION/END seeded, ready
     /// for properties and components.
     pub fn v2() -> Self {
@@ -131,7 +143,7 @@ impl<'a> IcalCst<'a> {
         let (first, _rest) = IcalLine::take(input)?;
 
         if first.name.get().eq_ignore_ascii_case("BEGIN") {
-            let (mut cst, rest) = Self::take_component(input)?;
+            let (mut cst, rest) = Self::take_component(input, 1)?;
             cst.take_trailing(rest);
             let escaper = Escaper::for_version_str(&cst.version_str());
             cst.stamp_escaper(escaper);
@@ -180,7 +192,7 @@ impl<'a> IcalCst<'a> {
                 return None;
             }
 
-            match Self::take_component(rest) {
+            match Self::take_component(rest, 1) {
                 Ok((mut cst, tail)) => {
                     rest = cst.take_trailing(tail);
                     let escaper = Escaper::for_version_str(&cst.version_str());
@@ -220,7 +232,7 @@ impl<'a> IcalCst<'a> {
                 Ok((line, _tail)) if line.name.get().eq_ignore_ascii_case("BEGIN") => {
                     recovery.close_loose(&mut loose);
 
-                    let (mut cst, tail) = Self::take_component_recovering(rest, &mut recovery);
+                    let (mut cst, tail) = Self::take_component_recovering(rest, &mut recovery, 1);
                     rest = tail;
                     let escaper = Escaper::for_version_str(&cst.version_str());
                     cst.stamp_escaper(escaper);
@@ -252,12 +264,14 @@ impl<'a> IcalCst<'a> {
         recovery
     }
 
-    /// Take one component recovering from what it cannot structure: an
-    /// unstructurable line becomes an opaque item, and an unclosed component is
-    /// closed at end of input.
+    /// Take one component, at nesting `depth`, recovering from what it cannot
+    /// structure: an unstructurable line becomes an opaque item, an unclosed
+    /// component is closed at end of input, and a component nested past
+    /// [`DEPTH_MAX`](Self::DEPTH_MAX) is kept as raw lines.
     fn take_component_recovering(
         input: &'a [u8],
         recovery: &mut IcalRecovery<'a>,
+        depth: usize,
     ) -> (Self, &'a [u8]) {
         // NOTE: The caller only ever enters here on a line that tokenised as
         // BEGIN.
@@ -296,8 +310,16 @@ impl<'a> IcalCst<'a> {
                         );
                     }
 
+                    if line_name.eq_ignore_ascii_case("BEGIN") && depth >= Self::DEPTH_MAX {
+                        let name = line.raw_value_str().into_owned();
+                        recovery.problems.push(IcalParseError::TooDeep(name));
+                        rest = Self::take_flat(rest, &mut items, recovery);
+                        continue;
+                    }
+
                     if line_name.eq_ignore_ascii_case("BEGIN") {
-                        let (child, next) = Self::take_component_recovering(rest, recovery);
+                        let (child, next) =
+                            Self::take_component_recovering(rest, recovery, depth + 1);
                         items.push(IcalItem::Component(Box::new(child)));
                         rest = next;
                         continue;
@@ -314,6 +336,47 @@ impl<'a> IcalCst<'a> {
                 }
             }
         }
+    }
+
+    /// Take one component as raw lines, from its `BEGIN` line to the `END`
+    /// matching it or the end of input, without recursing however deep it
+    /// nests, and return the unconsumed rest.
+    fn take_flat(
+        input: &'a [u8],
+        items: &mut Vec<IcalItem<'a>>,
+        recovery: &mut IcalRecovery<'a>,
+    ) -> &'a [u8] {
+        let mut rest = input;
+        let mut depth = 0_usize;
+
+        while !is_blank(rest) {
+            match IcalLine::take(rest) {
+                Ok((line, tail)) => {
+                    let name = line.name.get();
+
+                    if name.eq_ignore_ascii_case("BEGIN") {
+                        depth += 1;
+                    } else if name.eq_ignore_ascii_case("END") {
+                        depth -= 1;
+                    }
+
+                    items.push(IcalItem::Prop(line));
+                    rest = tail;
+
+                    if depth == 0 {
+                        break;
+                    }
+                }
+                Err(error) => {
+                    let (opaque, tail) = IcalLine::take_physical(rest);
+                    items.push(IcalItem::Opaque(Cow::Borrowed(opaque)));
+                    recovery.problems.push(error);
+                    rest = tail;
+                }
+            }
+        }
+
+        rest
     }
 
     /// A bare, envelope-less calendar around `items`.
@@ -337,10 +400,11 @@ impl<'a> IcalCst<'a> {
         b""
     }
 
-    /// Take one component (recursively) off the front of `input`, returning it
-    /// and the unconsumed rest. A nested `BEGIN` recurses; the matching `END`
-    /// closes this component.
-    fn take_component(input: &'a [u8]) -> Result<(Self, &'a [u8]), IcalParseError> {
+    /// Take one component (recursively) off the front of `input`, at nesting
+    /// `depth`, returning it and the unconsumed rest. A nested `BEGIN` recurses
+    /// up to [`DEPTH_MAX`](Self::DEPTH_MAX); the matching `END` closes this
+    /// component.
+    fn take_component(input: &'a [u8], depth: usize) -> Result<(Self, &'a [u8]), IcalParseError> {
         let (begin, mut rest) = IcalLine::take(input)?;
 
         if !begin.name.get().eq_ignore_ascii_case("BEGIN") {
@@ -374,7 +438,11 @@ impl<'a> IcalCst<'a> {
             }
 
             if name.eq_ignore_ascii_case("BEGIN") {
-                let (child, next) = Self::take_component(rest)?;
+                if depth >= Self::DEPTH_MAX {
+                    return Err(IcalParseError::TooDeep(line.raw_value_str().into_owned()));
+                }
+
+                let (child, next) = Self::take_component(rest, depth + 1)?;
                 items.push(IcalItem::Component(Box::new(child)));
                 rest = next;
                 continue;

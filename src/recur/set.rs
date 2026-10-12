@@ -397,6 +397,34 @@ impl Iterator for IcalRecurSetExpand<'_> {
 }
 
 impl IcalRecurSetExpand<'_> {
+    /// Skips every identity before `from`, so that the next occurrence yielded
+    /// is the first whose identity is at or after it.
+    ///
+    /// Each rule jumps as [`IcalRecurExpand::skip_to`] explains, so bounding
+    /// the walk to a window costs the window rather than the whole history
+    /// since `DTSTART`. An override whose identity falls before `from` is
+    /// skipped with the rest even when its own start lands later: a caller
+    /// placing moved instances looks through
+    /// [`overrides`](IcalRecurSet::overrides) for those.
+    pub fn skip_to(&mut self, from: IcalRecurDateTime) -> &mut Self {
+        for stream in self.streams.iter_mut().chain(&mut self.exrules) {
+            stream.skip_to(from);
+        }
+
+        if self.primed {
+            for (index, head) in self.heads.iter_mut().enumerate() {
+                if head.is_some_and(|held| held < from) {
+                    *head = self.streams[index].next();
+                }
+            }
+        }
+
+        let literal = self.literals.partition_point(|held| *held < from);
+        self.literal = self.literal.max(literal);
+
+        self
+    }
+
     /// The next identity in chronological order, deduplicated across sources.
     fn next_id(&mut self) -> Option<IcalRecurDateTime> {
         loop {

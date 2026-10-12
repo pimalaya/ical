@@ -1205,6 +1205,43 @@ fn a_zone_alone_contests_a_time_alone_both_ways() {
 }
 
 #[test]
+fn a_zone_and_time_change_both_sides_made_contests_nothing() {
+    let base = floating("DTSTART:20260105T090000");
+    let zoned = floating("DTSTART;TZID=/example.org/Romance:20260105T100000");
+
+    let report = merge(&base, &zoned, &zoned);
+
+    assert_eq!(bytes(&report), zoned);
+    assert!(report.conflicts.is_empty(), "{:?}", report.conflicts);
+}
+
+#[test]
+fn a_zone_change_both_sides_made_still_contests_two_times() {
+    let base = floating("DTSTART:20260105T090000");
+    let ten = floating("DTSTART;TZID=/example.org/Romance:20260105T100000");
+    let eleven = floating("DTSTART;TZID=/example.org/Romance:20260105T110000");
+
+    let report = merge(&base, &ten, &eleven);
+
+    assert_eq!(bytes(&report), ten);
+    assert_eq!(report.conflicts.len(), 1, "{:?}", report.conflicts);
+}
+
+#[test]
+fn two_stamps_both_sides_added_land_once() {
+    let base = edited("DTSTAMP:20260101T000000Z\r\n", "");
+    let side = edited(
+        "DTSTAMP:20260101T000000Z\r\n",
+        "DTSTAMP:20260101T000000Z\r\nDTSTAMP:20260201T000000Z\r\n",
+    );
+
+    let report = merge(&base, &side, &side);
+
+    assert_eq!(bytes(&report), side);
+    assert!(report.conflicts.is_empty(), "{:?}", report.conflicts);
+}
+
+#[test]
 fn a_related_change_contests_a_trigger_change() {
     // NOTE: RFC 5545 3.2.14: RELATED says which end the trigger counts from.
     let alarm = |trigger: &str| {

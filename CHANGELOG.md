@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Added `IcalCst::DEPTH_MAX` (16) and `IcalParseError::TooDeep`: the strict parsers refuse a component nested deeper, and `IcalCst::parse_recovering` keeps it as raw lines of the deepest component it admits, reporting `TooDeep`. **Breaking** for an exhaustive match on `IcalParseError`.
+- Added `IcalRecurExpand::skip_to` and `IcalRecurSetExpand::skip_to`, which skip a walk to a date-time without stepping through every earlier occurrence when the rule has no `COUNT`, so a windowed expansion costs the window rather than the history since `DTSTART`.
+
+### Fixed
+
+- Fixed a stack overflow parsing a calendar nesting a few hundred components (about 9 KB of `BEGIN` lines on a 1 MiB stack), and in every later walk of such a tree.
+- Fixed a merge of two identical sides reporting a collision when both retyped or rezoned a value and changed it, and landing twice a stamp both sides added beside another.
+
 ## [0.6.1] - 2026-10-10
 
 ### Added

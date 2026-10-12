@@ -362,7 +362,7 @@ The component restored SHALL be the highest one the baseline side removed, not t
 
 ### Requirement: A parameter that says what the value means contests it
 
-A change to a parameter that says what its property's value means SHALL collide with a value-level action on the other side, both ways, and a whole-value change SHALL collide with the other side's item edits. What the other side wrote was written for the old meaning, and landing both writes a value neither side wrote.
+A change to a parameter that says what its property's value means SHALL collide with a value-level action on the other side, both ways, and a whole-value change SHALL collide with the other side's item edits. What the other side wrote was written for the old meaning, and landing both writes a value neither side wrote. A side that made the same change of meaning wrote its value for the new one, so its value-level action SHALL NOT collide with that change.
 
 The parameters are those that say how the value is read: `VALUE` (RFC 5545 3.2.20), `TZID` (3.2.19), `ENCODING` (3.2.7) and the vCalendar 1.0 `CHARSET`, `LANGUAGE` (3.2.10), `FMTTYPE` (3.2.8); and those that say what it denotes: `RANGE` (3.2.13), `RELATED` (3.2.14), `FBTYPE` (3.2.9), `RELTYPE` (3.2.15) and the RFC 9253 `LINKREL`. A parameter that describes the thing a value names rather than the value itself (`CN`, `PARTSTAT`, `ROLE`, `ALTREP`, the RFC 7986 `DISPLAY`, `EMAIL`, `FEATURE`, `LABEL`, the RFC 9253 `GAP`) SHALL still merge beside a value change.
 
@@ -382,7 +382,7 @@ The parameters are those that say how the value is read: `VALUE` (RFC 5545 3.2.2
 
 `DTSTAMP`, `LAST-MODIFIED` and `SEQUENCE` record when and how often a component was written (RFC 5545 3.8.7.2 to 3.8.7.4), so two sides writing one of them SHALL NOT be a collision: the merge SHALL keep the later `DTSTAMP` and `LAST-MODIFIED` and the greater `SEQUENCE` (RFC 5546 2.1.4), whichever side wrote it, and report nothing for it. Two edits elsewhere in the component then report only the content they contest.
 
-A value that does not read as a date-time or a number SHALL be left to the ordinary rules, and contested as any other value is.
+A value that does not read as a date-time or a number SHALL be left to the ordinary rules, and contested as any other value is. An act the left side performed identically SHALL NOT be settled against another of its writes: two stamps both sides added land once.
 
 vcard-rs's twin of the rule is `REV` (RFC 6350 6.7.4), the later revision standing. vcard-rs states it since 0.5.2, so the two crates' contracts align.
 

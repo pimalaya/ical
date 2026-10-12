@@ -44,14 +44,21 @@ impl<'a> IcalMerge<'_, 'a> {
         left_ops: &[Op<'a>],
         right_ops: &[Op<'a>],
     ) -> Verdict<'a> {
-        if let Some(applies) = left_ops.iter().find_map(|left| self.settles(left, op)) {
+        // NOTE: An act the left side performed identically is already in
+        // place, so no other bookkeeping write of the left side settles it.
+        let agreed = left_ops.iter().any(|left| self.agrees(left, op));
+
+        if !agreed && let Some(applies) = left_ops.iter().find_map(|left| self.settles(left, op)) {
             return Verdict {
                 applies,
                 reason: None,
             };
         }
 
-        if let Some(collision) = left_ops.iter().find(|left| self.collides(left, op)) {
+        if let Some(collision) = left_ops
+            .iter()
+            .find(|left| self.collides(left, op, left_ops, right_ops))
+        {
             // NOTE: a removal against an update is not a stand-off: one side
             // says the data is gone and the other says what it now is, and the
             // update survives whichever side it came from.
@@ -78,8 +85,15 @@ impl<'a> IcalMerge<'_, 'a> {
         }
     }
 
-    /// Whether two actions collide on one field.
-    fn collides(&self, left: &Op<'a>, right: &Op<'a>) -> bool {
+    /// Whether two actions collide on one field, each side's actions telling
+    /// whether a change of meaning was made on both.
+    fn collides(
+        &self,
+        left: &Op<'a>,
+        right: &Op<'a>,
+        left_ops: &[Op<'a>],
+        right_ops: &[Op<'a>],
+    ) -> bool {
         // NOTE: Two people who wrote the same thing are not two people
         // disagreeing, so an identical act on both sides is no collision.
         if self.agrees(left, right) {
@@ -110,12 +124,14 @@ impl<'a> IcalMerge<'_, 'a> {
             // neither side wrote, such as an `08:00` one side meant floating
             // read in the zone the other side gave its `10:00` (RFC 5545
             // 3.2.19), or `RDATE` items contradicting their declared type
-            // (3.8.5.2).
-            (Slot::Param { name, .. }, Slot::Value | Slot::Items)
-            | (Slot::Value | Slot::Items, Slot::Param { name, .. })
-                if qualifies(name) =>
-            {
-                true
+            // (3.8.5.2). A change of meaning both sides made is contested by
+            // neither: each wrote its value for the new meaning, and two such
+            // values meet as values.
+            (Slot::Param { name, .. }, Slot::Value | Slot::Items) if qualifies(name) => {
+                !right_ops.iter().any(|held| self.agrees(left, held))
+            }
+            (Slot::Value | Slot::Items, Slot::Param { name, .. }) if qualifies(name) => {
+                !left_ops.iter().any(|held| self.agrees(held, right))
             }
             (Slot::Items, _) | (_, Slot::Items) => false,
             (

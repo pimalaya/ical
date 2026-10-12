@@ -27,6 +27,9 @@ pub enum IcalParseError {
     ExpectedBegin(String),
     /// A calendar was left open by a missing END:VCALENDAR line.
     MissingEnd(String),
+    /// A component was nested deeper than
+    /// [`IcalCst::DEPTH_MAX`](crate::tree::cst::IcalCst::DEPTH_MAX) allows.
+    TooDeep(String),
 }
 
 impl fmt::Display for IcalParseError {
@@ -49,6 +52,9 @@ impl fmt::Display for IcalParseError {
             }
             Self::MissingEnd(data) => {
                 write!(f, "Component is left open by a missing END line: {data}")
+            }
+            Self::TooDeep(data) => {
+                write!(f, "Component is nested too deep: {data}")
             }
         }
     }

@@ -155,6 +155,15 @@ The strict entry point stays the default and its refusals are unchanged.
 - WHEN it is parsed by the recovering entry point
 - THEN the event is closed at end of input, serialization reproduces the input, and the missing `END` is reported
 
+### Requirement: Nesting is bounded
+
+A parsed component SHALL nest at most `IcalCst::DEPTH_MAX` (16) levels, the root calendar counting as one, since every walk of the tree recurses once per level and a few kilobytes of `BEGIN` lines would otherwise exhaust the stack. The strict entry points SHALL refuse deeper nesting with `TooDeep`, naming the component; the recovering one SHALL keep a component past the bound as raw lines of the deepest one admitted, from its `BEGIN` to its matching `END`, report `TooDeep` once for it, and still round-trip the input.
+
+#### Scenario: Ten thousand nested components on a small stack
+- GIVEN a calendar nesting 10000 components, parsed on a 1 MiB thread
+- WHEN it is parsed strictly, and by the recovering entry point
+- THEN the strict parse fails with `TooDeep`, and the recovered calendar nests 16 levels, serializes back to the input, and decodes, clones and merges within the stack
+
 ### Requirement: Multi-calendar input
 
 The parser SHALL iterate every top-level calendar in a file lazily, one item per calendar, skipping blank lines between them.

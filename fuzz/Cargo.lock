@@ -68,7 +68,7 @@ dependencies = [
 
 [[package]]
 name = "ical-rs"
-version = "0.2.0"
+version = "0.6.1"
 dependencies = [
  "base64",
  "encoding_rs",

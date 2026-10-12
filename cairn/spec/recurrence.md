@@ -53,6 +53,15 @@ Every call to `next` SHALL do bounded work, whatever the shape of the rule, and 
 - WHEN the iterator is driven past the year 2183
 - THEN it keeps yielding, since the rule is satisfiable
 
+### Requirement: A walk skips ahead
+
+`IcalRecurExpand::skip_to` and `IcalRecurSetExpand::skip_to` SHALL make the next occurrence yielded the first at or after the given date-time (by identity, for a set), yielding exactly what the full walk yields from there. A rule with no `COUNT` SHALL jump its cursor to the period before the one the date-time falls in, on the `INTERVAL` lattice, so the cost does not grow with the distance from the start; a rule with `COUNT` SHALL walk the earlier occurrences, counted and not yielded, a walk `COUNT` bounds.
+
+#### Scenario: A secondly rule started in 1970
+- GIVEN `FREQ=SECONDLY` from `19700101T000000`
+- WHEN the walk skips to `20260101T000000`
+- THEN the next three occurrences are the first three seconds of 2026, in bounded time
+
 ### Requirement: The recurrence set of a component
 
 A component's recurrence set SHALL be the union of its `DTSTART`, every `RRULE` expansion and every `RDATE`, minus every `EXDATE` and every `EXRULE` expansion, yielded in chronological order with duplicates collapsed. An `RDATE` period item SHALL contribute its start.
