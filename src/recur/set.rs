@@ -68,7 +68,7 @@ pub enum IcalRecurZone {
 impl IcalRecurZone {
     /// The clock a date property's value is told on: UTC for a value ending in
     /// `Z`, else the zone its `TZID` names, else floating.
-    fn of(params: &[IcalParam<'_>], value: &str) -> Self {
+    pub(crate) fn of(params: &[IcalParam<'_>], value: &str) -> Self {
         if value.ends_with(['Z', 'z']) {
             return Self::Utc;
         }
@@ -87,7 +87,12 @@ impl IcalRecurZone {
     ///
     /// Unchanged when either clock is floating or a zone is not among `zones`:
     /// comparing the times as written is then all there is to do.
-    fn tell(&self, local: IcalRecurDateTime, to: &Self, zones: &[IcalTz]) -> IcalRecurDateTime {
+    pub(crate) fn tell(
+        &self,
+        local: IcalRecurDateTime,
+        to: &Self,
+        zones: &[IcalTz],
+    ) -> IcalRecurDateTime {
         let find = |id: &str| zones.iter().find(|zone| zone.id == id);
 
         let instant = match self {
@@ -283,7 +288,14 @@ impl IcalRecurSet {
     /// The series is the component carrying that `UID` with no
     /// `RECURRENCE-ID`; every other one carrying it is an override.
     pub fn of_uid(components: &[IcalComponent<'_>], uid: &str) -> Self {
-        let zones: Vec<IcalTz> = components.iter().filter_map(IcalTz::of_component).collect();
+        Self::of_uid_in(components, uid, &IcalTz::of_components(components))
+    }
+
+    /// The set a whole calendar denotes for one `UID`, as
+    /// [`of_uid`](Self::of_uid) reads it, every time told through `zones`
+    /// rather than through the calendar's own `VTIMEZONE`s alone, such as the
+    /// list `tzdb::zones` completes from the database.
+    pub fn of_uid_in(components: &[IcalComponent<'_>], uid: &str, zones: &[IcalTz]) -> Self {
         let ours = || {
             components
                 .iter()
@@ -294,11 +306,11 @@ impl IcalRecurSet {
         // since an override is told on the series' clock.
         let mut set = ours()
             .rfind(|component| !has(component, IcalPropKind::RecurrenceId))
-            .map(|series| Self::of_component_in(series, &zones))
+            .map(|series| Self::of_component_in(series, zones))
             .unwrap_or_default();
 
         for over in ours().filter(|component| has(component, IcalPropKind::RecurrenceId)) {
-            set.with_override_in(over, &zones);
+            set.with_override_in(over, zones);
         }
 
         set
@@ -506,7 +518,7 @@ impl IcalRecurSetExpand<'_> {
 }
 
 /// The text of a date-ish value: a date, a date-time, or a list's first item.
-fn text_of<'v>(value: &'v IcalValue<'_>) -> Option<&'v str> {
+pub(crate) fn text_of<'v>(value: &'v IcalValue<'_>) -> Option<&'v str> {
     match value {
         IcalValue::Date(date) => Some(&date.0),
         IcalValue::DateTime(date) => Some(&date.0),
@@ -573,7 +585,7 @@ fn rule_of(prop: &IcalProp<'_>, zone: &IcalRecurZone, zones: &[IcalTz]) -> Optio
 }
 
 /// The `UID` of a component, if it carries one.
-fn uid_of<'a>(component: &'a IcalComponent<'_>) -> Option<&'a str> {
+pub(crate) fn uid_of<'a>(component: &'a IcalComponent<'_>) -> Option<&'a str> {
     component.props.iter().find_map(|prop| {
         if !matches!(prop.name, IcalPropName::Kind(IcalPropKind::Uid)) {
             return None;
@@ -587,7 +599,7 @@ fn uid_of<'a>(component: &'a IcalComponent<'_>) -> Option<&'a str> {
 }
 
 /// Whether a component carries a property of the given kind.
-fn has(component: &IcalComponent<'_>, kind: IcalPropKind) -> bool {
+pub(crate) fn has(component: &IcalComponent<'_>, kind: IcalPropKind) -> bool {
     component
         .props
         .iter()

@@ -1,18 +1,32 @@
-//! # VTIMEZONE synthesis
+//! # Time zone database
 //!
-//! Synthesis of the VTIMEZONE an IANA time zone name stands for, from the
-//! time zone database. RFC 5545 3.2.19 makes every TZID a document
-//! references resolve to a VTIMEZONE that same document carries, and a
-//! calendar synthesized from another representation (the Google Calendar
-//! and Microsoft Graph JSON events, which name a zone and stop there) owes
-//! the component.
+//! The bundled IANA time zone database, for what a calendar does not carry:
+//! the VTIMEZONE a document naming a zone owes, and the zone a `TZID` names
+//! when the calendar defines none.
 //!
 //! This is the one part of the crate that needs a database, hence the
 //! opt-in `tzdb` feature: offset resolution ([`tz`](crate::tz)) works from
 //! the VTIMEZONE a calendar carries and needs none. The database is
-//! bundled through `jiff/tzdb-bundle-always`, so a synthesized document
-//! reads the same on two machines, and on a container carrying no zoneinfo
-//! at all.
+//! bundled through `jiff/tzdb-bundle-always`, and no system zone file is
+//! ever read, so one crate version and one lock file resolve alike on
+//! every machine, a container carrying no zoneinfo included. [`version`]
+//! names the release bundled, so a consumer that materialises instants
+//! can tell when the rules it used have moved.
+//!
+//! ## A zone the calendar omits
+//!
+//! [`zone`] builds an [`IcalTz`] from every transition the database
+//! states, usable wherever one read from a VTIMEZONE is, and [`zones`]
+//! completes a calendar's own zones with the database's for every `TZID`
+//! they leave undefined: the calendar's own VTIMEZONE first, else the
+//! database, else, for a name neither knows, a floating time.
+//!
+//! ## VTIMEZONE synthesis
+//!
+//! RFC 5545 3.2.19 makes every TZID a document references resolve to a
+//! VTIMEZONE that same document carries, and a calendar synthesized from
+//! another representation (the Google Calendar and Microsoft Graph JSON
+//! events, which name a zone and stop there) owes the component.
 //!
 //! A zone's record runs to hundreds of transitions, so [`vtimezone`]
 //! describes the one era its anchor falls in. The United States moved
@@ -33,8 +47,12 @@ use jiff::{
 };
 
 use crate::{
+    component::IcalComponent,
+    param::IcalParam,
     prop::{IcalProp, IcalPropKind},
+    recur::{IcalRecurDateTime, set::IcalRecurSet},
     tree::cst::IcalCst,
+    tz::{IcalTz, IcalTzObservance},
     value::{IcalValue, datetime::IcalDateTime, recur::IcalRecur, utc_offset::IcalUtcOffset},
 };
 
@@ -85,6 +103,146 @@ pub fn vtimezone(tzid: &str, anchor: i64) -> Option<IcalCst<'static>> {
     }
 
     Some(vtimezone)
+}
+
+/// The IANA release of the bundled database, such as `2026c`.
+///
+/// What a consumer stamps on the instants it materialised, to resolve them
+/// again when it moves. `None` only for a bundle generated without one.
+pub fn version() -> Option<&'static str> {
+    jiff_tzdb::VERSION
+}
+
+/// The zone an IANA name stands for, as the database states it, usable
+/// wherever one read from a VTIMEZONE is.
+///
+/// Every transition up to the end of the year `through` is a dated onset of
+/// the observance between its two offsets, so the zone is exact over its
+/// whole history to that year; past it the last offset holds. Nothing comes
+/// back for a name the database does not know.
+pub fn zone(tzid: &str, through: i32) -> Option<IcalTz> {
+    let zone = TimeZone::get(tzid).ok()?;
+
+    // NOTE: A year of margin, so a local time on the last day of `through`
+    // still sees the transition that follows it.
+    let year = i16::try_from(through.saturating_add(2).clamp(1, 9999)).ok()?;
+    let bound = civil::date(year, 1, 1)
+        .to_datetime(civil::Time::MIN)
+        .to_zoned(TimeZone::UTC)
+        .ok()?
+        .timestamp();
+
+    let mut transitions: Vec<TimeZoneTransition<'_>> = zone.preceding(bound).collect();
+    transitions.reverse();
+
+    let mut observances: Vec<IcalTzObservance> = Vec::new();
+
+    for transition in transitions {
+        let at = transition.timestamp();
+        let to = transition.offset();
+        let from = offset_before(&zone, at)?;
+
+        // NOTE: some zones renumber an abbreviation without moving the
+        // clock, which is no observance at all.
+        if from == to {
+            continue;
+        }
+
+        let daylight = transition.dst().is_dst();
+        let onset = local(from.to_datetime(at));
+        let (from, to) = (from.seconds(), to.seconds());
+
+        let same = |observance: &&mut IcalTzObservance| {
+            observance.daylight == daylight && observance.from == from && observance.to == to
+        };
+
+        match observances.iter_mut().find(same) {
+            Some(observance) => observance.onsets.dates.push(onset),
+            None => observances.push(IcalTzObservance {
+                daylight,
+                from,
+                to,
+                onsets: IcalRecurSet {
+                    start: Some(onset),
+                    ..IcalRecurSet::default()
+                },
+            }),
+        }
+    }
+
+    // NOTE: A zone that never moved states its one offset from the epoch.
+    if observances.is_empty() {
+        let offset = zone.to_offset(Timestamp::UNIX_EPOCH).seconds();
+
+        observances.push(IcalTzObservance {
+            daylight: false,
+            from: offset,
+            to: offset,
+            onsets: IcalRecurSet {
+                start: Some(local(EPOCH)),
+                ..IcalRecurSet::default()
+            },
+        });
+    }
+
+    Some(IcalTz {
+        id: tzid.to_owned(),
+        observances,
+    })
+}
+
+/// The zones a calendar's components resolve through: every VTIMEZONE they
+/// carry, then a [`zone`] from the database for each `TZID` they name and
+/// no VTIMEZONE defines, so the calendar's own definition always wins.
+///
+/// A name neither defines is left out, and a time under it reads floating.
+pub fn zones(components: &[IcalComponent<'_>], through: i32) -> Vec<IcalTz> {
+    let mut zones = IcalTz::of_components(components);
+    let mut named = Vec::new();
+
+    tzids(components, &mut named);
+
+    for tzid in named {
+        if zones.iter().any(|zone| zone.id == tzid) {
+            continue;
+        }
+
+        if let Some(zone) = zone(tzid, through) {
+            zones.push(zone);
+        }
+    }
+
+    zones
+}
+
+/// Every `TZID` a parameter names among components and their own, in order,
+/// once each.
+fn tzids<'a>(components: &'a [IcalComponent<'_>], named: &mut Vec<&'a str>) {
+    for component in components {
+        for prop in &component.props {
+            for param in &prop.params {
+                if let IcalParam::TzId(tzid) = param
+                    && !named.contains(&tzid.as_ref())
+                {
+                    named.push(tzid.as_ref());
+                }
+            }
+        }
+
+        tzids(&component.components, named);
+    }
+}
+
+/// A database civil date-time as the crate's own.
+fn local(at: civil::DateTime) -> IcalRecurDateTime {
+    IcalRecurDateTime {
+        year: i32::from(at.year()),
+        month: at.month().unsigned_abs(),
+        day: at.day().unsigned_abs(),
+        hour: at.hour().unsigned_abs(),
+        minute: at.minute().unsigned_abs(),
+        second: at.second().unsigned_abs(),
+    }
 }
 
 /// The observances describing the zone around `anchor`.

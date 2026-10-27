@@ -32,6 +32,17 @@ impl IcalDuration<'_> {
     /// a week counts as seven days. `None` only for text that names no length,
     /// a missing `P` or a year in it, which would need a calendar.
     pub fn seconds(&self) -> Option<i64> {
+        let (days, seconds) = self.nominal()?;
+        days.checked_mul(86_400)?.checked_add(seconds)
+    }
+
+    /// The duration split as RFC 5545 3.3.6 adds it: nominal days (a week
+    /// being seven) and exact seconds, both carrying the sign.
+    ///
+    /// A day is a calendar day, added on a local clock before any offset is
+    /// resolved, so it lasts 23 or 25 hours across a transition; the seconds
+    /// are added after. Read as leniently as [`seconds`](Self::seconds).
+    pub fn nominal(&self) -> Option<(i64, i64)> {
         let span = self.0.as_ref();
 
         let (sign, span) = match span.strip_prefix('-') {
@@ -39,12 +50,13 @@ impl IcalDuration<'_> {
             None => (1, span.strip_prefix('+').unwrap_or(span)),
         };
 
-        let mut total: i64 = 0;
+        let mut days: i64 = 0;
+        let mut seconds: i64 = 0;
         let mut amount = String::new();
         let mut fraction = false;
 
         for character in span.strip_prefix(['P', 'p'])?.chars() {
-            let unit = match character.to_ascii_uppercase() {
+            let (total, unit) = match character.to_ascii_uppercase() {
                 digit if digit.is_ascii_digit() => {
                     if !fraction {
                         amount.push(digit);
@@ -58,20 +70,20 @@ impl IcalDuration<'_> {
                     fraction = true;
                     continue;
                 }
-                'W' => 604_800,
-                'D' => 86_400,
-                'H' => 3_600,
-                'M' => 60,
-                'S' => 1,
+                'W' => (&mut days, 7),
+                'D' => (&mut days, 1),
+                'H' => (&mut seconds, 3_600),
+                'M' => (&mut seconds, 60),
+                'S' => (&mut seconds, 1),
                 _ => return None,
             };
 
-            total = total.checked_add(amount.parse::<i64>().ok()?.checked_mul(unit)?)?;
+            *total = total.checked_add(amount.parse::<i64>().ok()?.checked_mul(unit)?)?;
             amount.clear();
             fraction = false;
         }
 
-        Some(sign * total)
+        Some((sign * days, sign * seconds))
     }
 
     /// Whether the text follows the RFC 5545 3.3.6 grammar exactly: a week

@@ -277,6 +277,13 @@ impl IcalTz {
         Some(Self { id, observances })
     }
 
+    /// Every zone the `VTIMEZONE`s among a calendar's components define, in
+    /// source order: the zones a set or a walk of its instants reads through
+    /// when no time zone database completes them.
+    pub fn of_components(components: &[IcalComponent<'_>]) -> Vec<Self> {
+        components.iter().filter_map(Self::of_component).collect()
+    }
+
     /// The zone a calendar defines under `tzid`, if it defines one.
     pub fn of_calendar(ical: &Ical<'_>, tzid: &str) -> Option<Self> {
         ical.components

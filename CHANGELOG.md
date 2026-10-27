@@ -10,6 +10,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Added `IcalCst::DEPTH_MAX` (16) and `IcalParseError::TooDeep`: the strict parsers refuse a component nested deeper, and `IcalCst::parse_recovering` keeps it as raw lines of the deepest component it admits, reporting `TooDeep`. **Breaking** for an exhaustive match on `IcalParseError`.
 - Added `IcalRecurExpand::skip_to` and `IcalRecurSetExpand::skip_to`, which skip a walk to a date-time without stepping through every earlier occurrence when the rule has no `COUNT`, so a windowed expansion costs the window rather than the history since `DTSTART`.
+- Added `recur::instant`: `IcalRecurTimeline::of_uid(components, uid, zones)` reads one series and its overrides, and `IcalRecurTimeline::expand(from, until)` walks the occurrences overlapping a window of Unix seconds as `IcalRecurInstant`s, each with its identity, its start and its end as instants. The end is the component's own `DTEND` (`DUE`) on its own clock, else its `DURATION`, a day of it added on the wall clock so `P1D` lasts 25 hours across a fall-back, else the RFC 5545 3.6.1 default; an `RDATE` period ends where it says. A floating or date time reads as if on UTC and is flagged.
+- Added `IcalDuration::nominal`, a duration as wall-clock days and exact seconds (RFC 5545 3.3.6), `IcalTz::of_components` and `IcalRecurSet::of_uid_in`, which reads a set through a given zone list.
+- Added `tzdb::version`, the IANA release of the bundled database, and `tzdb::zone` and `tzdb::zones`, which resolve a `TZID` the calendar defines no `VTIMEZONE` for through the database, the calendar's own definition always winning. The `tzdb` feature now depends on `jiff-tzdb` directly, the crate jiff already bundles.
 
 ### Fixed
 

@@ -117,6 +117,12 @@
 //! offset from the `VTIMEZONE` the calendar carries, and reporting the
 //! spring-forward gap and the fall-back fold rather than guessing.
 //!
+//! [`instant`](recur::instant) joins the two: [`IcalRecurTimeline`] walks a
+//! series over a window of instants, each occurrence resolved through its
+//! own clock once the set has placed it, and ended by its own `DTEND`,
+//! `DURATION` or RFC 5545 3.6.1 default, a day of `DURATION` added on the
+//! wall clock.
+//!
 //! A zone crosses back into expansion for one purpose, and changes nothing
 //! about it: RFC 5545 3.3.10 forbids counting an instance a rule generates at
 //! a local time the clock jumped over, so an expansion given a zone drops
@@ -164,6 +170,10 @@
 //! `jcal`, whose syntax carries the escape hatch, and pulls no crate of its
 //! own.
 //!
+//! `tzdb` bundles the IANA time zone database through the `jiff` crate: it
+//! names its release, builds the zone a `TZID` stands for when the calendar
+//! omits its `VTIMEZONE`, and synthesizes that `VTIMEZONE`.
+//!
 //! [`IcalComponentKind`]: component::IcalComponentKind
 //! [`IcalPropKind`]: prop::IcalPropKind
 //! [`IcalParamKind`]: param::IcalParamKind
@@ -185,6 +195,7 @@
 //! [`IcalComponentSpec`]: component::spec::IcalComponentSpec
 //! [`IcalRecurExpand`]: recur::expand::IcalRecurExpand
 //! [`IcalRecurSet`]: recur::set::IcalRecurSet
+//! [`IcalRecurTimeline`]: recur::instant::IcalRecurTimeline
 //! [`IcalMerge`]: tree::merge::IcalMerge
 
 extern crate alloc;

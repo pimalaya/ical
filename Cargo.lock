@@ -429,6 +429,7 @@ dependencies = [
  "ical",
  "icalendar",
  "jiff",
+ "jiff-tzdb",
  "memchr",
  "proptest",
  "quoted_printable",

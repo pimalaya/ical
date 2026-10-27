@@ -23,10 +23,10 @@
 //! UTC start is simply the case where local is UTC. Expansion therefore never
 //! needs a UTC offset, and this module never resolves one.
 //!
-//! Occurrences are civil [`IcalRecurDateTime`]s; turning one into an instant,
-//! with the time-zone database, the invalid local times of a spring-forward
-//! and the ambiguous ones of a fall-back, belongs to the caller at that
-//! boundary.
+//! Occurrences are civil [`IcalRecurDateTime`]s. Turning one into an instant,
+//! through the invalid local times of a spring-forward and the ambiguous ones
+//! of a fall-back, is the step after expansion: [`instant`] takes it for a
+//! whole series over a window, ends included.
 //!
 //! ## Liberal in, strict out
 //!
@@ -40,6 +40,7 @@
 
 mod civil;
 pub mod expand;
+pub mod instant;
 pub mod set;
 pub mod validate;
 
