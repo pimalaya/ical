@@ -123,6 +123,10 @@
 //! `DURATION` or RFC 5545 3.6.1 default, a day of `DURATION` added on the
 //! wall clock.
 //!
+//! [`alarm`] is the step after the walk: [`IcalAlarms`] counts every
+//! `VALARM` trigger from the start or the end of the occurrence it belongs
+//! to, and lists the instants alarms fire at over a window.
+//!
 //! A zone crosses back into expansion for one purpose, and changes nothing
 //! about it: RFC 5545 3.3.10 forbids counting an instance a rule generates at
 //! a local time the clock jumped over, so an expansion given a zone drops
@@ -196,10 +200,12 @@
 //! [`IcalRecurExpand`]: recur::expand::IcalRecurExpand
 //! [`IcalRecurSet`]: recur::set::IcalRecurSet
 //! [`IcalRecurTimeline`]: recur::instant::IcalRecurTimeline
+//! [`IcalAlarms`]: alarm::IcalAlarms
 //! [`IcalMerge`]: tree::merge::IcalMerge
 
 extern crate alloc;
 
+pub mod alarm;
 pub mod builder;
 pub mod component;
 pub mod ical;
