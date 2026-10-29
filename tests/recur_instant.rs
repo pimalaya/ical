@@ -653,6 +653,88 @@ mod tzdb {
         assert_eq!(instants[0].start, utc(2019, 1, 10, 11, 0));
     }
 
+    #[test]
+    fn a_time_after_a_truncated_vtimezone_reads_through_the_database() {
+        // NOTE: The shape of fablab_cottbus.ics in recurring-ical-events'
+        // suite: the definition stops at the onset of summer 2019, so read
+        // alone it holds +0200 through every later winter.
+        let raw = calendar(&format!(
+            "{TRUNCATED}{}",
+            event("DTSTART;TZID=Europe/Berlin:20231204T140000\r\n"),
+        ));
+
+        let instants = walk_with_database(&raw, utc(2023, 12, 1, 0, 0), utc(2024, 1, 1, 0, 0));
+
+        assert_eq!(instants[0].start, utc(2023, 12, 4, 13, 0));
+    }
+
+    /// Europe/Berlin as a producer stating where its definition stops, with
+    /// one endless rule per observance and a summer a month too late.
+    const UNTIL: &str = concat!(
+        "BEGIN:VTIMEZONE\r\nTZID:Europe/Berlin\r\n",
+        "TZUNTIL:20200101T000000Z\r\n",
+        "BEGIN:STANDARD\r\nDTSTART:19961027T030000\r\n",
+        "RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU\r\n",
+        "TZOFFSETFROM:+0200\r\nTZOFFSETTO:+0100\r\nEND:STANDARD\r\n",
+        "BEGIN:DAYLIGHT\r\nDTSTART:19810426T020000\r\n",
+        "RRULE:FREQ=YEARLY;BYMONTH=4;BYDAY=-1SU\r\n",
+        "TZOFFSETFROM:+0100\r\nTZOFFSETTO:+0200\r\nEND:DAYLIGHT\r\n",
+        "END:VTIMEZONE\r\n",
+    );
+
+    #[test]
+    fn a_time_past_tzuntil_reads_through_the_database() {
+        let at = |date: &str| {
+            let raw = calendar(&format!(
+                "{UNTIL}{}",
+                event(&format!("DTSTART;TZID=Europe/Berlin:{date}T120000\r\n")),
+            ));
+
+            walk_with_database(&raw, utc(2010, 1, 1, 0, 0), utc(2030, 1, 1, 0, 0))[0].start
+        };
+
+        // NOTE: The database starts summer on the last Sunday of March, the
+        // definition a month later, so 10 April is the day they part on.
+        assert_eq!(at("20190410"), utc(2019, 4, 10, 11, 0));
+        assert_eq!(at("20240410"), utc(2024, 4, 10, 10, 0));
+        assert_eq!(at("20241210"), utc(2024, 12, 10, 11, 0));
+    }
+
+    #[test]
+    fn a_vtimezone_with_no_tzuntil_and_an_endless_rule_holds() {
+        let raw = calendar(&format!(
+            "{}{}",
+            UNTIL.replace("TZUNTIL:20200101T000000Z\r\n", ""),
+            event("DTSTART;TZID=Europe/Berlin:20240410T120000\r\n"),
+        ));
+
+        let instants = walk_with_database(&raw, utc(2024, 1, 1, 0, 0), utc(2025, 1, 1, 0, 0));
+
+        assert_eq!(instants[0].start, utc(2024, 4, 10, 11, 0));
+    }
+
+    #[test]
+    fn a_truncated_zone_that_gave_daylight_saving_up_gains_nothing() {
+        // NOTE: Istanbul last moved its clock on 27 March 2016 and stayed on
+        // +0300, so the database has nothing later to add.
+        let raw = calendar(&format!(
+            "{}{}",
+            concat!(
+                "BEGIN:VTIMEZONE\r\nTZID:Europe/Istanbul\r\n",
+                "BEGIN:STANDARD\r\nDTSTART:20151108T040000\r\n",
+                "TZOFFSETFROM:+0300\r\nTZOFFSETTO:+0200\r\nEND:STANDARD\r\n",
+                "BEGIN:DAYLIGHT\r\nDTSTART:20160327T030000\r\n",
+                "TZOFFSETFROM:+0200\r\nTZOFFSETTO:+0300\r\nEND:DAYLIGHT\r\n",
+                "END:VTIMEZONE\r\n",
+            ),
+            event("DTSTART;TZID=Europe/Istanbul:20231204T140000\r\n"),
+        ));
+
+        let instants = walk_with_database(&raw, utc(2023, 12, 1, 0, 0), utc(2024, 1, 1, 0, 0));
+
+        assert_eq!(instants[0].start, utc(2023, 12, 4, 11, 0));
+    }
+
     /// The occurrences of `UID:1` once `X-WR-TIMEZONE` is applied, the zone
     /// it names completed by the database.
     fn walk_x_wr(raw: &str, from: i64, until: i64) -> Vec<IcalRecurInstant> {

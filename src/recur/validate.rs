@@ -18,7 +18,7 @@ use core::{error, fmt};
 use alloc::vec::Vec;
 
 use crate::{
-    recur::{IcalRecurFreq, IcalRecurRule, IcalRecurSkip},
+    recur::{IcalRecurFreq, IcalRecurMonth, IcalRecurRule, IcalRecurSkip},
     validator::IcalValid,
 };
 
@@ -85,6 +85,14 @@ pub enum IcalRecurRuleProblem {
     UntilWithCount,
     /// `SKIP` with no `RSCALE`, which RFC 7529 4 requires beside it.
     SkipWithoutScale,
+    /// A `BYMONTH` month the Gregorian scale has no room for, a 13th or a
+    /// leap month (`5L`), on a rule with no `RSCALE` or `RSCALE=GREGORIAN`.
+    /// Another scale's months depend on the year, so only this one is known
+    /// in advance.
+    MonthScale {
+        /// The month, as the rule spells it.
+        month: IcalRecurMonth,
+    },
 }
 
 impl fmt::Display for IcalRecurRuleProblem {
@@ -106,6 +114,9 @@ impl fmt::Display for IcalRecurRuleProblem {
             Self::SetPosAlone => f.write_str("BYSETPOS needs another BY part to pick from"),
             Self::UntilWithCount => f.write_str("UNTIL and COUNT may not both be given"),
             Self::SkipWithoutScale => f.write_str("SKIP may not be used without RSCALE"),
+            Self::MonthScale { month } => {
+                write!(f, "BYMONTH={month} names no month of the Gregorian scale")
+            }
         }
     }
 }
@@ -206,6 +217,20 @@ impl IcalRecurRule {
         // the only one this crate expands.
         if self.skip != IcalRecurSkip::Omit && self.scale.is_none() {
             problems.push(IcalRecurRuleProblem::SkipWithoutScale);
+        }
+
+        // NOTE: RFC 7529 4.2 extends BYMONTH with leap months and the range a
+        // scale defines; RFC 5545 3.3.10 bounds the Gregorian one to 1 to 12.
+        if self
+            .scale
+            .as_deref()
+            .is_none_or(|scale| scale == "GREGORIAN")
+        {
+            for month in &self.by_month {
+                if month.leap || month.number > 12 {
+                    problems.push(IcalRecurRuleProblem::MonthScale { month: *month });
+                }
+            }
         }
 
         problems
@@ -309,6 +334,27 @@ mod tests {
         rule.until = Some(IcalRecurDateTime::date(2026, 1, 1));
 
         assert_eq!(rule.problems(), [IcalRecurRuleProblem::UntilWithCount]);
+    }
+
+    #[test]
+    fn reports_a_month_the_gregorian_scale_lacks() {
+        use crate::recur::IcalRecurMonth;
+
+        assert_eq!(
+            problems("FREQ=YEARLY;BYMONTH=5L,13"),
+            [
+                IcalRecurRuleProblem::MonthScale {
+                    month: IcalRecurMonth {
+                        number: 5,
+                        leap: true
+                    }
+                },
+                IcalRecurRuleProblem::MonthScale {
+                    month: IcalRecurMonth::regular(13)
+                },
+            ]
+        );
+        assert!(problems("RSCALE=HEBREW;FREQ=YEARLY;BYMONTH=5L").is_empty());
     }
 
     #[test]

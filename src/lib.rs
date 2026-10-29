@@ -178,6 +178,11 @@
 //! names its release, builds the zone a `TZID` stands for when the calendar
 //! omits its `VTIMEZONE`, and synthesizes that `VTIMEZONE`.
 //!
+//! `rscale` expands a recurrence rule on the calendar its RFC 7529 `RSCALE`
+//! names (Hebrew, Chinese, Islamic, Ethiopic and the other CLDR calendars an
+//! algorithm computes), through the `icu_calendar` crate, each occurrence
+//! still a Gregorian date.
+//!
 //! [`IcalComponentKind`]: component::IcalComponentKind
 //! [`IcalPropKind`]: prop::IcalPropKind
 //! [`IcalParamKind`]: param::IcalParamKind

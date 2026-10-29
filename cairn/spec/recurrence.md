@@ -78,6 +78,20 @@ When the set has rules and every one ends on a day before its `DTSTART`, the `DT
 - WHEN its recurrence set is expanded
 - THEN the extra date appears in order and the excepted occurrence does not
 
+### Requirement: A date part on a date-time series names a day
+
+An `EXDATE` item of value type `DATE` beside a `DATE-TIME` `DTSTART` SHALL remove every instance whose identity falls on that day, read on `DTSTART`'s clock (`IcalRecurSet::exdays`). An `UNTIL` of value type `DATE` beside a `DATE-TIME` `DTSTART` SHALL read as the start of that day, excluding the instances later on it. Validation SHALL report both ([conformance](./conformance.md)), RFC 5545 3.3.10 and 3.8.5.1 asking for `DTSTART`'s type. Both readings are the oracles' (libical, recurring-ical-events, ical.js); including the whole `UNTIL` day was declined to stay with them.
+
+#### Scenario: A date exception on a timed series
+- GIVEN `DTSTART;TZID=Europe/Paris:20260706T090000`, `RRULE:FREQ=DAILY;COUNT=4` and `EXDATE;VALUE=DATE:20260707`
+- WHEN its set is expanded
+- THEN 7 July is not an instance, and 6, 8 and 9 July are
+
+#### Scenario: A date until on a timed series
+- GIVEN `DTSTART;TZID=Europe/Paris:20260706T090000` and `RRULE:FREQ=DAILY;UNTIL=20260708`
+- WHEN its set is expanded
+- THEN it yields 6 and 7 July at 09:00
+
 ### Requirement: Set expansion stays lazy
 
 The recurrence set SHALL be produced by a lazy merge of sorted streams, materialising no occurrence list, so an unbounded rule can be taken from without running to its end.
@@ -137,7 +151,7 @@ Expansion SHALL be pinned by a committed corpus of the cases on which python-dat
 
 ### Requirement: The timeline corpus is replayed
 
-The walk of a series to instants SHALL be pinned by a committed corpus of the series on which recurring-ical-events 3.9.0 answers alike, over the calendars of its own test suite (tests/corpus/rie), replayed by the test suite with no Python present. A second committed corpus SHALL pin each deliberate divergence with this crate's own answer and the reason for it, and no series SHALL enter it unread: there is one oracle, not two. Every series the crate yields over those calendars SHALL be listed in one of the two.
+The walk of a series to instants SHALL be crossed against recurring-ical-events 3.9.0 and ical.js 2.2.1 over the vendored rie, icaljs and libical calendars, and replayed with no Python or JavaScript present. Every series the crate yields SHALL be in one of: agreement.tsv (all three alike), split.tsv (the oracles split; generated with the side this crate takes), divergence.tsv (unlike both; hand-curated with a reason, never unread).
 
 #### Scenario: A regression in the timeline
 - GIVEN a change that alters the occurrences of a series both implementations agreed on
@@ -187,14 +201,37 @@ A resolved day is not put back through the day-selecting parts, since RFC 7529 r
 - WHEN the rule is validated
 - THEN the missing `RSCALE` is reported, and expansion still resolves the day
 
-### Requirement: Only the Gregorian scale is expanded
+### Requirement: A rule is expanded on its scale, opt-in
 
-An `RSCALE` naming any calendar system other than `GREGORIAN` SHALL be parsed, carried and converted, and SHALL yield no occurrences. Expanding a Hebrew or Chinese rule needs the CLDR calendar arithmetic RFC 7529 5 points implementers at, which this crate does not carry; yielding Gregorian dates under another scale would be a wrong answer rather than a missing one.
+`BYMONTH` SHALL parse a month number from 1 to 13 and a leap month (`5L`, RFC 7529 4.2) under every scale, as `IcalRecurMonth`; which months a scale has is read at expansion, and validation SHALL report a 13th or a leap month on the Gregorian scale.
 
-#### Scenario: A calendar system the crate does not know
-- GIVEN `RSCALE=HEBREW;FREQ=YEARLY`
+Behind the `rscale` feature, a rule SHALL be expanded on the scale its `RSCALE` names through `icu_calendar`, every `BY` part and `SKIP` read in that calendar, occurrences staying Gregorian civil dates. A leap month a year lacks SHALL move as RFC 7529 4.1 says (`BACKWARD` to the month it follows, `FORWARD` to the next), before the day is resolved. The covered scales are those `IcalRecurExpand::new` lists.
+
+Without the feature, or for a scale it does not cover (`ISLAMIC`, `ISLAMIC-RGSA`), a non-Gregorian `RSCALE` SHALL parse and yield nothing, never Gregorian dates under another scale. The bare core SHALL stay dependency-free.
+
+#### Scenario: A Hebrew anniversary in a leap month (RFC 7529 4.3.3)
+- GIVEN `DTSTART;VALUE=DATE:20140208`, `RRULE:RSCALE=HEBREW;FREQ=YEARLY;BYMONTH=5L;BYMONTHDAY=8;SKIP=FORWARD` and the `rscale` feature
+- WHEN it is expanded
+- THEN it yields 2014-02-08, 2015-02-27, 2016-02-17, 2017-03-06 and 2018-02-23, the 8th of Adar in the years with no Adar I
+
+#### Scenario: Chinese New Year (RFC 7529 4.3.1)
+- GIVEN `DTSTART;VALUE=DATE:20130210`, `RRULE:RSCALE=CHINESE;FREQ=YEARLY` and the `rscale` feature
+- WHEN it is expanded
+- THEN it yields 2013-02-10, 2014-01-31, 2015-02-19, 2016-02-08 and 2017-01-28
+
+#### Scenario: A calendar system the build does not compute
+- GIVEN `RSCALE=HEBREW;FREQ=YEARLY` without the `rscale` feature, or `RSCALE=ISLAMIC;FREQ=YEARLY` with it
 - WHEN it is expanded
 - THEN nothing is yielded
+
+### Requirement: The RSCALE corpus is replayed
+
+A generated `RSCALE` sweep SHALL be frozen where libical with ICU answers alike (tests/corpus/recur/rscale.tsv), each class of disagreement pinned with a reason (rscale-divergence.tsv), and replayed behind the `rscale` feature.
+
+#### Scenario: A change in what a scaled rule denotes
+- GIVEN the frozen RSCALE corpora
+- WHEN the expander answers differently on any case
+- THEN the suite fails, naming the start and the rule
 
 ### Requirement: The SKIP corpus is replayed
 

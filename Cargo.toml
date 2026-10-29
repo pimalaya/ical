@@ -28,10 +28,17 @@ quoted-printable = ["dep:quoted_printable"]
 base64 = ["dep:base64"]
 encoding = ["dep:encoding_rs"]
 tzdb = ["parser", "dep:jiff", "dep:jiff-tzdb"]
+rscale = ["dep:icu_calendar"]
 
 [[bench]]
 name = "parse"
 path = "benches/parse.rs"
+harness = false
+required-features = ["parser"]
+
+[[bench]]
+name = "recur"
+path = "benches/recur.rs"
 harness = false
 required-features = ["parser"]
 
@@ -107,14 +114,18 @@ required-features = ["parser", "jscalendar"]
 
 [dev-dependencies]
 calcard = { version = "0.3", default-features = false }
+chrono = { version = "0.4.39", default-features = false }
+chrono-tz = { version = "0.10.1", default-features = false }
 criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
 ical_crate = { package = "ical", version = "0.11", default-features = false, features = ["ical"] }
 icalendar = { version = "0.17", default-features = false, features = ["parser"] }
 proptest = { version = "1", default-features = false, features = ["std"] }
+rrule = { version = "0.14", default-features = false }
 
 [dependencies]
 base64 = { version = "0.23", default-features = false, features = ["alloc"], optional = true }
 encoding_rs = { version = "0.8", default-features = false, features = ["alloc"], optional = true }
+icu_calendar = { version = "~2.3", default-features = false, optional = true }
 jiff = { version = "0.2.33", default-features = false, features = ["alloc", "tzdb-bundle-always"], optional = true }
 jiff-tzdb = { version = "0.1.8", optional = true }
 memchr = { version = "2", default-features = false, optional = true }

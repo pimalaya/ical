@@ -196,6 +196,22 @@ fn an_unknown_tzid_is_no_zone() {
 }
 
 #[test]
+fn reads_tzuntil_without_applying_it() {
+    let raw = US.replace(
+        "TZID:America/New_York\r\n",
+        "TZID:America/New_York\r\nTZUNTIL:20200101T000000Z\r\n",
+    );
+    let zone = zone(&raw, "America/New_York");
+
+    assert_eq!(zone.until, Some(1_577_836_800));
+    assert_eq!(
+        zone.resolve(at(2024, 7, 15, 12, 0)),
+        IcalTzOffset::One(-14_400)
+    );
+    assert_eq!(self::zone(US, "America/New_York").until, None);
+}
+
+#[test]
 fn reads_a_written_time_by_rfc_5545_3_3_5() {
     let zone = zone(US, "America/New_York");
 

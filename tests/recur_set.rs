@@ -337,6 +337,38 @@ fn removes_an_instance_an_exdate_names_on_another_clock() {
 }
 
 #[test]
+fn removes_the_day_a_date_exdate_names_on_a_timed_series() {
+    // NOTE: libical, recurring-ical-events and ical.js all remove 7 and 9
+    // July; read as midnight, the dates named no instance.
+    let raw = zoned(&format!(
+        "{SERIES}RRULE:FREQ=DAILY;COUNT=4\r\n\
+         EXDATE;VALUE=DATE:20260707,20260709\r\n\
+         EXDATE:20260708T000000\r\n\
+         END:VEVENT\r\n"
+    ));
+
+    assert_eq!(
+        starts(&set_of_uid(&raw, "1"), 10),
+        ["20260706T090000", "20260708T090000"],
+    );
+}
+
+#[test]
+fn reads_a_date_until_on_a_timed_series_as_midnight() {
+    // NOTE: RFC 5545 3.3.10 wants UNTIL of DTSTART's type. dateutil, libical
+    // and recurring-ical-events all read this one as the start of 8 July,
+    // which excludes the instance at 09:00 that day.
+    let raw = zoned(&format!(
+        "{SERIES}RRULE:FREQ=DAILY;UNTIL=20260708\r\nEND:VEVENT\r\n"
+    ));
+
+    assert_eq!(
+        starts(&set_of_uid(&raw, "1"), 10),
+        ["20260706T090000", "20260707T090000"],
+    );
+}
+
+#[test]
 fn replaces_the_instance_a_utc_recurrence_id_names() {
     // NOTE: Read as written, the override named no instance and the series
     // showed the day twice, once moved and once not.

@@ -75,6 +75,7 @@ pub mod tzid;
 pub mod tzname;
 pub mod tzoffsetfrom;
 pub mod tzoffsetto;
+pub mod tzuntil;
 pub mod tzurl;
 pub mod uid;
 pub mod url;

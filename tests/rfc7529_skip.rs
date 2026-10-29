@@ -4,8 +4,8 @@
 //! 29th of February in a non-leap year, the 31st of a month with thirty days.
 //! Without it those instances are simply missing, which is RFC 5545's rule and
 //! almost never what a person meant. It needs no calendar system, only the
-//! month lengths this crate already knows, which is why it is implemented here
-//! and `RSCALE=CHINESE` is not.
+//! month lengths this crate already knows, so it needs no feature. Another
+//! scale, behind `rscale`, is tests/rfc7529_rscale.rs.
 
 use ical::recur::{
     IcalRecurDateTime, IcalRecurRule, expand::IcalRecurExpand, validate::IcalRecurRuleProblem,
@@ -197,16 +197,24 @@ fn keeps_the_occurrences_in_order() {
 
 #[test]
 fn an_alien_calendar_scale_still_yields_nothing() {
-    // NOTE: RSCALE names a CLDR calendar system, and this crate expands only
-    // the Gregorian one. Yielding nothing is the honest answer; yielding
-    // Gregorian dates under a Hebrew rule would be a wrong one.
-    let hebrew = expand(
-        "RSCALE=HEBREW;FREQ=YEARLY;SKIP=FORWARD",
-        date(2026, 1, 1),
-        3,
-    );
+    // NOTE: RSCALE names a CLDR calendar system, and without the rscale
+    // feature this crate expands only the Gregorian one. Yielding nothing is
+    // the honest answer; yielding Gregorian dates under a Hebrew rule would
+    // be a wrong one. With it, an observational calendar no algorithm
+    // predicts stays in that place.
+    let islamic = expand("RSCALE=ISLAMIC;FREQ=YEARLY", date(2026, 1, 1), 3);
+    assert!(islamic.is_empty());
 
-    assert!(hebrew.is_empty());
+    #[cfg(not(feature = "rscale"))]
+    {
+        let hebrew = expand(
+            "RSCALE=HEBREW;FREQ=YEARLY;SKIP=FORWARD",
+            date(2026, 1, 1),
+            3,
+        );
+
+        assert!(hebrew.is_empty());
+    }
 }
 
 #[test]

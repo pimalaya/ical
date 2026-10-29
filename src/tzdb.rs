@@ -33,7 +33,7 @@
 //! A zone's record runs to hundreds of transitions, so [`vtimezone`]
 //! describes the one era its anchor falls in. The United States moved
 //! its rule in 2007, and an item from 1980 under today's rule would
-//! read an hour out through the weeks between the two onsets.
+//! read an hour out through the weeks between the two .take_while(|onset| onset.year <= through.saturating_add(1))s.
 //!
 //! An observance states a yearly rule only where the transitions that
 //! follow agree on one, and a zone whose nearest shift is more than
@@ -197,6 +197,7 @@ pub fn zone(tzid: &str, through: i32) -> Option<IcalTz> {
     Some(IcalTz {
         id: tzid.to_owned(),
         observances,
+        until: None,
     })
 }
 
@@ -233,8 +234,16 @@ pub fn zones(components: &[IcalComponent<'_>], through: i32) -> Vec<IcalTz> {
     zones
 }
 
-/// A calendar's own zone, its history before its earliest observance taken
-/// from the database when the database knows its name.
+/// A calendar's own zone, completed from the database when the database
+/// knows its name: its history before its earliest observance, and its
+/// future past where it ends.
+///
+/// A definition ends at its `TZUNTIL` (RFC 7808 7.1), its own statement.
+/// One stating none ends after its latest onset when no observance recurs
+/// without end, provided it agrees with the database there: that is a
+/// definition truncated to the years its producer needed, which RFC 5545
+/// 3.6.5 forbids for a recurring component and producers write anyway. One
+/// disagreeing is the producer's own zone, and keeps its last offset.
 fn completed(mut own: IcalTz, through: i32) -> IcalTz {
     let Some(earliest) = own
         .observances
@@ -249,32 +258,158 @@ fn completed(mut own: IcalTz, through: i32) -> IcalTz {
         return own;
     };
 
-    for mut observance in database.observances {
-        let mut onsets: Vec<IcalRecurDateTime> = observance
+    let end = match own.until {
+        Some(until) => Some(until),
+        None => truncated(&own, &database, through),
+    };
+
+    if let Some(until) = own.until {
+        own.observances = before(&own, until, through);
+
+        let own_offset = in_force(&own.observances, until);
+        let database_offset = in_force(&database.observances, until);
+
+        // NOTE: The switch to the database's offset happens at the end
+        // itself, which the database may state no transition at.
+        if let (Some((_, from)), Some((daylight, to))) = (own_offset, database_offset)
+            && from != to
+        {
+            own.observances.push(IcalTzObservance {
+                daylight,
+                from,
+                to,
+                onsets: IcalRecurSet {
+                    start: Some(IcalRecurDateTime::from_seconds(until + i64::from(from))),
+                    ..IcalRecurSet::default()
+                },
+            });
+        }
+    }
+
+    for observance in &database.observances {
+        let instant = |onset: &IcalRecurDateTime| onset.seconds() - i64::from(observance.from);
+
+        let past = observance
             .onsets
             .start
-            .into_iter()
-            .chain(observance.onsets.dates)
-            .filter(|onset| *onset < earliest)
-            .collect();
+            .iter()
+            .chain(&observance.onsets.dates);
+        let onsets = past
+            .filter(|onset| *onset < &earliest || end.is_some_and(|end| instant(onset) > end))
+            .copied();
 
-        if onsets.is_empty() {
-            continue;
+        if let Some(observance) = dated(observance, onsets) {
+            own.observances.push(observance);
         }
-
-        onsets.sort_unstable();
-        let start = onsets.remove(0);
-
-        observance.onsets = IcalRecurSet {
-            start: Some(start),
-            dates: onsets,
-            ..IcalRecurSet::default()
-        };
-
-        own.observances.push(observance);
     }
 
     own
+}
+
+/// The end of a definition stating no `TZUNTIL`, as the instant of its
+/// latest onset: only when no observance recurs without end, and only when
+/// the offset it leaves in force is the one the database states there.
+fn truncated(own: &IcalTz, database: &IcalTz, through: i32) -> Option<i64> {
+    let endless = own.observances.iter().any(|observance| {
+        observance
+            .onsets
+            .rules
+            .iter()
+            .any(|rule| rule.until.is_none() && rule.count.is_none())
+    });
+
+    if endless {
+        return None;
+    }
+
+    let latest = own
+        .transitions(through)
+        .into_iter()
+        .map(|transition| transition.local.seconds() - i64::from(transition.from))
+        .max()?;
+
+    let own_offset = in_force(&own.observances, latest)?.1;
+    let database_offset = in_force(&database.observances, latest)?.1;
+
+    (own_offset == database_offset).then_some(latest)
+}
+
+/// A zone's observances cut to the onsets before an instant, each read as
+/// dated onsets up to the end of `through`.
+fn before(zone: &IcalTz, until: i64, through: i32) -> Vec<IcalTzObservance> {
+    zone.observances
+        .iter()
+        .filter_map(|observance| {
+            let onsets = observance
+                .onsets
+                .expand()
+                .map(|occurrence| occurrence.start)
+                .take_while(|onset| onset.year <= through)
+                .filter(|onset| onset.seconds() - i64::from(observance.from) < until);
+
+            dated(observance, onsets)
+        })
+        .collect()
+}
+
+/// An observance holding the given onsets as dated ones, or none when no
+/// onset is given.
+fn dated(
+    observance: &IcalTzObservance,
+    onsets: impl Iterator<Item = IcalRecurDateTime>,
+) -> Option<IcalTzObservance> {
+    let mut onsets: Vec<IcalRecurDateTime> = onsets.collect();
+
+    if onsets.is_empty() {
+        return None;
+    }
+
+    onsets.sort_unstable();
+    let start = onsets.remove(0);
+
+    Some(IcalTzObservance {
+        onsets: IcalRecurSet {
+            start: Some(start),
+            dates: onsets,
+            ..IcalRecurSet::default()
+        },
+        ..observance.clone()
+    })
+}
+
+/// Whether daylight time and which offset observances put in force at an
+/// instant: the latest onset at or before it, else the offset the earliest
+/// says came before it, read as standard time.
+fn in_force(observances: &[IcalTzObservance], instant: i64) -> Option<(bool, i32)> {
+    let mut latest: Option<(i64, bool, i32)> = None;
+    let mut earliest: Option<(i64, bool, i32)> = None;
+
+    for observance in observances {
+        let mut onsets = observance
+            .onsets
+            .expand()
+            .map(|occurrence| occurrence.start);
+
+        for onset in onsets.by_ref() {
+            let at = onset.seconds() - i64::from(observance.from);
+
+            if earliest.is_none_or(|(first, ..)| at < first) {
+                earliest = Some((at, false, observance.from));
+            }
+
+            if at > instant {
+                break;
+            }
+
+            if latest.is_none_or(|(last, ..)| at >= last) {
+                latest = Some((at, observance.daylight, observance.to));
+            }
+        }
+    }
+
+    latest
+        .or(earliest)
+        .map(|(_, daylight, offset)| (daylight, offset))
 }
 
 /// Every `TZID` a parameter names among components and their own, in order,

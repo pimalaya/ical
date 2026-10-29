@@ -41,6 +41,7 @@
 mod civil;
 pub mod expand;
 pub mod instant;
+mod scale;
 pub mod set;
 pub mod validate;
 
@@ -281,11 +282,63 @@ impl FromStr for IcalRecurWeekdayNum {
     }
 }
 
+/// One `BYMONTH` entry: a month of the rule's calendar scale, or the leap
+/// month following it (RFC 7529 4.2), spelled `5L`.
+///
+/// The number is a month's place among the regular months, so a Hebrew
+/// `6` is Adar in a common year and Adar II in a leap one, and `5L` is Adar
+/// I, which only a leap year has. Which numbers a scale has is read at
+/// expansion, so `13` and a leap month parse under every scale.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct IcalRecurMonth {
+    /// The regular month, 1 to 13.
+    pub number: u8,
+    /// Whether this is the leap month following [`number`](Self::number).
+    pub leap: bool,
+}
+
+impl IcalRecurMonth {
+    /// A regular month.
+    pub const fn regular(number: u8) -> Self {
+        Self {
+            number,
+            leap: false,
+        }
+    }
+}
+
+impl FromStr for IcalRecurMonth {
+    type Err = IcalRecurRuleError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (number, leap) = match s.strip_suffix(['L', 'l']) {
+            Some(number) => (number, true),
+            None => (s, false),
+        };
+
+        let number: u8 = number.parse().map_err(IcalRecurRuleError::Number)?;
+
+        if !(1..=13).contains(&number) {
+            return Err(IcalRecurRuleError::Range);
+        }
+
+        Ok(Self { number, leap })
+    }
+}
+
+impl fmt::Display for IcalRecurMonth {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.leap {
+            true => write!(f, "{}L", self.number),
+            false => write!(f, "{}", self.number),
+        }
+    }
+}
+
 /// How RFC 7529 resolves a date its calendar scale cannot express.
 ///
-/// Only consulted for a non-Gregorian `RSCALE` or a leap day a Gregorian year
-/// lacks. Parsed so a rule round-trips; expansion honours the default
-/// [`Self::Omit`], the others as omission until a non-Gregorian scale exists.
+/// Consulted for a day a month lacks, such as a leap day, and for a leap month
+/// a year lacks (RFC 7529 4.1): the month moves first, then the day.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum IcalRecurSkip {
     /// Drop the unrepresentable date. The default.
@@ -346,8 +399,9 @@ pub struct IcalRecurRule {
     pub by_year_day: Vec<i16>,
     /// `BYWEEKNO`, weeks of the year, 1 to 53 or -53 to -1.
     pub by_week_no: Vec<i8>,
-    /// `BYMONTH`, months of the year, 1 to 12.
-    pub by_month: Vec<u8>,
+    /// `BYMONTH`, months of the year, 1 to 12 on the Gregorian scale, a leap
+    /// month or a 13th on another (RFC 7529 4.2).
+    pub by_month: Vec<IcalRecurMonth>,
     /// `BYSETPOS`, positions within one period's candidate set.
     ///
     /// Applied last, once the other parts have produced and ordered the
@@ -358,8 +412,10 @@ pub struct IcalRecurRule {
     pub week_start: IcalRecurWeekday,
     /// `RSCALE`, the RFC 7529 calendar scale, uppercased.
     ///
-    /// Anything other than `GREGORIAN` is decoded and then refused by
-    /// expansion, which implements the Gregorian scale alone.
+    /// Behind the `rscale` feature a rule is expanded on the scale it names,
+    /// for the CLDR calendars [`expand::IcalRecurExpand::new`] lists; without
+    /// it, or for a scale it does not cover, anything other than `GREGORIAN`
+    /// yields nothing.
     pub scale: Option<String>,
     /// `SKIP`, the RFC 7529 resolution of an unrepresentable date.
     pub skip: IcalRecurSkip,
@@ -426,7 +482,7 @@ impl IcalRecurRule {
             } else if name.eq_ignore_ascii_case("BYWEEKNO") {
                 rule.by_week_no = signed(raw, 1, 53)?;
             } else if name.eq_ignore_ascii_case("BYMONTH") {
-                rule.by_month = numbers(raw, 1, 12)?;
+                rule.by_month = months(raw)?;
             } else if name.eq_ignore_ascii_case("BYSETPOS") {
                 rule.by_set_pos = signed(raw, 1, 366)?;
             } else if name.eq_ignore_ascii_case("WKST") {
@@ -480,6 +536,15 @@ where
             return Err(IcalRecurRuleError::Range);
         }
         parsed.push(T::try_from(value).map_err(|_| IcalRecurRuleError::Range)?);
+    }
+    Ok(parsed)
+}
+
+/// Parses a comma-separated `BYMONTH` list, leap months included.
+fn months(raw: &str) -> Result<Vec<IcalRecurMonth>, IcalRecurRuleError> {
+    let mut parsed = Vec::new();
+    for item in raw.split(',').filter(|item| !item.is_empty()) {
+        parsed.push(item.trim().parse()?);
     }
     Ok(parsed)
 }
@@ -555,7 +620,10 @@ mod tests {
 
         assert_eq!(rule.freq, IcalRecurFreq::Yearly);
         assert_eq!(rule.interval, 2);
-        assert_eq!(rule.by_month, vec![1, 3]);
+        assert_eq!(
+            rule.by_month,
+            vec![IcalRecurMonth::regular(1), IcalRecurMonth::regular(3)]
+        );
         assert_eq!(rule.by_day[0].ordinal, Some(-1));
         assert_eq!(rule.by_day[0].weekday, IcalRecurWeekday::Sunday);
         assert_eq!(rule.by_day[1].ordinal, None);
@@ -618,7 +686,11 @@ mod tests {
             Err(IcalRecurRuleError::Range)
         );
         assert_eq!(
-            IcalRecurRule::parse("FREQ=YEARLY;BYMONTH=13"),
+            IcalRecurRule::parse("FREQ=YEARLY;BYMONTH=14"),
+            Err(IcalRecurRuleError::Range)
+        );
+        assert_eq!(
+            IcalRecurRule::parse("FREQ=YEARLY;BYMONTH=0L"),
             Err(IcalRecurRuleError::Range)
         );
     }

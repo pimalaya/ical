@@ -192,8 +192,17 @@ pub struct IcalRecurSet {
     pub dates: Vec<IcalRecurDateTime>,
     /// Every `EXRULE`, deprecated by RFC 5545 but still on the wire.
     pub exrules: Vec<IcalRecurRule>,
-    /// Every date named by an `EXDATE`, in order.
+    /// Every date-time named by an `EXDATE`, in order, and every date when the
+    /// `DTSTART` is a date too.
     pub exdates: Vec<IcalRecurDateTime>,
+    /// Every day an `EXDATE` of value type `DATE` names beside a `DATE-TIME`
+    /// `DTSTART`, at midnight, in order: an instance whose identity falls on
+    /// one is excluded, the day read on the set's clock.
+    ///
+    /// RFC 5545 3.8.5.1 wants the two of one type, and producers write the
+    /// day they mean anyway. libical, recurring-ical-events and ical.js
+    /// all remove that day's instances.
+    pub exdays: Vec<IcalRecurDateTime>,
     /// The overrides that replace instances, in order of identity.
     pub overrides: Vec<IcalRecurOverride>,
 }
@@ -214,12 +223,14 @@ impl IcalRecurSet {
     /// the zones `zones` defines (see the [module](self) header).
     pub fn of_component_in(component: &IcalComponent<'_>, zones: &[IcalTz]) -> Self {
         let mut set = Self::default();
+        let mut timed = false;
 
         if let Some(start) = anchor_of(component)
             && let Some(text) = text_of(&start.value)
         {
             set.zone = IcalRecurZone::of(&start.params, text);
             set.start = IcalRecurDateTime::parse(text).ok();
+            timed = !is_date(text);
         }
 
         for prop in &component.props {
@@ -230,8 +241,17 @@ impl IcalRecurSet {
             match kind {
                 IcalPropKind::RRule => set.rules.extend(rule_of(prop, &set.zone, zones)),
                 IcalPropKind::ExRule => set.exrules.extend(rule_of(prop, &set.zone, zones)),
-                IcalPropKind::RDate => set.dates.extend(dates_of(prop, &set.zone, zones)),
-                IcalPropKind::ExDate => set.exdates.extend(dates_of(prop, &set.zone, zones)),
+                IcalPropKind::RDate => set
+                    .dates
+                    .extend(dates_of(prop, &set.zone, zones).map(|(date, _)| date)),
+                IcalPropKind::ExDate => {
+                    for (date, day) in dates_of(prop, &set.zone, zones) {
+                        match day && timed {
+                            true => set.exdays.push(date),
+                            false => set.exdates.push(date),
+                        }
+                    }
+                }
                 _ => {}
             }
         }
@@ -240,6 +260,8 @@ impl IcalRecurSet {
         set.dates.dedup();
         set.exdates.sort_unstable();
         set.exdates.dedup();
+        set.exdays.sort_unstable();
+        set.exdays.dedup();
 
         set
     }
@@ -483,6 +505,12 @@ impl IcalRecurSetExpand<'_> {
             return true;
         }
 
+        let day = IcalRecurDateTime::date(id.year, id.month, id.day);
+
+        if self.set.exdays.binary_search(&day).is_ok() {
+            return true;
+        }
+
         for (index, stream) in self.exrules.iter_mut().enumerate() {
             // NOTE: Advance this exception stream up to the candidate: it is
             // sorted, so anything it has already passed can never match again.
@@ -536,25 +564,33 @@ fn date_of(
     Some(IcalRecurZone::of(&prop.params, text).tell(local, zone, zones))
 }
 
-/// Every civil date a list property names, told on `zone`'s clock. A period
-/// item (`start/end` or `start/duration`, which `RDATE` admits) contributes
-/// its start.
-fn dates_of(prop: &IcalProp<'_>, zone: &IcalRecurZone, zones: &[IcalTz]) -> Vec<IcalRecurDateTime> {
-    let IcalValue::DateTimeList(dates) = &prop.value else {
-        // NOTE: A single-valued RDATE or EXDATE, however it was built.
-        return date_of(prop, zone, zones).into_iter().collect();
+/// Every civil date a list property names, told on `zone`'s clock, and
+/// whether it is written as a date. A period item (`start/end` or
+/// `start/duration`, which `RDATE` admits) contributes its start.
+fn dates_of<'p>(
+    prop: &'p IcalProp<'_>,
+    zone: &'p IcalRecurZone,
+    zones: &'p [IcalTz],
+) -> impl Iterator<Item = (IcalRecurDateTime, bool)> + 'p {
+    // NOTE: A single-valued RDATE or EXDATE, however it was built, reads as a
+    // list of one.
+    let items: Vec<&str> = match &prop.value {
+        IcalValue::DateTimeList(dates) => dates.0.iter().map(|item| item.as_ref()).collect(),
+        value => text_of(value).into_iter().collect(),
     };
 
-    dates
-        .0
-        .iter()
-        .filter_map(|item| {
-            let start = item.split('/').next().unwrap_or(item);
-            let local = IcalRecurDateTime::parse(start).ok()?;
+    items.into_iter().filter_map(move |item| {
+        let start = item.split('/').next().unwrap_or(item);
+        let local = IcalRecurDateTime::parse(start).ok()?;
+        let told = IcalRecurZone::of(&prop.params, start).tell(local, zone, zones);
 
-            Some(IcalRecurZone::of(&prop.params, start).tell(local, zone, zones))
-        })
-        .collect()
+        Some((told, is_date(start)))
+    })
+}
+
+/// Whether a date-ish text is a `DATE` rather than a `DATE-TIME`.
+fn is_date(text: &str) -> bool {
+    !text.contains(['T', 't'])
 }
 
 /// The rule a recurrence property states, when it states a readable one, its

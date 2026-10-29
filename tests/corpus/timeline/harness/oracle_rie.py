@@ -5,6 +5,9 @@ tab separated) on stdin, and writes `name<TAB>uid<TAB>start<TAB>end` for the
 earliest TAKE occurrences of each series starting in the window, spelled as
 the Rust side spells them. A calendar the library refuses is one
 `name<TAB>ERROR<TAB>reason` line.
+
+The one argument is tests/corpus: a calendar name with a slash is a path under
+it, a bare one is under its rie folder.
 """
 
 import signal
@@ -47,7 +50,10 @@ def spell(at):
 
 
 def answer(path, lo, hi):
-    calendar = icalendar.Calendar.from_ical(path.read_bytes())
+    # NOTE: Of a file of several VCALENDARs (an iTIP exchange) the first is
+    # read, as the ical-rs side reads it.
+    calendar = icalendar.Calendar.from_ical(path.read_bytes(), multiple=True)[0]
+
     query = recurring_ical_events.of(
         calendar, components=["VEVENT", "VTODO", "VJOURNAL"]
     )
@@ -74,16 +80,19 @@ def answer(path, lo, hi):
 
 def main():
     signal.signal(signal.SIGALRM, on_alarm)
-    folder = Path(sys.argv[1])
+    corpus = Path(sys.argv[1])
 
     for line in sys.stdin:
         name, lo, hi = line.rstrip("\n").split("\t")
-        lo = datetime.strptime(lo, "%Y%m%d")
-        hi = datetime.strptime(hi, "%Y%m%d")
+        path = corpus / name if "/" in name else corpus / "rie" / name
 
         signal.setitimer(signal.ITIMER_REAL, BUDGET_SECONDS)
         try:
-            series = answer(folder / name, lo, hi)
+            # NOTE: A window on year 0 (a malformed calendar's) is no
+            # datetime, so the calendar is refused like any other error.
+            lo = datetime.strptime(lo, "%Y%m%d")
+            hi = datetime.strptime(hi, "%Y%m%d")
+            series = answer(path, lo, hi)
         except Timeout:
             print("%s\tERROR\tTIMEOUT" % name)
             continue

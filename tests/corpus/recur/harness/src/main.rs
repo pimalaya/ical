@@ -3,6 +3,8 @@
 //! Three subcommands, chained by `run.sh`:
 //!
 //! - `generate` writes the case list (a start and a rule per line) to stdout.
+//! - `generate-rscale` writes the RFC 7529 `RSCALE` case list, which
+//!   `rscale.sh` answers through ical-rs and libical built with ICU.
 //! - `expand` reads that case list and answers it through ical-rs.
 //! - `cross` reads the three answer files (ical-rs, dateutil, libical) and
 //!   writes the consensus corpus: every case the two oracles answer alike.
@@ -138,6 +140,7 @@ fn main() {
 
     match args.next().as_deref() {
         Some("generate") => generate(),
+        Some("generate-rscale") => generate_rscale(),
         Some("expand") => expand(),
         Some("cross") => {
             let files: Vec<String> = args.collect();
@@ -219,6 +222,76 @@ fn generate() {
         }
 
         emit(start, &rule);
+    }
+}
+
+/// The scales the `RSCALE` sweep crosses: every one both ical-rs and ICU
+/// compute, under the CLDR names RFC 7529 5 registers.
+const SCALES: [&str; 14] = [
+    "HEBREW",
+    "CHINESE",
+    "DANGI",
+    "ISLAMIC-CIVIL",
+    "ISLAMIC-TBLA",
+    "ISLAMIC-UMALQURA",
+    "COPTIC",
+    "ETHIOPIC",
+    "INDIAN",
+    "PERSIAN",
+    "BUDDHIST",
+    "ROC",
+    "JAPANESE",
+    "GREGORIAN",
+];
+
+/// The rule bodies crossed with every scale: the frequencies a scale changes,
+/// the day and month parts it renumbers, leap months and `SKIP`.
+const SCALED: [&str; 26] = [
+    "FREQ=YEARLY",
+    "FREQ=YEARLY;INTERVAL=2",
+    "FREQ=MONTHLY",
+    "FREQ=MONTHLY;INTERVAL=5",
+    "FREQ=YEARLY;BYMONTH=1",
+    "FREQ=YEARLY;BYMONTH=6,12",
+    "FREQ=YEARLY;BYMONTH=13",
+    "FREQ=MONTHLY;BYMONTH=13",
+    "FREQ=YEARLY;BYMONTH=5L;BYMONTHDAY=8",
+    "FREQ=YEARLY;BYMONTH=5L;BYMONTHDAY=8;SKIP=FORWARD",
+    "FREQ=YEARLY;BYMONTH=5L;BYMONTHDAY=8;SKIP=BACKWARD",
+    "FREQ=YEARLY;BYMONTH=6L;BYMONTHDAY=1;SKIP=FORWARD",
+    "FREQ=MONTHLY;BYMONTHDAY=30",
+    "FREQ=MONTHLY;BYMONTHDAY=30;SKIP=FORWARD",
+    "FREQ=MONTHLY;BYMONTHDAY=30;SKIP=BACKWARD",
+    "FREQ=MONTHLY;BYMONTHDAY=-1",
+    "FREQ=MONTHLY;BYMONTHDAY=1,15",
+    "FREQ=MONTHLY;BYDAY=1SA",
+    "FREQ=MONTHLY;BYDAY=-1FR",
+    "FREQ=YEARLY;BYYEARDAY=1,-1",
+    "FREQ=YEARLY;BYYEARDAY=355",
+    "FREQ=YEARLY;BYMONTH=1;BYDAY=MO",
+    "FREQ=YEARLY;SKIP=FORWARD",
+    "FREQ=YEARLY;SKIP=BACKWARD",
+    "FREQ=DAILY;BYMONTHDAY=1",
+    "FREQ=WEEKLY;BYDAY=FR;COUNT=5",
+];
+
+/// The starts of the `RSCALE` sweep: the Gregorian dates of the RFC 7529 4.3
+/// examples, a 30th, a year's first and last days, and a leap day.
+const SCALED_STARTS: [&str; 7] = [
+    "20130210", "20130906", "20140208", "20240311", "20250129", "20000530", "20240229",
+];
+
+/// Writes the `RSCALE` case list, one `start<TAB>rule` per line.
+fn generate_rscale() {
+    let out = stdout();
+    let mut out = BufWriter::new(out.lock());
+
+    for scale in SCALES {
+        for body in SCALED {
+            for start in SCALED_STARTS {
+                writeln!(out, "{start}\tRSCALE={scale};{body}").expect("write case");
+            }
+        }
     }
 }
 

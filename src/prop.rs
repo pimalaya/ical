@@ -90,6 +90,7 @@ pub mod tzid;
 pub mod tzname;
 pub mod tzoffsetfrom;
 pub mod tzoffsetto;
+pub mod tzuntil;
 pub mod tzurl;
 pub mod uid;
 pub mod url;
@@ -233,7 +234,8 @@ impl IcalProp<'_> {
 ///
 /// An identity for dispatch and allowed-sets; [`IcalPropName`] is the open
 /// counterpart that also carries unknown names. Covers RFC 5545, 7986, 9073
-/// and 9074, plus the vCalendar 1.0 legacy alarm properties.
+/// and 9074, RFC 7808's `TZUNTIL`, plus the vCalendar 1.0 legacy alarm
+/// properties.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IcalPropKind {
     /// `CALSCALE`: calendar scale (RFC 5545 3.7.1).
@@ -290,6 +292,8 @@ pub enum IcalPropKind {
     TzOffsetTo,
     /// `TZURL`: time-zone definition URL (RFC 5545 3.8.3.5).
     TzUrl,
+    /// `TZUNTIL`: the exclusive end of a time-zone definition (RFC 7808 7.1).
+    TzUntil,
     /// `ATTENDEE`: an attendee (RFC 5545 3.8.4.1).
     Attendee,
     /// `CONTACT`: contact information (RFC 5545 3.8.4.2).
@@ -381,7 +385,7 @@ pub enum IcalPropKind {
 impl IcalPropKind {
     /// Every known property kind, for iterating the closed vocabulary (e.g. a
     /// validator checking which required properties are absent).
-    pub const ALL: [Self; 70] = [
+    pub const ALL: [Self; 71] = [
         Self::CalScale,
         Self::Method,
         Self::ProdId,
@@ -409,6 +413,7 @@ impl IcalPropKind {
         Self::TzOffsetFrom,
         Self::TzOffsetTo,
         Self::TzUrl,
+        Self::TzUntil,
         Self::Attendee,
         Self::Contact,
         Self::Organizer,
@@ -488,6 +493,7 @@ impl str::FromStr for IcalPropKind {
             kind if kind.eq_ignore_ascii_case("TZOFFSETFROM") => Self::TzOffsetFrom,
             kind if kind.eq_ignore_ascii_case("TZOFFSETTO") => Self::TzOffsetTo,
             kind if kind.eq_ignore_ascii_case("TZURL") => Self::TzUrl,
+            kind if kind.eq_ignore_ascii_case("TZUNTIL") => Self::TzUntil,
             kind if kind.eq_ignore_ascii_case("ATTENDEE") => Self::Attendee,
             kind if kind.eq_ignore_ascii_case("CONTACT") => Self::Contact,
             kind if kind.eq_ignore_ascii_case("ORGANIZER") => Self::Organizer,
@@ -570,6 +576,7 @@ impl ops::Deref for IcalPropKind {
             Self::TzOffsetFrom => "TZOFFSETFROM",
             Self::TzOffsetTo => "TZOFFSETTO",
             Self::TzUrl => "TZURL",
+            Self::TzUntil => "TZUNTIL",
             Self::Attendee => "ATTENDEE",
             Self::Contact => "CONTACT",
             Self::Organizer => "ORGANIZER",

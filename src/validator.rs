@@ -21,6 +21,8 @@
 //!   and `DTSTAMP`, a `VALARM` needs `ACTION` and `TRIGGER`, ...);
 //! - a component nested where it may not be;
 //! - a recurrence rule that breaks RFC 5545 3.3.10;
+//! - an `UNTIL` or an `EXDATE` whose value type is not its `DTSTART`'s (RFC
+//!   5545 3.3.10, 3.8.5.1);
 //! - a duration that breaks RFC 5545 3.3.6.
 //!
 //! A passing check mints an [`IcalValid`] marker, the only way to obtain one,
@@ -62,7 +64,7 @@ use crate::{
     ical::Ical,
     param::{IcalParam, IcalParamKind},
     prop::{IcalProp, IcalPropKind, IcalPropName, spec::prop_spec},
-    recur::{IcalRecurRuleError, validate::IcalRecurRuleProblem},
+    recur::{IcalRecurRuleError, set::text_of, validate::IcalRecurRuleProblem},
     value::{IcalValue, IcalValueKind, duration::IcalDuration},
     version::IcalVersion,
 };
@@ -143,6 +145,14 @@ pub enum IcalValidateError {
         /// The duration as written.
         duration: String,
     },
+    /// An `UNTIL` (on an `RRULE` or `EXRULE`) or an `EXDATE` states a date
+    /// where its component's `DTSTART` states a date-time, or the reverse,
+    /// which RFC 5545 3.3.10 and 3.8.5.1 forbid and which reading the set
+    /// forgives.
+    StartType {
+        /// The property carrying the mismatched value.
+        prop: IcalPropKind,
+    },
 }
 
 impl fmt::Display for IcalValidateError {
@@ -215,6 +225,13 @@ impl fmt::Display for IcalValidateError {
                     &**prop
                 )
             }
+            Self::StartType { prop } => {
+                write!(
+                    f,
+                    "Property `{}` does not share the value type of `DTSTART`",
+                    &**prop
+                )
+            }
         }
     }
 }
@@ -269,6 +286,8 @@ fn validate_component(
         check_required(kind, &component.name, &component.props, errors);
         check_nesting(kind, &component.name, &component.components, errors);
     }
+
+    check_start_type(&component.props, errors);
 
     for child in &component.components {
         validate_component(child, version, errors);
@@ -395,6 +414,49 @@ fn validate_rule(kind: IcalPropKind, prop: &IcalProp<'_>, errors: &mut Vec<IcalV
                 problem,
             }),
     );
+}
+
+/// Push a [`StartType`](IcalValidateError::StartType) for every `RRULE` or
+/// `EXRULE` whose `UNTIL`, and every `EXDATE` holding an item, whose value
+/// type is not the `DTSTART`'s (RFC 5545 3.3.10, 3.8.5.1).
+///
+/// A component with no `DTSTART` has no type to compare with.
+fn check_start_type(props: &[IcalProp<'_>], errors: &mut Vec<IcalValidateError>) {
+    let is_date = |text: &str| !text.contains(['T', 't']);
+
+    let Some(date) = props.iter().find_map(|prop| match prop.name {
+        IcalPropName::Kind(IcalPropKind::DtStart) => text_of(&prop.value).map(is_date),
+        _ => None,
+    }) else {
+        return;
+    };
+
+    for prop in props {
+        let IcalPropName::Kind(kind) = prop.name else {
+            continue;
+        };
+
+        let mismatched = match (kind, &prop.value) {
+            (IcalPropKind::RRule | IcalPropKind::ExRule, IcalValue::Recur(recur)) => {
+                recur.0.split(';').any(|part| {
+                    part.split_once('=').is_some_and(|(name, value)| {
+                        name.trim().eq_ignore_ascii_case("UNTIL") && is_date(value.trim()) != date
+                    })
+                })
+            }
+            (IcalPropKind::ExDate, IcalValue::DateTimeList(dates)) => {
+                dates.0.iter().any(|item| is_date(item) != date)
+            }
+            (IcalPropKind::ExDate, value) => {
+                text_of(value).is_some_and(|item| is_date(item) != date)
+            }
+            _ => false,
+        };
+
+        if mismatched {
+            errors.push(IcalValidateError::StartType { prop: kind });
+        }
+    }
 }
 
 /// Report a [`TooMany`](IcalValidateError::TooMany) per over-frequent property.
@@ -708,6 +770,42 @@ mod tests {
         });
 
         assert!(cal.validate().is_ok());
+    }
+
+    #[test]
+    fn flags_an_until_and_an_exdate_not_typed_as_dtstart() {
+        use crate::value::{datetime::IcalDateTimeList, recur::IcalRecur};
+
+        let cal = around(vec![
+            prop(
+                IcalPropKind::DtStart,
+                IcalValue::DateTime(IcalDateTime("20260706T090000".into())),
+            ),
+            prop(
+                IcalPropKind::RRule,
+                IcalValue::Recur(IcalRecur("FREQ=DAILY;UNTIL=20260708".into())),
+            ),
+            prop(
+                IcalPropKind::ExDate,
+                IcalValue::DateTimeList(IcalDateTimeList(vec!["20260707".into()])),
+            ),
+            prop(
+                IcalPropKind::ExDate,
+                IcalValue::DateTimeList(IcalDateTimeList(vec!["20260709T090000".into()])),
+            ),
+        ]);
+
+        assert_eq!(
+            cal.validate().unwrap_err(),
+            [
+                IcalValidateError::StartType {
+                    prop: IcalPropKind::RRule
+                },
+                IcalValidateError::StartType {
+                    prop: IcalPropKind::ExDate
+                },
+            ]
+        );
     }
 
     #[test]

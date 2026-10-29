@@ -12,7 +12,7 @@ Turning a civil date-time into a UTC offset, using the `VTIMEZONE` the calendar 
 
 A civil date and time plus a `VTIMEZONE` SHALL resolve to a UTC offset, using only the observances that travel inside the calendar. No time-zone database and no new dependency SHALL be required.
 
-Every `DTSTART` inside an observance is local to the offset *before* the transition (RFC 5545 3.6.5). A local time before the first transition SHALL take the offset that transition states came before it. A zone with no observance at all SHALL resolve to UTC, since it states no offset to apply.
+Every `DTSTART` inside an observance is local to the offset *before* the transition (RFC 5545 3.6.5). A `TZUNTIL` SHALL be read into `IcalTz::until` and not applied here: past it the observances still answer, there being nothing else to read. A local time before the first transition SHALL take the offset that transition states came before it. A zone with no observance at all SHALL resolve to UTC, since it states no offset to apply.
 
 #### Scenario: An unambiguous local time
 - GIVEN a `VTIMEZONE` with a `STANDARD` and a `DAYLIGHT` observance
@@ -78,7 +78,7 @@ Behind the `tzdb` feature, `tzdb::version` SHALL return the IANA release of the 
 
 ### Requirement: A zone the calendar omits resolves from the database, opt-in
 
-Behind the `tzdb` feature, `tzdb::zone` SHALL build the `IcalTz` an IANA name stands for from every transition the database states up to the end of a given year, exact over the whole history to that year, and usable wherever a zone read from a `VTIMEZONE` is. A Windows time zone name (`Pacific Standard Time`) SHALL read as the IANA zone CLDR maps it to for territory 001, the zone keeping the name it was asked by; `tzdb::is_known` and `tzdb::vtimezone` stay IANA only. `tzdb::zones` SHALL list a calendar's own zones (`IcalTz::of_components`) followed by a database zone for every `TZID` its components name and no `VTIMEZONE` defines, so a reader taking the first zone of a name resolves through the calendar's own `VTIMEZONE`, else the database, else as floating. A `VTIMEZONE` the calendar carries SHALL win over the database over the span it is valid for, from its earliest observance on (RFC 7808 7.1); before that, a name the database knows SHALL read through the database's own transitions, since a producer may truncate the history it does not need. `TZUNTIL`, the other end of that span, is not read. Without the feature, or for a name the database does not know, the time SHALL read as it does without a database.
+Behind the `tzdb` feature, `tzdb::zone` SHALL build the `IcalTz` an IANA name stands for from every transition the database states up to the end of a given year, exact over the whole history to that year, and usable wherever a zone read from a `VTIMEZONE` is. A Windows time zone name (`Pacific Standard Time`) SHALL read as the IANA zone CLDR maps it to for territory 001, the zone keeping the name it was asked by; `tzdb::is_known` and `tzdb::vtimezone` stay IANA only. `tzdb::zones` SHALL list a calendar's own zones (`IcalTz::of_components`) followed by a database zone for every `TZID` its components name and no `VTIMEZONE` defines, so a reader taking the first zone of a name resolves through the calendar's own `VTIMEZONE`, else the database, else as floating. A `VTIMEZONE` the calendar carries SHALL win over the database over the span it is valid for, from its earliest observance on (RFC 7808 7.1); before that, a name the database knows SHALL read through the database's own transitions, since a producer may truncate the history it does not need. The span SHALL end at its `TZUNTIL` (RFC 7808 7.1), or, when no observance recurs without end, after its latest onset if its last offset matches the database there (RFC 5545 3.6.5 wants every instance covered); past it a known name SHALL read through the database. A definition disagreeing there is the sender's own and keeps its last offset. Without the feature, or for a name the database does not know, the time SHALL read as it does without a database.
 
 #### Scenario: An event naming a zone it does not carry
 - GIVEN `DTSTART;TZID=Europe/Paris:20260706T090000` and no `VTIMEZONE` in the calendar
@@ -99,6 +99,16 @@ Behind the `tzdb` feature, `tzdb::zone` SHALL build the `IcalTz` an IANA name st
 - GIVEN a `VTIMEZONE` for `Europe/Berlin` whose earliest observance is 28 October 2018, and an event at 14:00 Berlin time on 3 December 2016
 - WHEN it is walked through `tzdb::zones`
 - THEN it starts at 13:00Z, winter time as the database states it, not at the summer offset the first observance came from
+
+#### Scenario: A VTIMEZONE truncated to recent years, read later
+- GIVEN a `VTIMEZONE` for `Europe/Berlin` whose observances are dated only and end with the onset of 31 March 2019, and an event at 14:00 Berlin time on 4 December 2023
+- WHEN it is walked through `tzdb::zones`
+- THEN it starts at 13:00Z, winter time as the database states it, not at the +0200 the last observance came to
+
+#### Scenario: A definition that states its end
+- GIVEN a `VTIMEZONE` for `Europe/Berlin` with `TZUNTIL:20200101T000000Z` and a yearly `RRULE` per observance
+- WHEN a time in 2024 is walked through `tzdb::zones`
+- THEN it reads through the database
 
 #### Scenario: A Windows zone name
 - GIVEN `DTSTART;TZID=Pacific Standard Time:20230105T100000` and no `VTIMEZONE` of that name

@@ -172,6 +172,13 @@ pub struct IcalTz {
     pub id: String,
     /// Its observances, in source order.
     pub observances: Vec<IcalTzObservance>,
+    /// The instant the definition stops being valid at, exclusive, in seconds
+    /// since the Unix epoch: its `TZUNTIL` (RFC 7808 7.1).
+    ///
+    /// Read and kept, never applied here: past it the observances still answer,
+    /// there being nothing else to read. `tzdb::zones`, behind the `tzdb`
+    /// feature, reads the database there instead.
+    pub until: Option<i64>,
 }
 
 /// One transition of a zone: the instant it happens, expressed in the local
@@ -278,7 +285,24 @@ impl IcalTz {
             .filter_map(IcalTzObservance::of_component)
             .collect();
 
-        Some(Self { id, observances })
+        // NOTE: RFC 7808 7.1 requires the UTC form; a time without its Z is
+        // read as UTC all the same, being the only clock it can mean.
+        let until = component
+            .props
+            .iter()
+            .find_map(|prop| match (&prop.name, &prop.value) {
+                (IcalPropName::Kind(IcalPropKind::TzUntil), IcalValue::DateTime(date)) => {
+                    IcalRecurDateTime::parse(&date.0).ok()
+                }
+                _ => None,
+            })
+            .map(|until| until.seconds());
+
+        Some(Self {
+            id,
+            observances,
+            until,
+        })
     }
 
     /// Every zone the `VTIMEZONE`s among a calendar's components define, in

@@ -56,7 +56,10 @@
 use alloc::{vec, vec::Vec};
 
 use crate::{
-    recur::{IcalRecurDateTime, IcalRecurFreq, IcalRecurRule, IcalRecurSkip, civil},
+    recur::{
+        IcalRecurDateTime, IcalRecurFreq, IcalRecurMonth, IcalRecurRule, IcalRecurSkip, civil,
+        scale::IcalRecurScale,
+    },
     tz::{IcalTz, IcalTzTransitions},
 };
 
@@ -122,8 +125,12 @@ enum IcalRecurOrdinals {
 #[derive(Clone, Debug)]
 pub struct IcalRecurExpand {
     rule: IcalRecurRule,
+    scale: IcalRecurScale,
     start: IcalRecurDateTime,
     start_weekday: u8,
+    /// The start's month and day of the month on the rule's scale.
+    start_month: IcalRecurMonth,
+    start_day: u8,
     cursor: IcalRecurDateTime,
     ordinals: IcalRecurOrdinals,
     hours: Vec<u8>,
@@ -144,18 +151,27 @@ impl IcalRecurExpand {
     /// supplies the fields no `BY` part pins down, such as a daily rule's time
     /// of day.
     ///
-    /// An `RSCALE` other than `GREGORIAN` yields nothing: another calendar
-    /// system needs the CLDR arithmetic RFC 7529 5 points at, and Gregorian
-    /// dates under a Hebrew rule would be wrong rather than missing.
-    /// `RSCALE=GREGORIAN` is expanded, `SKIP` and all (RFC 7529 4.1).
+    /// `RSCALE=GREGORIAN` is expanded, `SKIP` and all (RFC 7529 4.1). Behind
+    /// the `rscale` feature, a rule naming another scale is expanded on it,
+    /// years, months, leap months and `SKIP` resolved in that calendar, each
+    /// occurrence still a Gregorian date: `HEBREW`, `CHINESE`, `DANGI`,
+    /// `ISLAMIC-CIVIL`, `ISLAMIC-TBLA`, `ISLAMIC-UMALQURA`, `COPTIC`,
+    /// `ETHIOPIC`, `ETHIOAA`, `INDIAN`, `PERSIAN`, `BUDDHIST`, `ROC`,
+    /// `JAPANESE` and `ISO8601`. Any other scale yields nothing, since
+    /// Gregorian dates under a Hebrew rule would be wrong rather than
+    /// missing.
     pub fn new(rule: IcalRecurRule, start: IcalRecurDateTime) -> Self {
-        let alien = rule
-            .scale
-            .as_deref()
-            .is_some_and(|scale| scale != "GREGORIAN");
+        let scale = IcalRecurScale::of(rule.scale.as_deref());
+        let alien = scale.is_none();
+        let scale = scale.unwrap_or(IcalRecurScale::Gregorian);
+        let (year, ordinal, start_day) = scale.date(day_of(start));
+
         Self {
             start_weekday: weekday_of(day_of(start)),
-            cursor: period_start(&rule, start),
+            start_month: scale.month(year, ordinal),
+            start_day,
+            cursor: period_start(&rule, &scale, start),
+            scale,
             ordinals: ordinals(&rule),
             hours: expanded(&rule.by_hour, start.hour),
             minutes: expanded(&rule.by_minute, start.minute),
@@ -211,8 +227,6 @@ impl IcalRecurExpand {
 
         let interval = i64::from(self.rule.interval.max(1));
         let step = self.step_seconds().unwrap_or(1).max(1);
-        let months = |at: IcalRecurDateTime| i64::from(at.year) * 12 + i64::from(at.month) - 1;
-
         // NOTE: The whole periods between the cursor and the one `from` falls
         // in, less one: a period can yield a day past its own end (a
         // `BYWEEKNO` week straddling the year, an RFC 7529 `SKIP=FORWARD`), so
@@ -223,9 +237,19 @@ impl IcalRecurExpand {
             }
             IcalRecurFreq::Daily => (day_of(from) - day_of(self.cursor)).div_euclid(interval),
             IcalRecurFreq::Weekly => (day_of(from) - day_of(self.cursor)).div_euclid(interval * 7),
-            IcalRecurFreq::Monthly => (months(from) - months(self.cursor)).div_euclid(interval),
+            IcalRecurFreq::Monthly => {
+                let (year, ordinal, _) = self.scale.date(day_of(self.cursor));
+                let (to_year, to_ordinal, _) = self.scale.date(day_of(from));
+
+                self.scale
+                    .months_between((year, ordinal), (to_year, to_ordinal))
+                    .div_euclid(interval)
+            }
             IcalRecurFreq::Yearly => {
-                (i64::from(from.year) - i64::from(self.cursor.year)).div_euclid(interval)
+                let year = self.scale.date(day_of(self.cursor)).0;
+                let to_year = self.scale.date(day_of(from)).0;
+
+                (i64::from(to_year) - i64::from(year)).div_euclid(interval)
             }
         } - 1;
 
@@ -240,16 +264,14 @@ impl IcalRecurExpand {
             IcalRecurFreq::Daily => date_of(day_of(self.cursor) + periods * interval),
             IcalRecurFreq::Weekly => date_of(day_of(self.cursor) + periods * interval * 7),
             IcalRecurFreq::Monthly => {
-                let month = months(self.cursor) + periods * interval;
-                IcalRecurDateTime::date(
-                    month.div_euclid(12) as i32,
-                    month.rem_euclid(12) as u8 + 1,
-                    1,
-                )
+                let (year, ordinal, _) = self.scale.date(day_of(self.cursor));
+                let (year, ordinal) = self.scale.add_months((year, ordinal), periods * interval);
+                date_of(self.scale.first(year, ordinal))
             }
             IcalRecurFreq::Yearly => {
-                let year = i64::from(self.cursor.year) + periods * interval;
-                IcalRecurDateTime::date(year as i32, 1, 1)
+                let year = i64::from(self.scale.date(day_of(self.cursor)).0) + periods * interval;
+                let year = year.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
+                date_of(self.scale.first(year, 1))
             }
         };
 
@@ -359,10 +381,7 @@ impl IcalRecurExpand {
                 }
             }
             _ => {
-                let (first, last) = self.period_days();
-                let mut days: Vec<i64> = (first..=last)
-                    .filter(|day| self.day_matches(*day))
-                    .collect();
+                let mut days = self.matching_days();
 
                 days.extend(self.skipped_days());
 
@@ -424,14 +443,16 @@ impl IcalRecurExpand {
                 date_of(day_of(self.cursor) + i64::from(self.rule.interval) * 7)
             }
             IcalRecurFreq::Monthly => {
-                let month = i64::from(self.cursor.year) * 12 + i64::from(self.cursor.month) - 1
-                    + i64::from(self.rule.interval);
-                let year = month.div_euclid(12).min(i64::from(MAX_YEAR) + 1);
-                IcalRecurDateTime::date(year as i32, month.rem_euclid(12) as u8 + 1, 1)
+                let (year, ordinal, _) = self.scale.date(day_of(self.cursor));
+                let (year, ordinal) = self
+                    .scale
+                    .add_months((year, ordinal), i64::from(self.rule.interval));
+                date_of(self.scale.first(year, ordinal))
             }
             IcalRecurFreq::Yearly => {
-                let year = i64::from(self.cursor.year) + i64::from(self.rule.interval);
-                IcalRecurDateTime::date(year.min(i64::from(MAX_YEAR) + 1) as i32, 1, 1)
+                let year = self.scale.date(day_of(self.cursor)).0;
+                let year = year.saturating_add_unsigned(self.rule.interval);
+                date_of(self.scale.first(year, 1))
             }
         };
     }
@@ -457,11 +478,13 @@ impl IcalRecurExpand {
         match self.rule.freq {
             IcalRecurFreq::Weekly => (first, first + 6),
             IcalRecurFreq::Monthly => {
-                let month = civil::days_in_month(self.cursor.year, self.cursor.month);
+                let (year, ordinal, _) = self.scale.date(first);
+                let month = self.scale.days_in_month(year, ordinal);
                 (first, first + i64::from(month) - 1)
             }
             IcalRecurFreq::Yearly => {
-                let last = first + i64::from(civil::days_in_year(self.cursor.year)) - 1;
+                let year = self.scale.date(first).0;
+                let last = first + i64::from(self.scale.days_in_year(year)) - 1;
                 match self.rule.by_week_no.is_empty() {
                     true => (first, last),
                     false => (first - 7, last + 7),
@@ -497,9 +520,9 @@ impl IcalRecurExpand {
     ///
     /// Only a day the rule actually intends is resolved: each positive
     /// `BYMONTHDAY`, or the day the start supplies when no part selects one. A
-    /// negative `BYMONTHDAY` counts back from the month's end and a Gregorian
-    /// month number always exists, so the day of the month is all that can be
-    /// missing.
+    /// negative `BYMONTHDAY` counts back from the month's end and always names
+    /// a day that exists. The months are those the rule intends, a leap month
+    /// a year lacks already moved by [`resolve`](Self::resolve).
     ///
     /// A resolved day is not put back through the day-selecting parts: RFC
     /// 7529 4.1 resolves the day *after* `BYMONTHDAY` chose it, and the point
@@ -524,26 +547,36 @@ impl IcalRecurExpand {
                 .collect(),
             // NOTE: With no part selecting a day, the start supplies it, which
             // is the case the RFC's own leap-day example is written for.
-            false if !selects_a_day => vec![self.start.day],
+            false if !selects_a_day => vec![self.start_day],
             false => return Vec::new(),
         };
 
-        let months: Vec<u8> = match rule.freq {
-            IcalRecurFreq::Monthly => vec![self.cursor.month],
-            IcalRecurFreq::Yearly if !rule.by_month.is_empty() => rule.by_month.clone(),
-            IcalRecurFreq::Yearly if self.month_day_applies() => (1..=12).collect(),
-            IcalRecurFreq::Yearly => vec![self.start.month],
+        let (year, ordinal, _) = self.scale.date(day_of(self.cursor));
+
+        let mut months: Vec<u8> = match rule.freq {
+            IcalRecurFreq::Monthly => vec![ordinal],
+            IcalRecurFreq::Yearly if !rule.by_month.is_empty() => rule
+                .by_month
+                .iter()
+                .filter_map(|month| self.resolve(year, *month))
+                .collect(),
+            IcalRecurFreq::Yearly if self.month_day_applies() => {
+                (1..=self.scale.months_in_year(year)).collect()
+            }
+            IcalRecurFreq::Yearly => self.resolve(year, self.start_month).into_iter().collect(),
             _ => return Vec::new(),
         };
 
-        let year = self.cursor.year;
+        months.sort_unstable();
+        months.dedup();
+
         let mut days = Vec::new();
 
         for month in months {
-            let length = civil::days_in_month(year, month);
+            let length = self.scale.days_in_month(year, month);
 
             for _ in intended.iter().filter(|date| **date > length) {
-                let last = day_of(IcalRecurDateTime::date(year, month, length));
+                let last = self.scale.first(year, month) + i64::from(length) - 1;
 
                 days.push(match rule.skip {
                     IcalRecurSkip::Backward => last,
@@ -557,22 +590,111 @@ impl IcalRecurExpand {
         days
     }
 
+    /// Every day of the period the cursor sits on that the day-selecting
+    /// parts admit, in order.
+    ///
+    /// Walked a month at a time, a month `BYMONTH` leaves out skipped whole,
+    /// and the civil date stepped along rather than recomputed per day: a
+    /// yearly rule otherwise converts 365 day numbers per period, which is
+    /// most of what expanding a `VTIMEZONE` costs.
+    fn matching_days(&self) -> Vec<i64> {
+        let (first, last) = self.period_days();
+        let mut days = Vec::new();
+        let mut day = first;
+        // NOTE: The months BYMONTH admits, resolved once per year rather than
+        // once per month, a period spanning two years only for BYWEEKNO.
+        let mut admitted: Option<(i32, Vec<u8>)> = None;
+
+        while day <= last {
+            let (year, month, date) = self.scale.date(day);
+            let length = self.scale.days_in_month(year, month);
+            let end = (day + i64::from(length - date)).min(last);
+
+            if admitted.as_ref().is_none_or(|(held, _)| *held != year) {
+                admitted = Some((year, self.admitted_months(year)));
+            }
+
+            let admits = self.rule.by_month.is_empty()
+                || admitted
+                    .as_ref()
+                    .is_some_and(|(_, months)| months.contains(&month));
+
+            if admits {
+                for (offset, at) in (day..=end).enumerate() {
+                    if self.day_matches_on(at, year, month, date + offset as u8) {
+                        days.push(at);
+                    }
+                }
+            }
+
+            day = end + 1;
+        }
+
+        days
+    }
+
+    /// The ordinal a month the rule names sits at in a year, or, when the
+    /// year lacks it, the one `SKIP` moves it to (RFC 7529 4.1): back to the
+    /// regular month a missing leap month follows, or on to the month after
+    /// it. `None` when it is omitted.
+    fn resolve(&self, year: i32, month: IcalRecurMonth) -> Option<u8> {
+        if let Some(ordinal) = self.scale.ordinal(year, month) {
+            return Some(ordinal);
+        }
+
+        let regular = self
+            .scale
+            .ordinal(year, IcalRecurMonth::regular(month.number))
+            .filter(|_| month.leap)?;
+
+        match self.rule.skip {
+            IcalRecurSkip::Omit => None,
+            IcalRecurSkip::Backward => Some(regular),
+            IcalRecurSkip::Forward => {
+                Some(regular + 1).filter(|next| *next <= self.scale.months_in_year(year))
+            }
+        }
+    }
+
+    /// The ordinals of the months `BYMONTH` admits in a year.
+    fn admitted_months(&self, year: i32) -> Vec<u8> {
+        self.rule
+            .by_month
+            .iter()
+            .filter_map(|month| self.resolve(year, *month))
+            .collect()
+    }
+
+    /// Whether `BYMONTH` admits a month of a year, given by its ordinal.
+    fn month_admitted(&self, year: i32, ordinal: u8) -> bool {
+        self.rule.by_month.is_empty()
+            || self
+                .rule
+                .by_month
+                .iter()
+                .any(|month| self.resolve(year, *month) == Some(ordinal))
+    }
+
     /// Whether the day-selecting parts admit a day, given as a day number.
     fn day_matches(&self, day: i64) -> bool {
-        let (year, month, date) = civil::civil_from_days(day);
-        let rule = &self.rule;
+        let (year, month, date) = self.scale.date(day);
+        self.month_admitted(year, month) && self.day_matches_on(day, year, month, date)
+    }
 
-        if !rule.by_month.is_empty() && !rule.by_month.contains(&month) {
-            return false;
-        }
+    /// Whether the day-selecting parts but `BYMONTH` admit a day, given as a
+    /// day number and as the date it is on the rule's scale, its month an
+    /// ordinal. `BYMONTH` is asked once per month by the caller, resolving a
+    /// month on another scale being the dearest question here.
+    fn day_matches_on(&self, day: i64, year: i32, month: u8, date: u8) -> bool {
+        let rule = &self.rule;
 
         if self.week_no_applies() {
             let start = rule.week_start as u8;
-            let (week_year, week) = civil::week_number(year, month, date, start);
-            if week_year != self.cursor.year {
+            let (week_year, week) = self.scale.week_number(day, start);
+            if week_year != self.scale.date(day_of(self.cursor)).0 {
                 return false;
             }
-            let total = i16::from(civil::weeks_in_year(week_year, start));
+            let total = i16::from(self.scale.weeks_in_year(week_year, start));
             let week = i16::from(week);
             let matched = rule
                 .by_week_no
@@ -584,8 +706,8 @@ impl IcalRecurExpand {
         }
 
         if self.year_day_applies() {
-            let ordinal = civil::day_of_year(year, month, date) as i16;
-            let total = civil::days_in_year(year) as i16;
+            let ordinal = self.scale.day_of_year(year, month, date) as i16;
+            let total = self.scale.days_in_year(year) as i16;
             let matched = rule
                 .by_year_day
                 .iter()
@@ -597,7 +719,7 @@ impl IcalRecurExpand {
 
         if self.month_day_applies() {
             let ordinal = i16::from(date);
-            let total = i16::from(civil::days_in_month(year, month));
+            let total = i16::from(self.scale.days_in_month(year, month));
             let matched = rule
                 .by_month_day
                 .iter()
@@ -611,7 +733,7 @@ impl IcalRecurExpand {
             return false;
         }
 
-        self.default_day_matches(day, month, date)
+        self.default_day_matches(day, year, month, date)
     }
 
     /// Whether a `BYDAY` entry admits a day, ordinals included.
@@ -632,11 +754,11 @@ impl IcalRecurExpand {
             let (position, total) = match self.ordinals {
                 IcalRecurOrdinals::Month => (
                     i16::from(date),
-                    i16::from(civil::days_in_month(year, month)),
+                    i16::from(self.scale.days_in_month(year, month)),
                 ),
                 _ => (
-                    civil::day_of_year(year, month, date) as i16,
-                    civil::days_in_year(year) as i16,
+                    self.scale.day_of_year(year, month, date) as i16,
+                    self.scale.days_in_year(year) as i16,
                 ),
             };
             let forward = (position - 1) / 7 + 1;
@@ -650,8 +772,9 @@ impl IcalRecurExpand {
     /// Only consulted when no part selects a day: RFC 5545 then reads the
     /// missing field off `DTSTART`, a monthly rule keeping its day of the
     /// month, a yearly one its month too unless `BYMONTH` gives it, and a
-    /// weekly one its weekday.
-    fn default_day_matches(&self, day: i64, month: u8, date: u8) -> bool {
+    /// weekly one its weekday. A start in a leap month a year lacks moves as
+    /// `SKIP` says, as a `BYMONTH` naming it would.
+    fn default_day_matches(&self, day: i64, year: i32, month: u8, date: u8) -> bool {
         let rule = &self.rule;
         // NOTE: Only a part that is *in force* counts as selecting a day: one
         // the frequency forbids is ignored whole, so it can neither select a
@@ -666,9 +789,11 @@ impl IcalRecurExpand {
 
         match rule.freq {
             IcalRecurFreq::Weekly => weekday_of(day) == self.start_weekday,
-            IcalRecurFreq::Monthly => date == self.start.day,
+            IcalRecurFreq::Monthly => date == self.start_day,
             IcalRecurFreq::Yearly => {
-                date == self.start.day && (!rule.by_month.is_empty() || month == self.start.month)
+                date == self.start_day
+                    && (!rule.by_month.is_empty()
+                        || self.resolve(year, self.start_month) == Some(month))
             }
             _ => true,
         }
@@ -724,8 +849,13 @@ impl Iterator for IcalRecurExpand {
     }
 }
 
-/// The start of the period a date-time falls in, at a given frequency.
-fn period_start(rule: &IcalRecurRule, start: IcalRecurDateTime) -> IcalRecurDateTime {
+/// The start of the period a date-time falls in, at a given frequency, a
+/// month or a year being the scale's.
+fn period_start(
+    rule: &IcalRecurRule,
+    scale: &IcalRecurScale,
+    start: IcalRecurDateTime,
+) -> IcalRecurDateTime {
     match rule.freq {
         IcalRecurFreq::Secondly | IcalRecurFreq::Minutely | IcalRecurFreq::Hourly => start,
         IcalRecurFreq::Daily => IcalRecurDateTime::date(start.year, start.month, start.day),
@@ -734,8 +864,11 @@ fn period_start(rule: &IcalRecurRule, start: IcalRecurDateTime) -> IcalRecurDate
             let back = (weekday_of(day) + 7 - rule.week_start as u8) % 7;
             date_of(day - i64::from(back))
         }
-        IcalRecurFreq::Monthly => IcalRecurDateTime::date(start.year, start.month, 1),
-        IcalRecurFreq::Yearly => IcalRecurDateTime::date(start.year, 1, 1),
+        IcalRecurFreq::Monthly => {
+            let (year, ordinal, _) = scale.date(day_of(start));
+            date_of(scale.first(year, ordinal))
+        }
+        IcalRecurFreq::Yearly => date_of(scale.first(scale.date(day_of(start)).0, 1)),
     }
 }
 
@@ -983,6 +1116,7 @@ mod tests {
         // further to yield the five occurrences COUNT names.
         let zone = IcalTz {
             id: String::from("Test/Jump"),
+            until: None,
             observances: vec![IcalTzObservance {
                 daylight: true,
                 from: -5 * 3600,
@@ -1032,6 +1166,8 @@ mod tests {
         let start = IcalRecurDateTime::date(2026, 1, 1);
         assert!(expand("FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=30", start, 1).is_empty());
         assert!(expand("FREQ=MONTHLY;BYMONTHDAY=31;BYMONTH=2", start, 1).is_empty());
+        assert!(expand("FREQ=DAILY;RSCALE=ISLAMIC", start, 1).is_empty());
+        #[cfg(not(feature = "rscale"))]
         assert!(expand("FREQ=DAILY;RSCALE=CHINESE", start, 1).is_empty());
     }
 

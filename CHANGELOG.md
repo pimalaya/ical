@@ -17,7 +17,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Added `IcalTz::x_wr_timezone` and `IcalTz::apply_x_wr_timezone`, which tells every UTC or floating date-time of a `VEVENT` on the zone `X-WR-TIMEZONE` names, as calendar applications read the extension.
 - Added `IcalValidateError::RuleSyntax`, reported for an `RRULE` or `EXRULE` holding a part whose value does not parse, which validation passed silently before. **Breaking** for an exhaustive match on `IcalValidateError`.
 - Added Windows time zone names to `tzdb::zone` and `tzdb::zones`: `Pacific Standard Time` reads as America/Los_Angeles, through the CLDR windowsZones table.
-- Added a timeline corpus, tests/corpus/timeline, replaying 966 series on which recurring-ical-events 3.9.0 agrees and 12 settled divergences, over that project's own test calendars.
+- Added a timeline corpus, tests/corpus/timeline, crossed against recurring-ical-events 3.9.0 and ical.js 2.2.1 over 181 calendars.
+- Added the `rscale` feature, which expands a rule on the calendar its RFC 7529 `RSCALE` names (Hebrew, Chinese, Islamic and others) through `icu_calendar`, leap months and `SKIP` included.
+- Added `IcalRecurMonth`, a `BYMONTH` entry with a leap flag (`5L`), and `IcalRecurRuleProblem::MonthScale` for a 13th or a leap month on the Gregorian scale. **Breaking**: `IcalRecurRule::by_month` is a `Vec<IcalRecurMonth>`, and an exhaustive match on `IcalRecurRuleProblem` needs the arm.
+- Added `IcalPropKind::TzUntil` and `IcalTz::until`, read from a `VTIMEZONE`'s RFC 7808 `TZUNTIL`. **Breaking** for an exhaustive match on `IcalPropKind` and for an `IcalTz` built by its fields.
+- Added `IcalValidateError::StartType`, reported for an `UNTIL` or an `EXDATE` whose value type is not the `DTSTART`'s. **Breaking** for an exhaustive match on `IcalValidateError`.
+- Added `IcalRecurSet::exdays`, the days a `DATE` `EXDATE` names beside a `DATE-TIME` start.
+- Added recurrence benchmarks against rrule 0.14, benches/recur.rs, and a cross-language ballpark in benches/README.md.
 
 ### Changed
 
@@ -28,6 +34,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Changed `tzdb::zones` to read a time before a `VTIMEZONE`'s earliest observance through the database, for a name it knows (RFC 7808 7.1), rather than at the offset that observance came from.
 - Changed a recurrence set whose every rule ends on a day before its `DTSTART` to yield nothing, its `DTSTART` included: the shape of a series deleted from its first instance on.
 - Changed a recurrence set to read a rule holding a malformed part (`COUNT=-1`) without that part, rather than drop the whole rule.
+- Changed `tzdb::zones` to read a time past a `VTIMEZONE`'s `TZUNTIL`, or past the end of a truncated definition, through the database.
+- Changed an `EXDATE` of value type `DATE` beside a `DATE-TIME` `DTSTART` to remove every instance on that day, as libical, recurring-ical-events and ical.js do.
+- Changed expansion to walk a yearly or monthly period a month at a time: a yearly rule expands about six times faster.
 
 ### Fixed
 
