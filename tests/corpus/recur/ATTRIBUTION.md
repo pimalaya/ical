@@ -15,7 +15,9 @@ One oracle is a second opinion; two that agree are evidence. Where dateutil and 
 
 harness/run.sh does the whole run and rewrites consensus.tsv. It needs nothing installed: nix fetches an interpreter carrying dateutil and the libical headers. Expect around an hour, most of it the per-case alarm the two oracles need, since a rule neither can satisfy walks to year 9999 one tick at a time.
 
-The harness is four files: src/main.rs (the case generator, the ical-rs runner, and the cross), oracle_dateutil.py, oracle_libical.c, and run.sh. It is a detached cargo package, so it never joins the crate's own build.
+That alarm makes the case list depend on the machine, not the answers. Some `FREQ=SECONDLY` cases take libical 1.5 to 1.8 seconds against its 2 second budget, so a slower or busier run drops them as timeouts. A run on 2026-10-29 reproduced all 4,331 committed cases byte for byte and agreed on 27 more such cases, ical-rs matching every one. The committed file was kept as it is.
+
+The harness is four files: src/main.rs (the case generator, the ical-rs runner, and the cross), oracle_dateutil.py, oracle_libical.c, and run.sh. It is a detached cargo package, so it never joins the crate's own build, and run.sh builds it into the work directory.
 
 divergence.tsv is hand-curated and is not regenerated. When the expander's answer to one of those cases changes, the change is either a bug or a new decision, and both deserve a human.
 

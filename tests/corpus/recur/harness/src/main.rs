@@ -7,9 +7,9 @@
 //! - `cross` reads the three answer files (ical-rs, dateutil, libical) and
 //!   writes the consensus corpus: every case the two oracles answer alike.
 //!
-//! The oracles are python-dateutil (`dateutil.py`) and libical (`libical.c`),
-//! each with its own per-case alarm, since a rule neither can satisfy walks to
-//! year 9999 one tick at a time.
+//! The oracles are python-dateutil (`oracle_dateutil.py`) and libical
+//! (`oracle_libical.c`), each with its own per-case alarm, since a rule
+//! neither can satisfy walks to year 9999 one tick at a time.
 //!
 //! Nothing here ships with the crate: `tests/corpus/recur/harness` is a
 //! detached package that cargo never builds as part of ical-rs.

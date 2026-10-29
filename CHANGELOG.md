@@ -13,6 +13,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Added `recur::instant`: `IcalRecurTimeline::of_uid(components, uid, zones)` reads one series and its overrides, and `IcalRecurTimeline::expand(from, until)` walks the occurrences overlapping a window of Unix seconds as `IcalRecurInstant`s, each with its identity, its start and its end as instants. The end is the component's own `DTEND` (`DUE`) on its own clock, else its `DURATION`, a day of it added on the wall clock so `P1D` lasts 25 hours across a fall-back, else the RFC 5545 3.6.1 default; an `RDATE` period ends where it says. A floating or date time reads as if on UTC and is flagged.
 - Added `IcalDuration::nominal`, a duration as wall-clock days and exact seconds (RFC 5545 3.3.6), `IcalTz::of_components` and `IcalRecurSet::of_uid_in`, which reads a set through a given zone list.
 - Added `tzdb::version`, the IANA release of the bundled database, and `tzdb::zone` and `tzdb::zones`, which resolve a `TZID` the calendar defines no `VTIMEZONE` for through the database, the calendar's own definition always winning. The `tzdb` feature now depends on `jiff-tzdb` directly, the crate jiff already bundles.
+- Added `IcalRecurTimeline::of_component`, which walks a component with no `UID` as a series of its own.
+- Added `IcalTz::x_wr_timezone` and `IcalTz::apply_x_wr_timezone`, which tells every UTC or floating date-time of a `VEVENT` on the zone `X-WR-TIMEZONE` names, as calendar applications read the extension.
+- Added `IcalValidateError::RuleSyntax`, reported for an `RRULE` or `EXRULE` holding a part whose value does not parse, which validation passed silently before. **Breaking** for an exhaustive match on `IcalValidateError`.
+- Added Windows time zone names to `tzdb::zone` and `tzdb::zones`: `Pacific Standard Time` reads as America/Los_Angeles, through the CLDR windowsZones table.
+- Added a timeline corpus, tests/corpus/timeline, replaying 966 series on which recurring-ical-events 3.9.0 agrees and 12 settled divergences, over that project's own test calendars.
+
+### Changed
+
+- Changed `IcalRecurSet::of_uid_in` and `IcalRecurTimeline::of_uid` to pick the series and each override by highest `SEQUENCE` rather than by listing order, and to drop a former series a reschedule left behind: an override with its own `RRULE`, a lower `SEQUENCE` and an instance the series no longer generates.
+- Changed a `VTODO` with no `DTSTART` to recur from its `DUE` (RFC 8984 4.3.3); only one with no `RRULE` yielded before, as one point.
+- Changed an end before its start to be swapped with it rather than read as the start, the identity staying on `DTSTART`.
+- Changed a `RANGE=THISANDFUTURE` override to carry its own duration to the instances it shifts.
+- Changed `tzdb::zones` to read a time before a `VTIMEZONE`'s earliest observance through the database, for a name it knows (RFC 7808 7.1), rather than at the offset that observance came from.
+- Changed a recurrence set whose every rule ends on a day before its `DTSTART` to yield nothing, its `DTSTART` included: the shape of a series deleted from its first instance on.
+- Changed a recurrence set to read a rule holding a malformed part (`COUNT=-1`) without that part, rather than drop the whole rule.
 
 ### Fixed
 

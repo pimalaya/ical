@@ -16,7 +16,8 @@ use ical::{
     ical::Ical,
     prop::IcalPropKind,
     recur::{
-        IcalRecurFreq, IcalRecurRule, validate::IcalRecurPart, validate::IcalRecurRuleProblem,
+        IcalRecurFreq, IcalRecurRule, IcalRecurRuleError, validate::IcalRecurPart,
+        validate::IcalRecurRuleProblem,
     },
     tree::cst::IcalCst,
     validator::{IcalValid, IcalValidateError},
@@ -350,6 +351,19 @@ fn reports_a_recurrence_rule_the_rule_validator_refuses() {
         problem,
         IcalValidateError::Rule { prop, problem: IcalRecurRuleProblem::PartFreq { part, .. } }
             if *prop == IcalPropKind::RRule && *part == IcalRecurPart::ByWeekNo
+    )));
+}
+
+#[test]
+fn reports_a_recurrence_rule_holding_an_unreadable_part() {
+    let ics = calendar(
+        "DTSTART:20260105T090000Z\r\nRRULE:FREQ=WEEKLY;UNTIL=20260201T090000Z;COUNT=-1\r\n",
+    );
+
+    assert!(problems(&ics).iter().any(|problem| matches!(
+        problem,
+        IcalValidateError::RuleSyntax { prop, error: IcalRecurRuleError::Count(_) }
+            if *prop == IcalPropKind::RRule
     )));
 }
 

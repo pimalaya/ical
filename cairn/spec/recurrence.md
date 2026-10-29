@@ -23,7 +23,7 @@ A zone MAY be supplied to an expansion, and SHALL then be consulted for one purp
 
 ### Requirement: Liberal rule parsing
 
-An unrecognised rule part SHALL be ignored rather than refused, as RFC 5545 requires. A malformed value inside a part the module does understand SHALL be an error. A rule that breaks a constraint of RFC 5545 3.3.10 SHALL still parse: `UNTIL` and `COUNT` together are a validation problem, not a parse error, since strictness belongs on the way out.
+An unrecognised rule part SHALL be ignored rather than refused, as RFC 5545 requires. A malformed value inside a part the module does understand SHALL be an error of `IcalRecurRule::parse`; reading a component's set SHALL instead drop that part and keep the rest of the rule, so `COUNT=-1` beside a sound `UNTIL` still bounds by the `UNTIL`, and validation SHALL report the part ([conformance](./conformance.md)). A rule that breaks a constraint of RFC 5545 3.3.10 SHALL still parse: `UNTIL` and `COUNT` together are a validation problem, not a parse error, since strictness belongs on the way out.
 
 #### Scenario: A rule bounded twice
 - GIVEN `FREQ=DAILY;COUNT=10;UNTIL=20260101T000000Z`
@@ -65,6 +65,13 @@ Every call to `next` SHALL do bounded work, whatever the shape of the rule, and 
 ### Requirement: The recurrence set of a component
 
 A component's recurrence set SHALL be the union of its `DTSTART`, every `RRULE` expansion and every `RDATE`, minus every `EXDATE` and every `EXRULE` expansion, yielded in chronological order with duplicates collapsed. An `RDATE` period item SHALL contribute its start.
+
+When the set has rules and every one ends on a day before its `DTSTART`, the `DTSTART` SHALL NOT be an instance: RFC 5545 3.8.5.3 counts it as the first, but such a series is what a client writes when the first instance and every one after it are deleted. The day is compared, so an `UNTIL` written as a date beside a date-time start on the same day cuts nothing. The `RDATE`s still stand.
+
+#### Scenario: A series cut before its start
+- GIVEN `DTSTART;VALUE=DATE:20231002` and `RRULE:FREQ=WEEKLY;UNTIL=20231001;INTERVAL=2;BYDAY=MO`
+- WHEN its set is expanded
+- THEN it yields nothing
 
 #### Scenario: A rule plus an extra date minus an exception
 - GIVEN a `VEVENT` carrying one `RRULE`, one `RDATE` and one `EXDATE` falling on a rule occurrence
@@ -127,6 +134,15 @@ Expansion SHALL be pinned by a committed corpus of the cases on which python-dat
 - GIVEN a change to the expander that alters an agreed-upon answer
 - WHEN the test suite runs
 - THEN the consensus replay fails, naming the rule and the start
+
+### Requirement: The timeline corpus is replayed
+
+The walk of a series to instants SHALL be pinned by a committed corpus of the series on which recurring-ical-events 3.9.0 answers alike, over the calendars of its own test suite (tests/corpus/rie), replayed by the test suite with no Python present. A second committed corpus SHALL pin each deliberate divergence with this crate's own answer and the reason for it, and no series SHALL enter it unread: there is one oracle, not two. Every series the crate yields over those calendars SHALL be listed in one of the two.
+
+#### Scenario: A regression in the timeline
+- GIVEN a change that alters the occurrences of a series both implementations agreed on
+- WHEN the test suite runs
+- THEN the timeline replay fails, naming the calendar and the `UID`
 
 ### Requirement: BYWEEKNO uses the ISO week-year
 
@@ -226,9 +242,9 @@ An expansion given no zone SHALL behave as it did before, since a validity it ca
 
 Each civil time SHALL be resolved through the zone its own clock names only once the set has placed the occurrence, as a written `DATE-TIME` (RFC 5545 3.3.5); an instance a rule generates in a gap is dropped as recurrence drops it. A floating or date time, or one under a `TZID` none of the zones defines, SHALL be read as if on UTC and flagged floating, so its civil time reads back from its instant exactly.
 
-The end SHALL come from the occurrence's own component: its `DTEND` (a `VTODO`'s `DUE`) on its own clock, else its `DURATION`, else RFC 5545 3.6.1's default, a day for a `VEVENT` on a date and none otherwise. A `DTEND` span SHALL apply to every other instance as the exact seconds it measures (RFC 5545 3.8.5.3), an `RDATE` period's own span to its instance. A nominal duration SHALL be added in wall-clock days on the start's clock before resolution, an exact one in seconds after. An end before its start SHALL read as the start.
+The end SHALL come from the occurrence's own component: its `DTEND` (a `VTODO`'s `DUE`) on its own clock, else its `DURATION`, else RFC 5545 3.6.1's default, a day for a `VEVENT` on a date and none otherwise. A `DTEND` span SHALL apply to every other instance as the exact seconds it measures (RFC 5545 3.8.5.3), an `RDATE` period's own span to its instance, and an instance a `RANGE=THISANDFUTURE` override shifts SHALL end as that override's own component does, the latest in force winning. A nominal duration SHALL be added in wall-clock days on the start's clock before resolution, an exact one in seconds after. An end before its start SHALL be swapped with it, the identity staying on `DTSTART` so a `RECURRENCE-ID` or an `EXDATE` still names it, and the walk SHALL reach an occurrence whose swapped start falls in the window.
 
-An occurrence SHALL be yielded when it starts before `until` and ends after `from`, or, lasting no time, starts within the window, an override moving an instance in from outside the window included. The walk SHALL skip ahead to the window rather than walk from `DTSTART`, and SHALL bound nothing itself: a consumer bounding what one series yields takes from it. A series with no `DTSTART` SHALL yield nothing and not fail, save a task with a `DUE`, no `DTSTART` and no `RRULE`, which is one occurrence lasting no time at its due time. The same components, zones and window SHALL always yield the same occurrences.
+An occurrence SHALL be yielded when it starts before `until` and ends after `from`, or, lasting no time, starts within the window, an override moving an instance in from outside the window included. The walk SHALL skip ahead to the window rather than walk from `DTSTART`, and SHALL bound nothing itself: a consumer bounding what one series yields takes from it. A series with no start, a `DTSTART` or a task's `DUE`, SHALL yield nothing and not fail. The same components, zones and window SHALL always yield the same occurrences.
 
 #### Scenario: A one-day duration across a transition
 - GIVEN `DTSTART;TZID=Europe/Paris:20261024T120000`, `DURATION:P1D` and the Paris `VTIMEZONE`
@@ -254,3 +270,37 @@ An occurrence SHALL be yielded when it starts before `until` and ends after `fro
 - GIVEN a weekly series from 2020 and an override moving its second instance to 8 July 2026
 - WHEN the series is walked over 7 to 9 July 2026
 - THEN that override is the one occurrence, unless an `EXDATE` removes the instance it names
+
+#### Scenario: An end written before its start
+- GIVEN `DTSTART:20260706T090000Z`, `DTEND:20260706T083000Z` and a daily rule
+- WHEN the series is walked
+- THEN each occurrence runs from 08:30Z to 09:00Z, its identity still 09:00Z
+
+#### Scenario: A tail made longer
+- GIVEN a series lasting two hours and a `RANGE=THISANDFUTURE` override moving one instance three hours earlier and making it last seven
+- WHEN the series is walked
+- THEN every later instance starts three hours earlier and lasts seven hours
+
+### Requirement: The highest SEQUENCE is the revision
+
+Of the components of one `UID` with no `RECURRENCE-ID`, the one with the highest `SEQUENCE` (RFC 5545 3.8.7.4) SHALL be the series, the last listed of equals; of the overrides naming one instance, the highest `SEQUENCE` SHALL win, the first listed of equals; a missing `SEQUENCE` SHALL count as 0. Both `IcalRecurSet::of_uid_in` and `IcalRecurTimeline::of_uid` SHALL read them so.
+
+An override carrying an `RRULE`, with a lower `SEQUENCE` than the series, and naming an instance the series does not generate SHALL be dropped: it is a former series a reschedule left behind. Every other override naming no generated instance SHALL still stand, as above.
+
+#### Scenario: A former series left behind
+- GIVEN a series at `SEQUENCE:2` whose `UNTIL` stops on 20 July, and a component at `SEQUENCE:1` carrying an `RRULE` and a `RECURRENCE-ID` of 29 July
+- WHEN the series is walked
+- THEN 29 July is not an occurrence
+
+### Requirement: A task recurs from its DUE
+
+A `VTODO` with no `DTSTART` SHALL start its recurrence set, its overrides and its occurrences from its `DUE`, as RFC 8984 4.3.3 recurs a Task with no `start`, each occurrence lasting no time. An event with no `DTSTART` SHALL NOT recur from its `DTEND`.
+
+#### Scenario: A weekly task with a due time
+- GIVEN a `VTODO` with `DUE:20260710T170000Z`, `RRULE:FREQ=WEEKLY;COUNT=3` and no `DTSTART`
+- WHEN it is walked
+- THEN it yields 10, 17 and 24 July at 17:00Z
+
+### Requirement: A component with no UID walks alone
+
+`IcalRecurTimeline::of_component` SHALL read one component as a series with no override, so a component carrying no `UID`, which RFC 5545 requires and a calendar in the wild may lack, still has occurrences.

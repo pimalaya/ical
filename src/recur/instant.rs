@@ -23,7 +23,13 @@
 //! 3.6.1's default: a day later for a `VEVENT` on a date, at its start
 //! otherwise. A `DTEND` span applies to every other instance as the exact
 //! number of seconds it measures (RFC 5545 3.8.5.3), an `RDATE` period's own
-//! span to its instance.
+//! span to its instance, and an instance a `RANGE=THISANDFUTURE` override
+//! shifts ends as that override's own component does, the latest one in
+//! force winning.
+//!
+//! An end before its start is swapped with it: the occurrence runs from the
+//! earlier of the two to the later, its identity staying on its `DTSTART`,
+//! so a `RECURRENCE-ID` or an `EXDATE` still names it.
 //!
 //! A `DURATION` is added as RFC 5545 3.3.6 adds it: its days and weeks on the
 //! start's wall clock before resolving, its hours, minutes and seconds after,
@@ -37,6 +43,8 @@
 //! on a viewer's clock reads the civil time back with
 //! [`IcalRecurDateTime::from_seconds`] and resolves it there.
 
+use core::iter;
+
 use alloc::{collections::VecDeque, vec, vec::Vec};
 
 use crate::{
@@ -45,8 +53,8 @@ use crate::{
     recur::{
         IcalRecurDateTime,
         set::{
-            IcalRecurOverride, IcalRecurSet, IcalRecurSetExpand, IcalRecurZone, has, text_of,
-            uid_of,
+            IcalRecurOverride, IcalRecurSet, IcalRecurSetExpand, IcalRecurZone, anchor_of,
+            read_uid, text_of,
         },
     },
     tz::{IcalTz, IcalTzTransitions},
@@ -103,13 +111,15 @@ pub struct IcalRecurTimeline {
     floating: bool,
     date: bool,
     span: Span,
+    /// The identity of every `RANGE=THISANDFUTURE` override, on the series'
+    /// clock, and how its own component ends an occurrence, in identity
+    /// order: every later instance ends as the latest of them says.
+    futures: Vec<(IcalRecurDateTime, Span)>,
     /// The identity of every `RDATE` period, on the series' clock, and the
     /// seconds it lasts.
     periods: Vec<(IcalRecurDateTime, i64)>,
     /// Each override placed, at the index of the set's own.
     overrides: Vec<Placed>,
-    /// The one occurrence a task with a `DUE` and no `DTSTART` is.
-    due: Option<Placed>,
 }
 
 impl IcalRecurTimeline {
@@ -117,39 +127,45 @@ impl IcalRecurTimeline {
     /// time resolved through `zones`, the first zone of a name winning.
     ///
     /// The series is the component carrying that `UID` with no
-    /// `RECURRENCE-ID`, and every other one carrying it overrides an instance.
-    /// One with no `DTSTART` denotes nothing, its `RRULE` included, and walks
-    /// empty rather than failing; an override with no series is still the
-    /// instance it names.
+    /// `RECURRENCE-ID` and the highest `SEQUENCE`, and every other one
+    /// carrying it overrides an instance, as
+    /// [`IcalRecurSet::of_uid_in`] reads them. One with no start (a
+    /// `DTSTART`, or a task's `DUE`) denotes nothing, its `RRULE` included,
+    /// and walks empty rather than failing; an override with no series is
+    /// still the instance it names.
     pub fn of_uid(components: &[IcalComponent<'_>], uid: &str, zones: &[IcalTz]) -> Self {
-        let ours = || {
-            components
-                .iter()
-                .filter(move |component| uid_of(component) == Some(uid))
-        };
+        let (series, set, overrides) = read_uid(components, uid, zones);
+        Self::of_series(series, set, overrides, zones)
+    }
 
-        // NOTE: The series first, whatever order the calendar lists them in,
-        // since an override is told on the series' clock.
-        let series = ours().rfind(|component| !has(component, IcalPropKind::RecurrenceId));
+    /// Read one component as a series of its own, with no override, every
+    /// time resolved through `zones`.
+    ///
+    /// The way to a component carrying no `UID`, which no override can name:
+    /// RFC 5545 requires one, but a calendar in the wild may lack it.
+    pub fn of_component(component: &IcalComponent<'_>, zones: &[IcalTz]) -> Self {
+        let set = IcalRecurSet::of_component_in(component, zones);
+        Self::of_series(Some(component), set, Vec::new(), zones)
+    }
 
-        let mut set = series
-            .map(|series| IcalRecurSet::of_component_in(series, zones))
-            .unwrap_or_default();
-
-        let mut overrides: Vec<(IcalRecurOverride, Placed)> = ours()
-            .filter(|component| has(component, IcalPropKind::RecurrenceId))
-            .filter_map(|component| {
-                let over = IcalRecurOverride::of_component(component, &set.zone, zones)?;
-                let placed = Placed::of_component(component, over.id, zones)?;
-                Some((over, placed))
-            })
+    fn of_series(
+        series: Option<&IcalComponent<'_>>,
+        mut set: IcalRecurSet,
+        overrides: Vec<(IcalRecurOverride, &IcalComponent<'_>)>,
+        zones: &[IcalTz],
+    ) -> Self {
+        let futures = overrides
+            .iter()
+            .filter(|(over, _)| over.this_and_future)
+            .map(|(over, component)| (over.id, Span::of_component(component, zones)))
             .collect();
 
-        // NOTE: Stable, so of two overrides naming one instance the first
-        // listed wins on every run, the walk taking the first of a name.
-        overrides.sort_by_key(|(over, _)| over.id);
-
-        let (overs, overrides) = overrides.into_iter().unzip();
+        let (overs, overrides) = overrides
+            .into_iter()
+            .filter_map(|(over, component)| {
+                Some((over, Placed::of_component(component, over.id, zones)?))
+            })
+            .unzip();
         set.overrides = overs;
 
         let zone = match &set.zone {
@@ -163,17 +179,11 @@ impl IcalRecurTimeline {
             IcalRecurZone::Tz(_) => zone.is_none(),
         };
 
-        let date = series
-            .and_then(|series| prop_of(series, IcalPropKind::DtStart))
-            .is_some_and(is_date);
+        let date = series.and_then(anchor_of).is_some_and(is_date);
 
         let span = series.map_or(Span::Exact(0), |series| Span::of_component(series, zones));
 
         let periods = series.map_or_else(Vec::new, |series| periods_of(series, &set.zone, zones));
-
-        let due = series
-            .filter(|_| set.start.is_none() && set.rules.is_empty())
-            .and_then(|series| Placed::of_due(series, zones));
 
         Self {
             set,
@@ -181,9 +191,9 @@ impl IcalRecurTimeline {
             floating,
             date,
             span,
+            futures,
             periods,
             overrides,
-            due,
         }
     }
 
@@ -205,7 +215,10 @@ impl IcalRecurTimeline {
             .periods
             .iter()
             .map(|(_, span)| *span)
-            .fold(self.span.reach(), i64::max);
+            .chain(self.spans().map(|span| span.reach()))
+            .fold(0, i64::max);
+
+        let back = self.spans().map(|span| span.back()).fold(0, i64::max);
 
         let shifts = self
             .set
@@ -225,7 +238,12 @@ impl IcalRecurTimeline {
                 .saturating_sub(reach)
                 .saturating_sub(ahead),
         );
-        let hi = bound(until.saturating_add(SLACK).saturating_sub(behind));
+        let hi = bound(
+            until
+                .saturating_add(SLACK)
+                .saturating_add(back)
+                .saturating_sub(behind),
+        );
 
         let mut walk = match &self.zone {
             Some(zone) => self.set.expand_in_zone(zone),
@@ -260,9 +278,24 @@ impl IcalRecurTimeline {
             hi,
             before,
             after,
-            due: self.due.is_some(),
             walking: true,
         }
+    }
+
+    /// Every way an occurrence of the series can end: the series' own, and
+    /// each `RANGE=THISANDFUTURE` override's.
+    fn spans(&self) -> impl Iterator<Item = Span> + '_ {
+        iter::once(self.span).chain(self.futures.iter().map(|(_, span)| *span))
+    }
+
+    /// How an instance the rules place at an identity ends: as the latest
+    /// `RANGE=THISANDFUTURE` override at or before it says, else as the
+    /// series does.
+    fn span_at(&self, id: IcalRecurDateTime) -> Span {
+        self.futures
+            .iter()
+            .rfind(|(from, _)| *from <= id)
+            .map_or(self.span, |(_, span)| *span)
     }
 
     /// Whether the full walk yields an identity, which an override's is unless
@@ -286,7 +319,6 @@ pub struct IcalRecurTimelineExpand<'a> {
     /// the timeline's, in identity order.
     before: VecDeque<usize>,
     after: VecDeque<usize>,
-    due: bool,
     walking: bool,
 }
 
@@ -313,14 +345,6 @@ impl IcalRecurTimelineExpand<'_> {
     fn next_placed(&mut self) -> Option<IcalRecurInstant> {
         let timeline = self.timeline;
 
-        if self.due {
-            self.due = false;
-
-            if let Some(placed) = &timeline.due {
-                return Some(placed.instant(placed.start, false));
-            }
-        }
-
         if let Some(index) = self.before.pop_front() {
             return Some(self.of_override(index));
         }
@@ -340,13 +364,17 @@ impl IcalRecurTimelineExpand<'_> {
                         .binary_search_by_key(&occurrence.id, |(id, _)| *id)
                     {
                         Ok(index) => start + timeline.periods[index].1,
-                        Err(_) => timeline.span.end(occurrence.start, start, &mut self.clock),
+                        Err(_) => timeline.span_at(occurrence.id).end(
+                            occurrence.start,
+                            start,
+                            &mut self.clock,
+                        ),
                     };
 
                     return Some(IcalRecurInstant {
                         id: occurrence.id,
                         id_instant,
-                        start,
+                        start: start.min(end),
                         end: end.max(start),
                         over: false,
                         floating: timeline.floating,
@@ -372,8 +400,8 @@ impl IcalRecurTimelineExpand<'_> {
     }
 }
 
-/// An occurrence placed by a component of its own, an override or a task's
-/// `DUE`, whose times do not depend on the window.
+/// An occurrence placed by an override component of its own, whose times do
+/// not depend on the window.
 #[derive(Clone, Copy, Debug)]
 struct Placed {
     id: IcalRecurDateTime,
@@ -384,43 +412,26 @@ struct Placed {
 }
 
 impl Placed {
-    /// The occurrence an override component places, at its own `DTSTART`
-    /// read on its own clock and ending as its own component says.
+    /// The occurrence an override component places, at its own start (its
+    /// `DTSTART`, or a task's `DUE`) read on its own clock and ending as its
+    /// own component says.
     fn of_component(
         component: &IcalComponent<'_>,
         id: IcalRecurDateTime,
         zones: &[IcalTz],
     ) -> Option<Self> {
-        let (local, mut clock) = written(prop_of(component, IcalPropKind::DtStart)?, zones)?;
+        let anchor = anchor_of(component)?;
+        let (local, mut clock) = written(anchor, zones)?;
         let start = clock.instant(local);
         let span = Span::of_component(component, zones);
+        let end = span.end(local, start, &mut clock);
 
         Some(Self {
             id,
-            start,
-            end: span.end(local, start, &mut clock).max(start),
+            start: start.min(end),
+            end: end.max(start),
             floating: clock.floating(),
-            date: prop_of(component, IcalPropKind::DtStart).is_some_and(is_date),
-        })
-    }
-
-    /// The one occurrence a task with a `DUE` and no `DTSTART` is, lasting no
-    /// time.
-    fn of_due(component: &IcalComponent<'_>, zones: &[IcalTz]) -> Option<Self> {
-        if !is_kind(component, IcalComponentKind::VTodo) {
-            return None;
-        }
-
-        let due = prop_of(component, IcalPropKind::Due)?;
-        let (local, mut clock) = written(due, zones)?;
-        let start = clock.instant(local);
-
-        Some(Self {
-            id: local,
-            start,
-            end: start,
-            floating: clock.floating(),
-            date: is_date(due),
+            date: is_date(anchor),
         })
     }
 
@@ -517,6 +528,20 @@ impl Span {
                 .saturating_add(1)
                 .saturating_mul(DAY)
                 .saturating_add(seconds)
+                .max(0),
+        }
+    }
+
+    /// How far before its start an occurrence ending before it can begin,
+    /// once the two are swapped, in seconds, with the same day of slack.
+    fn back(&self) -> i64 {
+        match *self {
+            Self::Exact(seconds) => seconds.saturating_neg().max(0),
+            Self::Nominal { days, seconds } => days
+                .saturating_sub(1)
+                .saturating_mul(DAY)
+                .saturating_add(seconds)
+                .saturating_neg()
                 .max(0),
         }
     }

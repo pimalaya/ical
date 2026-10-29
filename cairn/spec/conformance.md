@@ -72,7 +72,7 @@ Reading stays liberal: the same duration still reads as a length (see [decoded-m
 
 ### Requirement: Recurrence rules are validated
 
-A decoded recurrence rule SHALL be checkable against RFC 5545 3.3.10, reporting every `BY` part the rule's frequency forbids, a `BYDAY` ordinal outside `MONTHLY` and `YEARLY`, a `BYDAY` ordinal at `YEARLY` beside `BYWEEKNO`, `BYSETPOS` with no other `BY` part, and `UNTIL` together with `COUNT`. A rule that passes SHALL earn the same proof a calendar does. Calendar validation SHALL reach the rules carried by `RRULE` and `EXRULE` when the `recur` feature is on.
+A decoded recurrence rule SHALL be checkable against RFC 5545 3.3.10, reporting every `BY` part the rule's frequency forbids, a `BYDAY` ordinal outside `MONTHLY` and `YEARLY`, a `BYDAY` ordinal at `YEARLY` beside `BYWEEKNO`, `BYSETPOS` with no other `BY` part, and `UNTIL` together with `COUNT`. A rule that passes SHALL earn the same proof a calendar does. Calendar validation SHALL reach the rules carried by `RRULE` and `EXRULE` when the `recur` feature is on, and SHALL report a rule holding a part whose value does not parse (`COUNT=-1`) as `IcalValidateError::RuleSyntax`, rather than pass it silently.
 
 Expansion stays liberal: a part validation reports is ignored when the rule is expanded, never applied and never refused.
 

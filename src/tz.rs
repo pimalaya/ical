@@ -51,13 +51,17 @@
 //! in two local times at once, and what the gap and the fold are made of.
 
 use alloc::{
+    borrow::Cow,
+    format,
     string::{String, ToString},
+    vec,
     vec::Vec,
 };
 
 use crate::{
     component::{IcalComponent, IcalComponentKind, IcalComponentName},
     ical::Ical,
+    param::IcalParam,
     prop::{IcalPropKind, IcalPropName},
     recur::{IcalRecurDateTime, set::IcalRecurSet},
     value::IcalValue,
@@ -282,6 +286,129 @@ impl IcalTz {
     /// when no time zone database completes them.
     pub fn of_components(components: &[IcalComponent<'_>]) -> Vec<Self> {
         components.iter().filter_map(Self::of_component).collect()
+    }
+
+    /// The zone a calendar names with the `X-WR-TIMEZONE` extension, if it
+    /// names one.
+    pub fn x_wr_timezone<'a>(ical: &'a Ical<'_>) -> Option<&'a str> {
+        ical.props.iter().find_map(|prop| {
+            let IcalPropName::Unknown(name) = &prop.name else {
+                return None;
+            };
+
+            if !name.eq_ignore_ascii_case("X-WR-TIMEZONE") {
+                return None;
+            }
+
+            let text = match &prop.value {
+                IcalValue::Text(text) => text.0.as_ref(),
+                IcalValue::Unknown(value) => value.components.first()?.first()?.as_ref(),
+                _ => return None,
+            };
+
+            Some(text.trim()).filter(|text| !text.is_empty())
+        })
+    }
+
+    /// Bring a calendar naming its zone with `X-WR-TIMEZONE` into the form RFC
+    /// 5545 states it in, as calendar applications read the extension: every
+    /// UTC or floating date-time a `VEVENT`'s `DTSTART`, `DTEND`, `RDATE`,
+    /// `RECURRENCE-ID` or `EXDATE` states is told on that zone, under a `TZID`
+    /// naming it, a UTC one at the same instant and a floating one at the
+    /// same wall-clock time.
+    ///
+    /// A UTC series on the zone's clock is what makes its rule expand on it:
+    /// a weekly event written in UTC otherwise drifts an hour across every
+    /// transition. Dates and times already under a `TZID` are left alone, and
+    /// so is the whole calendar when `zones` does not define the zone it
+    /// names. Returns whether anything was told on it.
+    pub fn apply_x_wr_timezone(ical: &mut Ical<'_>, zones: &[IcalTz]) -> bool {
+        let Some(name) = Self::x_wr_timezone(ical) else {
+            return false;
+        };
+
+        let Some(zone) = zones.iter().find(|zone| zone.id == name).cloned() else {
+            return false;
+        };
+
+        let mut told = false;
+
+        for component in &mut ical.components {
+            if !matches!(
+                component.name,
+                IcalComponentName::Kind(IcalComponentKind::VEvent)
+            ) {
+                continue;
+            }
+
+            for prop in &mut component.props {
+                let IcalPropName::Kind(
+                    IcalPropKind::DtStart
+                    | IcalPropKind::DtEnd
+                    | IcalPropKind::RDate
+                    | IcalPropKind::RecurrenceId
+                    | IcalPropKind::ExDate,
+                ) = prop.name
+                else {
+                    continue;
+                };
+
+                if prop
+                    .params
+                    .iter()
+                    .any(|param| matches!(param, IcalParam::TzId(_)))
+                {
+                    continue;
+                }
+
+                let items: Vec<&mut Cow<'_, str>> = match &mut prop.value {
+                    IcalValue::DateTime(date) => vec![&mut date.0],
+                    IcalValue::DateTimeList(dates) => dates.0.iter_mut().collect(),
+                    IcalValue::Period(period) => vec![&mut period.0],
+                    _ => continue,
+                };
+
+                // NOTE: A date names a day on whichever clock reads it, so a
+                // list holding one is left as it is.
+                if items.iter().any(|item| !item.contains(['T', 't'])) {
+                    continue;
+                }
+
+                for item in items {
+                    let spelled = item
+                        .split('/')
+                        .map(|part| zone.told(part))
+                        .collect::<Vec<_>>()
+                        .join("/");
+                    *item = Cow::Owned(spelled);
+                }
+
+                prop.params
+                    .push(IcalParam::TzId(Cow::Owned(zone.id.clone())));
+                told = true;
+            }
+        }
+
+        told
+    }
+
+    /// A date-time, or a period bound, told on this zone: a UTC time at the
+    /// same instant, a floating one as it is, a duration left alone.
+    fn told(&self, text: &str) -> String {
+        if !text.ends_with(['Z', 'z']) {
+            return text.to_string();
+        }
+
+        let Ok(utc) = IcalRecurDateTime::parse(text) else {
+            return text.to_string();
+        };
+
+        let at = self.local(utc.seconds());
+
+        format!(
+            "{:04}{:02}{:02}T{:02}{:02}{:02}",
+            at.year, at.month, at.day, at.hour, at.minute, at.second
+        )
     }
 
     /// The zone a calendar defines under `tzid`, if it defines one.

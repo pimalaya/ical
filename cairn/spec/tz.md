@@ -78,7 +78,7 @@ Behind the `tzdb` feature, `tzdb::version` SHALL return the IANA release of the 
 
 ### Requirement: A zone the calendar omits resolves from the database, opt-in
 
-Behind the `tzdb` feature, `tzdb::zone` SHALL build the `IcalTz` an IANA name stands for from every transition the database states up to the end of a given year, exact over the whole history to that year, and usable wherever a zone read from a `VTIMEZONE` is. `tzdb::zones` SHALL list a calendar's own zones (`IcalTz::of_components`) followed by a database zone for every `TZID` its components name and no `VTIMEZONE` defines, so a reader taking the first zone of a name resolves through the calendar's own `VTIMEZONE`, else the database, else as floating. A `VTIMEZONE` the calendar carries SHALL always win over the database. Without the feature, or for a name the database does not know, the time SHALL read as it does without a database.
+Behind the `tzdb` feature, `tzdb::zone` SHALL build the `IcalTz` an IANA name stands for from every transition the database states up to the end of a given year, exact over the whole history to that year, and usable wherever a zone read from a `VTIMEZONE` is. A Windows time zone name (`Pacific Standard Time`) SHALL read as the IANA zone CLDR maps it to for territory 001, the zone keeping the name it was asked by; `tzdb::is_known` and `tzdb::vtimezone` stay IANA only. `tzdb::zones` SHALL list a calendar's own zones (`IcalTz::of_components`) followed by a database zone for every `TZID` its components name and no `VTIMEZONE` defines, so a reader taking the first zone of a name resolves through the calendar's own `VTIMEZONE`, else the database, else as floating. A `VTIMEZONE` the calendar carries SHALL win over the database over the span it is valid for, from its earliest observance on (RFC 7808 7.1); before that, a name the database knows SHALL read through the database's own transitions, since a producer may truncate the history it does not need. `TZUNTIL`, the other end of that span, is not read. Without the feature, or for a name the database does not know, the time SHALL read as it does without a database.
 
 #### Scenario: An event naming a zone it does not carry
 - GIVEN `DTSTART;TZID=Europe/Paris:20260706T090000` and no `VTIMEZONE` in the calendar
@@ -94,3 +94,22 @@ Behind the `tzdb` feature, `tzdb::zone` SHALL build the `IcalTz` an IANA name st
 - GIVEN `tzdb::zone("America/New_York", 2026)`
 - WHEN noon on 20 March 2006 and on 20 March 2007 are resolved
 - THEN the first is standard time and the second daylight time, the rule having moved in 2007
+
+#### Scenario: A VTIMEZONE truncated to recent years
+- GIVEN a `VTIMEZONE` for `Europe/Berlin` whose earliest observance is 28 October 2018, and an event at 14:00 Berlin time on 3 December 2016
+- WHEN it is walked through `tzdb::zones`
+- THEN it starts at 13:00Z, winter time as the database states it, not at the summer offset the first observance came from
+
+#### Scenario: A Windows zone name
+- GIVEN `DTSTART;TZID=Pacific Standard Time:20230105T100000` and no `VTIMEZONE` of that name
+- WHEN it is walked through `tzdb::zones`
+- THEN it starts at 18:00Z, as America/Los_Angeles
+
+### Requirement: X-WR-TIMEZONE is applied on request
+
+`IcalTz::x_wr_timezone` SHALL name the zone a calendar's `X-WR-TIMEZONE` extension names. `IcalTz::apply_x_wr_timezone` SHALL tell every UTC or floating date-time of a `VEVENT`'s `DTSTART`, `DTEND`, `RDATE`, `RECURRENCE-ID` and `EXDATE` on that zone, under a `TZID` naming it, a UTC time at the same instant and a floating one at the same wall-clock time, which is how calendar applications read the extension. Dates and times already under a `TZID` SHALL be left alone, and the whole calendar when the given zones do not define the zone; a reader with the database completes them with `tzdb::zone`.
+
+#### Scenario: A weekly UTC event under X-WR-TIMEZONE
+- GIVEN `X-WR-TIMEZONE:Europe/Brussels` and `DTSTART:20261021T070000Z` with a weekly rule
+- WHEN the extension is applied and the series walked
+- THEN both weeks start at 09:00 in Brussels, across the 25 October transition

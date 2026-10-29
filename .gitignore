@@ -13,3 +13,7 @@
 /cobertura.xml
 /lcov.info
 *.profraw
+
+# Build output of the detached corpus harnesses, and Python bytecode
+/tests/corpus/*/harness/target
+__pycache__/

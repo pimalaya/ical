@@ -20,6 +20,10 @@ mkdir -p "$work"
 
 echo "harness: work directory $work" >&2
 
+# NOTE: Built into the work directory, so no build output lands in the
+# repository.
+export CARGO_TARGET_DIR="$work/target"
+
 echo "harness: generating cases" >&2
 cargo run --quiet --release --manifest-path "$here/Cargo.toml" -- generate >"$work/cases.tsv"
 wc -l <"$work/cases.tsv" | xargs echo "harness: cases" >&2
@@ -34,7 +38,7 @@ echo "harness: expanding through python-dateutil" >&2
 # it instead.
 python=$(nix build --impure --no-link --print-out-paths \
 	--expr 'let pkgs = import (builtins.getFlake "nixpkgs") {}; in pkgs.python3.withPackages (ps: [ ps.python-dateutil ])')
-"$python/bin/python3" "$here/oracle_dateutil.py" <"$work/cases.tsv" >"$work/dateutil.tsv"
+"$python/bin/python3" -I "$here/oracle_dateutil.py" <"$work/cases.tsv" >"$work/dateutil.tsv"
 
 echo "harness: building and expanding through libical" >&2
 # The headers live in libical's `dev` output, which `nix shell` does not put on

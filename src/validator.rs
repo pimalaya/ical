@@ -62,7 +62,7 @@ use crate::{
     ical::Ical,
     param::{IcalParam, IcalParamKind},
     prop::{IcalProp, IcalPropKind, IcalPropName, spec::prop_spec},
-    recur::validate::IcalRecurRuleProblem,
+    recur::{IcalRecurRuleError, validate::IcalRecurRuleProblem},
     value::{IcalValue, IcalValueKind, duration::IcalDuration},
     version::IcalVersion,
 };
@@ -127,6 +127,14 @@ pub enum IcalValidateError {
         /// What is wrong with it.
         problem: IcalRecurRuleProblem,
     },
+    /// A recurrence rule holds a part whose value does not parse (`COUNT=-1`),
+    /// which reading the rule into a set forgives by dropping the part.
+    RuleSyntax {
+        /// The property carrying the rule (`RRULE` or `EXRULE`).
+        prop: IcalPropKind,
+        /// Why it does not parse.
+        error: IcalRecurRuleError,
+    },
     /// A duration, as a value or a `GAP` parameter, breaks the RFC 5545 3.3.6
     /// grammar, which reading it as a length forgives.
     Duration {
@@ -190,6 +198,13 @@ impl fmt::Display for IcalValidateError {
                 write!(
                     f,
                     "Property `{}` carries an invalid rule: {problem}",
+                    &**prop
+                )
+            }
+            Self::RuleSyntax { prop, error } => {
+                write!(
+                    f,
+                    "Property `{}` carries an unreadable rule: {error}",
                     &**prop
                 )
             }
@@ -364,8 +379,12 @@ fn validate_rule(kind: IcalPropKind, prop: &IcalProp<'_>, errors: &mut Vec<IcalV
         return;
     };
 
-    let Ok(rule) = IcalRecurRule::parse(&recur.0) else {
-        return;
+    let rule = match IcalRecurRule::parse(&recur.0) {
+        Ok(rule) => rule,
+        Err(error) => {
+            errors.push(IcalValidateError::RuleSyntax { prop: kind, error });
+            return;
+        }
     };
 
     errors.extend(

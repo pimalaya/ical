@@ -45,10 +45,10 @@
 use alloc::{string::String, vec, vec::Vec};
 
 use crate::{
-    component::IcalComponent,
+    component::{IcalComponent, IcalComponentKind, IcalComponentName},
     param::IcalParam,
     prop::{IcalProp, IcalPropKind, IcalPropName},
-    recur::{IcalRecurDateTime, IcalRecurRule, expand::IcalRecurExpand},
+    recur::{IcalRecurDateTime, IcalRecurRule, IcalRecurRuleError, expand::IcalRecurExpand},
     tz::IcalTz,
     value::IcalValue,
 };
@@ -145,33 +145,25 @@ impl IcalRecurOverride {
     /// identity and its start told on the series' clock, `zone`, through the
     /// zones `zones` defines (see the [module](self) header).
     ///
-    /// `None` for a component with no `RECURRENCE-ID` or no `DTSTART` to move
-    /// the instance to, which is not an override.
+    /// `None` for a component with no `RECURRENCE-ID` or no start to move the
+    /// instance to (its `DTSTART`, or a task's `DUE`), which is not an
+    /// override.
     pub fn of_component(
         component: &IcalComponent<'_>,
         zone: &IcalRecurZone,
         zones: &[IcalTz],
     ) -> Option<Self> {
-        let mut id = None;
-        let mut start = None;
-        let mut this_and_future = false;
+        let recurrence_id = component
+            .props
+            .iter()
+            .find(|prop| matches!(prop.name, IcalPropName::Kind(IcalPropKind::RecurrenceId)))?;
 
-        for prop in &component.props {
-            let IcalPropName::Kind(kind) = prop.name else {
-                continue;
-            };
+        let id = date_of(recurrence_id, zone, zones);
+        let this_and_future = recurrence_id.params.iter().any(|param| {
+            matches!(param, IcalParam::Range(range) if range.eq_ignore_ascii_case("THISANDFUTURE"))
+        });
 
-            match kind {
-                IcalPropKind::RecurrenceId => {
-                    id = date_of(prop, zone, zones);
-                    this_and_future = prop.params.iter().any(|param| {
-                        matches!(param, IcalParam::Range(range) if range.eq_ignore_ascii_case("THISANDFUTURE"))
-                    });
-                }
-                IcalPropKind::DtStart => start = date_of(prop, zone, zones),
-                _ => {}
-            }
-        }
+        let start = anchor_of(component).and_then(|prop| date_of(prop, zone, zones));
 
         Some(Self {
             id: id?,
@@ -190,7 +182,8 @@ impl IcalRecurOverride {
 pub struct IcalRecurSet {
     /// The clock every time of the set is told on: its `DTSTART`'s.
     pub zone: IcalRecurZone,
-    /// The `DTSTART`, always the first instance of the set (RFC 5545 3.8.2.4).
+    /// The `DTSTART`, always the first instance of the set (RFC 5545 3.8.2.4),
+    /// or a task's `DUE` when it has none (RFC 8984 4.3.3).
     pub start: Option<IcalRecurDateTime>,
     /// Every `RRULE`.
     pub rules: Vec<IcalRecurRule>,
@@ -222,12 +215,7 @@ impl IcalRecurSet {
     pub fn of_component_in(component: &IcalComponent<'_>, zones: &[IcalTz]) -> Self {
         let mut set = Self::default();
 
-        let start = component
-            .props
-            .iter()
-            .find(|prop| matches!(prop.name, IcalPropName::Kind(IcalPropKind::DtStart)));
-
-        if let Some(start) = start
+        if let Some(start) = anchor_of(component)
             && let Some(text) = text_of(&start.value)
         {
             set.zone = IcalRecurZone::of(&start.params, text);
@@ -275,7 +263,7 @@ impl IcalRecurSet {
     ) -> &mut Self {
         if let Some(over) = IcalRecurOverride::of_component(component, &self.zone, zones) {
             self.overrides.push(over);
-            self.overrides.sort_unstable_by_key(|over| over.id);
+            self.overrides.sort_by_key(|over| over.id);
         }
 
         self
@@ -296,23 +284,8 @@ impl IcalRecurSet {
     /// rather than through the calendar's own `VTIMEZONE`s alone, such as the
     /// list `tzdb::zones` completes from the database.
     pub fn of_uid_in(components: &[IcalComponent<'_>], uid: &str, zones: &[IcalTz]) -> Self {
-        let ours = || {
-            components
-                .iter()
-                .filter(move |component| uid_of(component) == Some(uid))
-        };
-
-        // NOTE: The series first, whatever order the calendar lists them in,
-        // since an override is told on the series' clock.
-        let mut set = ours()
-            .rfind(|component| !has(component, IcalPropKind::RecurrenceId))
-            .map(|series| Self::of_component_in(series, zones))
-            .unwrap_or_default();
-
-        for over in ours().filter(|component| has(component, IcalPropKind::RecurrenceId)) {
-            set.with_override_in(over, zones);
-        }
-
+        let (_, mut set, overrides) = read_uid(components, uid, zones);
+        set.overrides = overrides.into_iter().map(|(over, _)| over).collect();
         set
     }
 
@@ -332,6 +305,27 @@ impl IcalRecurSet {
     }
 
     /// The walk both expansions are, with and without a zone to filter by.
+    /// Whether every rule of the set ends on a day before its `DTSTART`.
+    ///
+    /// RFC 5545 3.8.5.3 counts `DTSTART` as the first instance, but such a
+    /// series is what a client writes when the first instance and every one
+    /// after it are deleted, so its `DTSTART` is no instance either. The day
+    /// is what is compared, so an `UNTIL` written as a date beside a
+    /// date-time start on the same day cuts nothing.
+    fn is_cut_before_start(&self) -> bool {
+        let Some(start) = self.start else {
+            return false;
+        };
+
+        let day = |at: IcalRecurDateTime| (at.year, at.month, at.day);
+
+        !self.rules.is_empty()
+            && self
+                .rules
+                .iter()
+                .all(|rule| rule.until.is_some_and(|until| day(until) < day(start)))
+    }
+
     fn walk(&self, zone: Option<&IcalTz>) -> IcalRecurSetExpand<'_> {
         let start = self.start;
 
@@ -353,7 +347,10 @@ impl IcalRecurSet {
             // of every override, which is an instance whether or not a rule
             // generates it.
             literals: {
-                let mut literals: Vec<IcalRecurDateTime> = start.into_iter().collect();
+                let mut literals: Vec<IcalRecurDateTime> = start
+                    .filter(|_| !self.is_cut_before_start())
+                    .into_iter()
+                    .collect();
                 literals.extend(self.dates.iter().copied());
                 literals.extend(self.overrides.iter().map(|over| over.id));
                 literals.sort_unstable();
@@ -567,7 +564,9 @@ fn rule_of(prop: &IcalProp<'_>, zone: &IcalRecurZone, zones: &[IcalTz]) -> Optio
         return None;
     };
 
-    let mut rule = IcalRecurRule::parse(&recur.0).ok()?;
+    let mut rule = IcalRecurRule::parse(&recur.0)
+        .or_else(|_| parse_liberally(&recur.0))
+        .ok()?;
 
     // NOTE: The parsed bound has dropped the `Z`, so the raw part says which
     // clock it was on: UTC, or the start's own (RFC 5545 3.3.10).
@@ -582,6 +581,139 @@ fn rule_of(prop: &IcalProp<'_>, zone: &IcalRecurZone, zones: &[IcalTz]) -> Optio
     }
 
     Some(rule)
+}
+
+/// A rule read part by part, a part whose value is malformed dropped rather
+/// than the whole rule, so `COUNT=-1` beside a sound `UNTIL` still bounds by
+/// the `UNTIL`. The strict reading stays [`IcalRecurRule::parse`]'s, and
+/// validation reports the part.
+fn parse_liberally(text: &str) -> Result<IcalRecurRule, IcalRecurRuleError> {
+    let parts: Vec<&str> = text
+        .split(';')
+        .filter(|part| !part.trim().is_empty())
+        .collect();
+
+    let is_freq = |part: &&str| {
+        part.split_once('=')
+            .is_some_and(|(name, _)| name.trim().eq_ignore_ascii_case("FREQ"))
+    };
+
+    // NOTE: FREQ first, so every other part is tried against a rule that
+    // has one.
+    let mut kept: Vec<&str> = parts.iter().copied().filter(is_freq).take(1).collect();
+
+    for part in parts.iter().filter(|part| !is_freq(part)) {
+        kept.push(part);
+
+        if IcalRecurRule::parse(&kept.join(";")).is_err() {
+            kept.pop();
+        }
+    }
+
+    IcalRecurRule::parse(&kept.join(";"))
+}
+
+/// The series one `UID` of a calendar reads as, its set with no override yet,
+/// and the overrides that stand against it, each with its component, in
+/// identity order.
+///
+/// The series is the component with no `RECURRENCE-ID` and the highest
+/// `SEQUENCE` (RFC 5545 3.8.7.4), the last listed of equals. Of the overrides
+/// naming one instance the highest `SEQUENCE` wins, the first listed of
+/// equals. An override carrying a rule of its own, with a lower `SEQUENCE`
+/// than the series, and naming an instance the series does not generate, is
+/// a former series a reschedule left behind, and is dropped.
+#[allow(clippy::type_complexity)]
+pub(crate) fn read_uid<'c, 'v>(
+    components: &'c [IcalComponent<'v>],
+    uid: &str,
+    zones: &[IcalTz],
+) -> (
+    Option<&'c IcalComponent<'v>>,
+    IcalRecurSet,
+    Vec<(IcalRecurOverride, &'c IcalComponent<'v>)>,
+) {
+    let ours = || {
+        components
+            .iter()
+            .filter(move |component| uid_of(component) == Some(uid))
+    };
+
+    // NOTE: The series first, whatever order the calendar lists them in,
+    // since an override is told on the series' clock.
+    let series = ours()
+        .filter(|component| !has(component, IcalPropKind::RecurrenceId))
+        .max_by_key(|component| sequence_of(component));
+
+    let set = series
+        .map(|series| IcalRecurSet::of_component_in(series, zones))
+        .unwrap_or_default();
+
+    let floor = series.map_or(0, sequence_of);
+    let mut overrides: Vec<(IcalRecurOverride, &IcalComponent<'v>)> = Vec::new();
+
+    for component in ours().filter(|component| has(component, IcalPropKind::RecurrenceId)) {
+        let Some(over) = IcalRecurOverride::of_component(component, &set.zone, zones) else {
+            continue;
+        };
+
+        let stale = has(component, IcalPropKind::RRule)
+            && sequence_of(component) < floor
+            && !generates(&set, over.id);
+
+        if stale {
+            continue;
+        }
+
+        match overrides.iter_mut().find(|(held, _)| held.id == over.id) {
+            Some(slot) if sequence_of(slot.1) < sequence_of(component) => {
+                *slot = (over, component);
+            }
+            Some(_) => {}
+            None => overrides.push((over, component)),
+        }
+    }
+
+    overrides.sort_by_key(|(over, _)| over.id);
+
+    (series, set, overrides)
+}
+
+/// Whether a set with no override generates an identity.
+fn generates(set: &IcalRecurSet, id: IcalRecurDateTime) -> bool {
+    let mut walk = set.expand();
+    walk.skip_to(id);
+    walk.next().is_some_and(|occurrence| occurrence.id == id)
+}
+
+/// The `SEQUENCE` of a component, 0 when it carries none.
+fn sequence_of(component: &IcalComponent<'_>) -> i64 {
+    component
+        .props
+        .iter()
+        .find_map(|prop| match (&prop.name, &prop.value) {
+            (IcalPropName::Kind(IcalPropKind::Sequence), IcalValue::Integer(integer)) => {
+                integer.get()
+            }
+            _ => None,
+        })
+        .unwrap_or(0)
+}
+
+/// The property a component's occurrences start from: its `DTSTART`, else for
+/// a task its `DUE`, by which RFC 8984 4.3.3 recurs a task with no start.
+pub(crate) fn anchor_of<'a, 'v>(component: &'a IcalComponent<'v>) -> Option<&'a IcalProp<'v>> {
+    let find = |kind| {
+        component
+            .props
+            .iter()
+            .find(move |prop| matches!(prop.name, IcalPropName::Kind(found) if found == kind))
+    };
+
+    find(IcalPropKind::DtStart).or_else(|| match component.name {
+        IcalComponentName::Kind(IcalComponentKind::VTodo) => find(IcalPropKind::Due),
+        _ => None,
+    })
 }
 
 /// The `UID` of a component, if it carries one.

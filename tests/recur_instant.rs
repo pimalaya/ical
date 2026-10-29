@@ -350,6 +350,241 @@ fn an_unknown_tzid_reads_floating() {
     assert!(instants[0].floating);
 }
 
+#[test]
+fn the_highest_sequence_is_the_series() {
+    let raw = calendar(&format!(
+        "{}{}",
+        event("SEQUENCE:2\r\nDTSTART:20260706T090000Z\r\n"),
+        event("SEQUENCE:1\r\nDTSTART:20260707T090000Z\r\n"),
+    ));
+
+    let instants = walk(&raw, utc(2026, 7, 1, 0, 0), utc(2026, 8, 1, 0, 0));
+
+    assert_eq!(
+        spans(&instants),
+        [(utc(2026, 7, 6, 9, 0), utc(2026, 7, 6, 9, 0))]
+    );
+}
+
+#[test]
+fn of_two_overrides_of_one_instance_the_highest_sequence_wins() {
+    let raw = calendar(&format!(
+        "{}{}{}",
+        event("DTSTART:20260706T090000Z\r\nRRULE:FREQ=DAILY;COUNT=2\r\n"),
+        event("SEQUENCE:1\r\nRECURRENCE-ID:20260707T090000Z\r\nDTSTART:20260707T100000Z\r\n"),
+        event("SEQUENCE:2\r\nRECURRENCE-ID:20260707T090000Z\r\nDTSTART:20260707T110000Z\r\n"),
+    ));
+
+    let instants = walk(&raw, utc(2026, 7, 1, 0, 0), utc(2026, 8, 1, 0, 0));
+
+    assert_eq!(
+        spans(&instants),
+        [
+            (utc(2026, 7, 6, 9, 0), utc(2026, 7, 6, 9, 0)),
+            (utc(2026, 7, 7, 11, 0), utc(2026, 7, 7, 11, 0)),
+        ]
+    );
+}
+
+#[test]
+fn a_former_series_left_behind_by_a_reschedule_is_dropped() {
+    // NOTE: The shape of recurring-ical-events issue 253: the series was cut
+    // short and raised to SEQUENCE 2, and the component it was before still
+    // names an instance the new rule no longer reaches.
+    let raw = calendar(&format!(
+        "{}{}",
+        event(concat!(
+            "SEQUENCE:1\r\nRECURRENCE-ID;VALUE=DATE:20240729\r\n",
+            "DTSTART;VALUE=DATE:20240729\r\nDTEND;VALUE=DATE:20240804\r\n",
+            "RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=MO\r\n",
+        )),
+        event(concat!(
+            "SEQUENCE:2\r\nDTSTART;VALUE=DATE:20240701\r\nDTEND;VALUE=DATE:20240708\r\n",
+            "RRULE:FREQ=WEEKLY;UNTIL=20240720;INTERVAL=2;BYDAY=MO\r\n",
+        )),
+    ));
+
+    let instants = walk(&raw, utc(2024, 6, 1, 0, 0), utc(2024, 9, 1, 0, 0));
+
+    assert_eq!(
+        spans(&instants),
+        [
+            (utc(2024, 7, 1, 0, 0), utc(2024, 7, 8, 0, 0)),
+            (utc(2024, 7, 15, 0, 0), utc(2024, 7, 22, 0, 0)),
+        ]
+    );
+}
+
+#[test]
+fn an_override_naming_no_generated_instance_still_stands() {
+    let raw = calendar(&format!(
+        "{}{}",
+        event("SEQUENCE:2\r\nDTSTART:20260706T090000Z\r\n"),
+        event("SEQUENCE:1\r\nRECURRENCE-ID:20260708T090000Z\r\nDTSTART:20260708T100000Z\r\n"),
+    ));
+
+    let instants = walk(&raw, utc(2026, 7, 1, 0, 0), utc(2026, 8, 1, 0, 0));
+
+    assert_eq!(instants.len(), 2);
+    assert_eq!(instants[1].start, utc(2026, 7, 8, 10, 0));
+}
+
+#[test]
+fn an_end_before_its_start_is_swapped_with_it() {
+    let raw = calendar(&event(
+        "DTSTART:20260706T090000Z\r\nDTEND:20260706T083000Z\r\nRRULE:FREQ=DAILY;COUNT=2\r\n",
+    ));
+
+    let instants = walk(&raw, utc(2026, 7, 1, 0, 0), utc(2026, 8, 1, 0, 0));
+
+    assert_eq!(
+        spans(&instants),
+        [
+            (utc(2026, 7, 6, 8, 30), utc(2026, 7, 6, 9, 0)),
+            (utc(2026, 7, 7, 8, 30), utc(2026, 7, 7, 9, 0)),
+        ]
+    );
+    assert_eq!(instants[0].id_instant, utc(2026, 7, 6, 9, 0));
+}
+
+#[test]
+fn a_swapped_occurrence_starting_in_the_window_is_yielded() {
+    // NOTE: Its identity falls after the window, its swapped start inside.
+    let raw = calendar(&event(
+        "DTSTART:20260710T090000Z\r\nDTEND:20260706T090000Z\r\n",
+    ));
+
+    let instants = walk(&raw, utc(2026, 7, 1, 0, 0), utc(2026, 7, 7, 0, 0));
+
+    assert_eq!(
+        spans(&instants),
+        [(utc(2026, 7, 6, 9, 0), utc(2026, 7, 10, 9, 0))]
+    );
+}
+
+#[test]
+fn a_task_with_no_start_recurs_from_its_due() {
+    let raw = calendar(concat!(
+        "BEGIN:VTODO\r\nUID:1\r\nDTSTAMP:20260101T000000Z\r\n",
+        "DUE:20260710T170000Z\r\nRRULE:FREQ=WEEKLY;COUNT=3\r\nEND:VTODO\r\n",
+        "BEGIN:VTODO\r\nUID:1\r\nDTSTAMP:20260101T000000Z\r\n",
+        "RECURRENCE-ID:20260717T170000Z\r\nDUE:20260718T090000Z\r\nEND:VTODO\r\n",
+    ));
+
+    let instants = walk(&raw, utc(2026, 7, 1, 0, 0), utc(2026, 8, 1, 0, 0));
+
+    assert_eq!(
+        spans(&instants),
+        [
+            (utc(2026, 7, 10, 17, 0), utc(2026, 7, 10, 17, 0)),
+            (utc(2026, 7, 18, 9, 0), utc(2026, 7, 18, 9, 0)),
+            (utc(2026, 7, 24, 17, 0), utc(2026, 7, 24, 17, 0)),
+        ]
+    );
+}
+
+#[test]
+fn an_event_with_no_start_does_not_recur_from_its_end() {
+    let raw = calendar(&event(
+        "DTEND:20260710T170000Z\r\nRRULE:FREQ=WEEKLY;COUNT=3\r\n",
+    ));
+
+    let instants = walk(&raw, utc(2026, 7, 1, 0, 0), utc(2026, 8, 1, 0, 0));
+
+    assert!(instants.is_empty());
+}
+
+#[test]
+fn a_component_with_no_uid_is_a_series_of_its_own() {
+    let raw = calendar(concat!(
+        "BEGIN:VEVENT\r\nDTSTAMP:20260101T000000Z\r\n",
+        "DTSTART:20260706T090000Z\r\nDURATION:PT1H\r\nRRULE:FREQ=DAILY;COUNT=2\r\n",
+        "END:VEVENT\r\n",
+    ));
+    let cst = IcalCst::parse(&raw).expect("parse");
+    let ical = cst.decode();
+
+    let instants: Vec<_> = IcalRecurTimeline::of_component(&ical.components[0], &[])
+        .expand(utc(2026, 7, 1, 0, 0), utc(2026, 8, 1, 0, 0))
+        .collect();
+
+    assert_eq!(
+        spans(&instants),
+        [
+            (utc(2026, 7, 6, 9, 0), utc(2026, 7, 6, 10, 0)),
+            (utc(2026, 7, 7, 9, 0), utc(2026, 7, 7, 10, 0)),
+        ]
+    );
+}
+
+#[test]
+fn a_this_and_future_override_carries_its_duration_forward() {
+    // NOTE: The shape of recurring-ical-events issue 75: the override moves
+    // the tail three hours earlier and makes it last seven hours, not two.
+    let raw = calendar(&format!(
+        "{}{}",
+        event(concat!(
+            "DTSTART:20240901T120000Z\r\nDTEND:20240901T140000Z\r\n",
+            "RRULE:FREQ=DAILY;INTERVAL=2;COUNT=8\r\n",
+        )),
+        event(concat!(
+            "RECURRENCE-ID;RANGE=THISANDFUTURE:20240905T120000Z\r\n",
+            "DTSTART:20240905T090000Z\r\nDTEND:20240905T160000Z\r\n",
+        )),
+    ));
+
+    let instants = walk(&raw, utc(2024, 9, 3, 0, 0), utc(2024, 9, 8, 0, 0));
+
+    assert_eq!(
+        spans(&instants),
+        [
+            (utc(2024, 9, 3, 12, 0), utc(2024, 9, 3, 14, 0)),
+            (utc(2024, 9, 5, 9, 0), utc(2024, 9, 5, 16, 0)),
+            (utc(2024, 9, 7, 9, 0), utc(2024, 9, 7, 16, 0)),
+        ]
+    );
+}
+
+#[test]
+fn a_series_cut_before_its_start_has_no_instance() {
+    // NOTE: The shape of recurring-ical-events issue 117: what a client
+    // writes when the first instance and every one after it are deleted.
+    let raw = calendar(&event(concat!(
+        "DTSTART;VALUE=DATE:20231002\r\nDTEND;VALUE=DATE:20231009\r\n",
+        "RRULE:FREQ=WEEKLY;UNTIL=20231001;INTERVAL=2;BYDAY=MO\r\n",
+    )));
+
+    let instants = walk(&raw, utc(2023, 9, 1, 0, 0), utc(2023, 12, 1, 0, 0));
+
+    assert!(instants.is_empty());
+}
+
+#[test]
+fn a_date_until_on_the_start_day_cuts_nothing() {
+    let raw = calendar(&event(
+        "DTSTART:20260706T090000Z\r\nRRULE:FREQ=DAILY;UNTIL=20260706\r\n",
+    ));
+
+    let instants = walk(&raw, utc(2026, 7, 1, 0, 0), utc(2026, 8, 1, 0, 0));
+
+    assert_eq!(
+        spans(&instants),
+        [(utc(2026, 7, 6, 9, 0), utc(2026, 7, 6, 9, 0))]
+    );
+}
+
+#[test]
+fn a_malformed_part_is_dropped_rather_than_the_rule() {
+    // NOTE: The shape of recurring-ical-events issue 128.
+    let raw = calendar(&event(
+        "DTSTART:20260706T090000Z\r\nRRULE:FREQ=WEEKLY;UNTIL=20260721T090000Z;COUNT=-1\r\n",
+    ));
+
+    let instants = walk(&raw, utc(2026, 7, 1, 0, 0), utc(2026, 8, 1, 0, 0));
+
+    assert_eq!(instants.len(), 3);
+}
+
 #[cfg(feature = "tzdb")]
 mod tzdb {
     use ical::tzdb;
@@ -366,6 +601,130 @@ mod tzdb {
         IcalRecurTimeline::of_uid(&ical.components, "1", &zones)
             .expand(from, until)
             .collect()
+    }
+
+    /// Europe/Berlin as a producer that truncates history writes it: two
+    /// dated onsets and no rule, the earliest in October 2018.
+    const TRUNCATED: &str = concat!(
+        "BEGIN:VTIMEZONE\r\nTZID:Europe/Berlin\r\n",
+        "BEGIN:STANDARD\r\nDTSTART:20181028T030000\r\n",
+        "TZOFFSETFROM:+0200\r\nTZOFFSETTO:+0100\r\nEND:STANDARD\r\n",
+        "BEGIN:DAYLIGHT\r\nDTSTART:20190331T020000\r\n",
+        "TZOFFSETFROM:+0100\r\nTZOFFSETTO:+0200\r\nEND:DAYLIGHT\r\n",
+        "END:VTIMEZONE\r\n",
+    );
+
+    #[test]
+    fn a_windows_zone_name_reads_as_the_zone_cldr_maps_it_to() {
+        let raw = calendar(&event(
+            "DTSTART;TZID=Pacific Standard Time:20230105T100000\r\n",
+        ));
+
+        let instants = walk_with_database(&raw, utc(2023, 1, 1, 0, 0), utc(2023, 2, 1, 0, 0));
+
+        assert_eq!(instants[0].start, utc(2023, 1, 5, 18, 0));
+        assert!(!instants[0].floating);
+    }
+
+    #[test]
+    fn a_time_before_a_truncated_vtimezone_reads_through_the_database() {
+        let raw = calendar(&format!(
+            "{TRUNCATED}{}",
+            event("DTSTART;TZID=Europe/Berlin:20161203T140000\r\n"),
+        ));
+
+        let instants = walk_with_database(&raw, utc(2016, 12, 1, 0, 0), utc(2017, 1, 1, 0, 0));
+
+        assert_eq!(instants[0].start, utc(2016, 12, 3, 13, 0));
+    }
+
+    #[test]
+    fn a_time_a_truncated_vtimezone_covers_reads_through_it() {
+        // NOTE: The database says +0100 in January 2019; the calendar's own
+        // definition is what this checks is still read.
+        let raw = calendar(&format!(
+            "{}{}",
+            TRUNCATED.replace("TZOFFSETTO:+0100", "TZOFFSETTO:+0300"),
+            event("DTSTART;TZID=Europe/Berlin:20190110T140000\r\n"),
+        ));
+
+        let instants = walk_with_database(&raw, utc(2019, 1, 1, 0, 0), utc(2019, 2, 1, 0, 0));
+
+        assert_eq!(instants[0].start, utc(2019, 1, 10, 11, 0));
+    }
+
+    /// The occurrences of `UID:1` once `X-WR-TIMEZONE` is applied, the zone
+    /// it names completed by the database.
+    fn walk_x_wr(raw: &str, from: i64, until: i64) -> Vec<IcalRecurInstant> {
+        let cst = IcalCst::parse(raw).expect("parse");
+        let mut ical = cst.decode();
+        let mut zones = tzdb::zones(&ical.components, 2027);
+        let name = IcalTz::x_wr_timezone(&ical).unwrap().to_string();
+        zones.extend(tzdb::zone(&name, 2027));
+
+        assert!(IcalTz::apply_x_wr_timezone(&mut ical, &zones));
+
+        let zones = tzdb::zones(&ical.components, 2027);
+        IcalRecurTimeline::of_uid(&ical.components, "1", &zones)
+            .expand(from, until)
+            .collect()
+    }
+
+    /// A calendar naming Europe/Brussels with the extension.
+    fn x_wr(components: &str) -> String {
+        format!(
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\n\
+             X-WR-TIMEZONE:Europe/Brussels\r\n{components}END:VCALENDAR\r\n"
+        )
+    }
+
+    #[test]
+    fn a_utc_series_under_x_wr_timezone_keeps_its_wall_clock_across_a_transition() {
+        let raw = x_wr(&event(
+            "DTSTART:20261021T070000Z\r\nRRULE:FREQ=WEEKLY;COUNT=2\r\n",
+        ));
+
+        let instants = walk_x_wr(&raw, utc(2026, 10, 1, 0, 0), utc(2026, 11, 1, 0, 0));
+
+        // NOTE: 09:00 in Brussels both weeks, the clock having gone back on
+        // 25 October.
+        assert_eq!(
+            spans(&instants),
+            [
+                (utc(2026, 10, 21, 7, 0), utc(2026, 10, 21, 7, 0)),
+                (utc(2026, 10, 28, 8, 0), utc(2026, 10, 28, 8, 0)),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_floating_time_under_x_wr_timezone_is_read_on_its_zone() {
+        let raw = x_wr(&event(
+            "DTSTART:20210916T210000\r\nDTEND:20210916T224500\r\n",
+        ));
+
+        let instants = walk_x_wr(&raw, utc(2021, 9, 1, 0, 0), utc(2021, 10, 1, 0, 0));
+
+        assert_eq!(
+            spans(&instants),
+            [(utc(2021, 9, 16, 19, 0), utc(2021, 9, 16, 20, 45))]
+        );
+        assert!(!instants[0].floating);
+    }
+
+    #[test]
+    fn x_wr_timezone_leaves_dates_and_named_zones_alone() {
+        let raw = x_wr(&format!(
+            "{ZONES}{}",
+            event("DTSTART;TZID=Europe/Paris:20260706T090000\r\n"),
+        ));
+        let cst = IcalCst::parse(&raw).expect("parse");
+        let mut ical = cst.decode();
+        let mut zones = tzdb::zones(&ical.components, 2027);
+        zones.extend(tzdb::zone("Europe/Brussels", 2027));
+
+        assert_eq!(IcalTz::x_wr_timezone(&ical), Some("Europe/Brussels"));
+        assert!(!IcalTz::apply_x_wr_timezone(&mut ical, &zones));
     }
 
     const SERIES: &str = concat!(

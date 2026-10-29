@@ -19,7 +19,9 @@
 //! states, usable wherever one read from a VTIMEZONE is, and [`zones`]
 //! completes a calendar's own zones with the database's for every `TZID`
 //! they leave undefined: the calendar's own VTIMEZONE first, else the
-//! database, else, for a name neither knows, a floating time.
+//! database, else, for a name neither knows, a floating time. A VTIMEZONE
+//! answers from its earliest observance on, and a time before it reads
+//! through the database when the name is one it knows.
 //!
 //! ## VTIMEZONE synthesis
 //!
@@ -37,6 +39,8 @@
 //! follow agree on one, and a zone whose nearest shift is more than
 //! two years from the anchor is described by its single offset, so
 //! Hong Kong, which last shifted in 1979, carries no summer time today.
+
+mod windows;
 
 use alloc::{borrow::ToOwned, format, string::String, vec, vec::Vec};
 
@@ -118,10 +122,15 @@ pub fn version() -> Option<&'static str> {
 ///
 /// Every transition up to the end of the year `through` is a dated onset of
 /// the observance between its two offsets, so the zone is exact over its
-/// whole history to that year; past it the last offset holds. Nothing comes
-/// back for a name the database does not know.
+/// whole history to that year; past it the last offset holds.
+///
+/// A Windows time zone name, such as `Pacific Standard Time`, reads as the
+/// IANA zone CLDR maps it to, the zone keeping the name it was asked by.
+/// Nothing comes back for a name neither the database nor CLDR knows.
 pub fn zone(tzid: &str, through: i32) -> Option<IcalTz> {
-    let zone = TimeZone::get(tzid).ok()?;
+    let zone = TimeZone::get(tzid)
+        .or_else(|err| TimeZone::get(windows::iana(tzid).ok_or(err)?))
+        .ok()?;
 
     // NOTE: A year of margin, so a local time on the last day of `through`
     // still sees the transition that follows it.
@@ -193,11 +202,20 @@ pub fn zone(tzid: &str, through: i32) -> Option<IcalTz> {
 
 /// The zones a calendar's components resolve through: every VTIMEZONE they
 /// carry, then a [`zone`] from the database for each `TZID` they name and
-/// no VTIMEZONE defines, so the calendar's own definition always wins.
+/// no VTIMEZONE defines, so the calendar's own definition wins over the
+/// span it is valid for.
+///
+/// That span starts at a VTIMEZONE's earliest observance (RFC 7808 7.1): a
+/// producer may truncate the history it does not need, so before it a name
+/// the database knows reads through the database's own transitions rather
+/// than through the offset the first observance came from.
 ///
 /// A name neither defines is left out, and a time under it reads floating.
 pub fn zones(components: &[IcalComponent<'_>], through: i32) -> Vec<IcalTz> {
-    let mut zones = IcalTz::of_components(components);
+    let mut zones: Vec<IcalTz> = IcalTz::of_components(components)
+        .into_iter()
+        .map(|own| completed(own, through))
+        .collect();
     let mut named = Vec::new();
 
     tzids(components, &mut named);
@@ -213,6 +231,50 @@ pub fn zones(components: &[IcalComponent<'_>], through: i32) -> Vec<IcalTz> {
     }
 
     zones
+}
+
+/// A calendar's own zone, its history before its earliest observance taken
+/// from the database when the database knows its name.
+fn completed(mut own: IcalTz, through: i32) -> IcalTz {
+    let Some(earliest) = own
+        .observances
+        .iter()
+        .filter_map(|observance| observance.onsets.start)
+        .min()
+    else {
+        return own;
+    };
+
+    let Some(database) = zone(&own.id, through) else {
+        return own;
+    };
+
+    for mut observance in database.observances {
+        let mut onsets: Vec<IcalRecurDateTime> = observance
+            .onsets
+            .start
+            .into_iter()
+            .chain(observance.onsets.dates)
+            .filter(|onset| *onset < earliest)
+            .collect();
+
+        if onsets.is_empty() {
+            continue;
+        }
+
+        onsets.sort_unstable();
+        let start = onsets.remove(0);
+
+        observance.onsets = IcalRecurSet {
+            start: Some(start),
+            dates: onsets,
+            ..IcalRecurSet::default()
+        };
+
+        own.observances.push(observance);
+    }
+
+    own
 }
 
 /// Every `TZID` a parameter names among components and their own, in order,
