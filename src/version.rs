@@ -56,6 +56,13 @@ impl ops::Deref for IcalVersion {
     type Target = str;
 
     fn deref(&self) -> &Self::Target {
+        self.wire_name()
+    }
+}
+
+impl IcalVersion {
+    /// The version as written on the wire.
+    pub(crate) const fn wire_name(self) -> &'static str {
         match self {
             Self::V1_0 => "1.0",
             Self::V2_0 => "2.0",

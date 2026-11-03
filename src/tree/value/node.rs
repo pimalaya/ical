@@ -26,8 +26,9 @@ use alloc::{borrow::Cow, string::String, vec::Vec};
 use crate::tree::{
     codec::{
         encode::{encode_bytes_component, encode_component},
+        escape::position,
         mode::Escaper,
-        unescape::{unescape_bytes, unescape_with},
+        unescape::{text, unescape_bytes, unescape_with},
     },
     leaf::IcalValueLeaf,
 };
@@ -120,6 +121,20 @@ impl<'a> IcalValueNode<'a> {
                 Cow::Owned(unescape_with(&joined, self.escaper).into_owned())
             }
         }
+    }
+
+    /// The value as text when it is unsplit and holds no backslash, so
+    /// [`decode`](Self::decode) would borrow it whole.
+    ///
+    /// The backslash is looked for by an inlined block scan: a call a value
+    /// paid more than it searched, the values running some 21 bytes.
+    #[inline(always)]
+    pub(crate) fn plain(&self) -> Option<&str> {
+        let raw = self.raw.as_deref()?;
+        let text = text(raw)?;
+        position(raw, |byte| byte == b'\\')
+            .is_none()
+            .then_some(text)
     }
 
     /// Decode the whole value as its `,`-separated list, `;` kept literal.

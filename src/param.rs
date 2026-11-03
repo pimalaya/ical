@@ -235,6 +235,13 @@ impl ops::Deref for IcalParamKind {
     type Target = str;
 
     fn deref(&self) -> &Self::Target {
+        self.wire_name()
+    }
+}
+
+impl IcalParamKind {
+    /// The name as written on the wire, in its canonical spelling.
+    pub(crate) const fn wire_name(self) -> &'static str {
         match self {
             Self::AltRep => "ALTREP",
             Self::Cn => "CN",
@@ -354,6 +361,14 @@ pub enum IcalParam<'a> {
 }
 
 impl IcalParam<'_> {
+    /// A parameter holding nothing, for the decoder to fill in place.
+    pub(crate) const fn empty() -> Self {
+        Self::Unknown {
+            name: Cow::Borrowed(""),
+            values: Vec::new(),
+        }
+    }
+
     /// The closed [`IcalParamKind`] of this parameter, or `None` for
     /// [`Unknown`](IcalParam::Unknown) (which is outside the vocabulary).
     pub fn kind(&self) -> Option<IcalParamKind> {

@@ -44,6 +44,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Changed expansion to walk a yearly or monthly period a month at a time: a yearly rule expands about six times faster.
 - Changed parsing, decoding and serializing to take fewer cycles, with the same output: 41% fewer for a strict parse of the test corpus, 35% for parse and decode, 39% for parse and `to_bytes`, 47 to 49% on a short calendar. A folded line is joined once, its head borrowed from the input; lines are filled in place and a nested `BEGIN` line is read once; names are looked up with no allocation; decoding checks UTF-8 before any lossy walk. A parsed component's item list now starts with room for 16 items.
 - Changed `Display` for `Ical` (and so `to_string`) to write the text straight from the decoded model rather than through an encoded syntax tree, with the same output: 90% fewer cycles over the test corpus, 92% on a short calendar.
+- Changed parsing, decoding and serializing to take fewer cycles again, in a second pass with the same output: 29% fewer for a strict parse of the test corpus, 29% for parse and decode, 27% for parse and `to_bytes`, 24 to 29% on a short calendar; `to_string` of a parsed calendar 49% fewer (64% on a short one) and `encode` of a decoded one 20% fewer (25%). ASCII names and values skip the UTF-8 check's call; lines, components, decoded properties and parameters are written where they stay; encoding borrows a known name's canonical spelling rather than allocating it.
 
 ### Fixed
 

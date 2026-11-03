@@ -139,38 +139,34 @@ impl<'a> IcalCst<'a> {
     /// calendar is dropped, except trailing blank lines, which are kept: use
     /// [`parse_many`](Self::parse_many) to read a multi-calendar file whole.
     pub fn parse<T: AsRef<[u8]> + ?Sized>(input: &'a T) -> Result<Self, IcalParseError> {
-        let mut first = IcalLine::empty();
-        let rest = IcalLine::take_into(input.as_ref(), &mut first)?;
+        let mut cst = Self::bare(Vec::new());
+        let first = cst.begin.insert(IcalLine::empty());
+        let rest = IcalLine::take_into(input.as_ref(), first)?;
 
-        if first.name.get().eq_ignore_ascii_case("BEGIN") {
-            let (mut cst, rest) = Self::take_body(first, rest, 1)?;
-            cst.take_trailing(rest);
-            cst.stamp();
-            Ok(cst)
-        } else {
-            Self::parse_bare(first, rest)
-        }
-    }
-
-    /// Parse a bare, envelope-less record from its `first` line and the input
-    /// after it: every line becomes a property.
-    fn parse_bare(first: IcalLine<'a>, mut rest: &'a [u8]) -> Result<Self, IcalParseError> {
-        let mut items: Vec<IcalItem<'a>> = Vec::with_capacity(ITEMS);
-        items.push(IcalItem::Prop(first));
-
-        while !is_blank(rest) {
-            rest = IcalLine::take_into(rest, push_line(&mut items))?;
+        if !first.name.get().eq_ignore_ascii_case("BEGIN") {
+            return cst.parse_bare(rest);
         }
 
-        let mut cst = Self {
-            begin: None,
-            items,
-            end: None,
-            trailing: Cow::Borrowed(""),
-        };
+        let rest = cst.take_body(rest, 1)?;
         cst.take_trailing(rest);
         cst.stamp();
         Ok(cst)
+    }
+
+    /// Parse a bare, envelope-less record whose first line was taken into
+    /// [`begin`](Self::begin), from the input after it: every line becomes a
+    /// property.
+    fn parse_bare(mut self, mut rest: &'a [u8]) -> Result<Self, IcalParseError> {
+        self.items.reserve_exact(ITEMS);
+        self.items.extend(self.begin.take().map(IcalItem::Prop));
+
+        while !is_blank(rest) {
+            rest = IcalLine::take_into(rest, push_line(&mut self.items))?;
+        }
+
+        self.take_trailing(rest);
+        self.stamp();
+        Ok(self)
     }
 
     /// Parse every top-level calendar in the input, lazily, one item each.
@@ -375,7 +371,7 @@ impl<'a> IcalCst<'a> {
     }
 
     /// A bare, envelope-less calendar around `items`.
-    fn bare(items: Vec<IcalItem<'a>>) -> Self {
+    pub(crate) const fn bare(items: Vec<IcalItem<'a>>) -> Self {
         Self {
             begin: None,
             items,
@@ -400,71 +396,75 @@ impl<'a> IcalCst<'a> {
     /// up to [`DEPTH_MAX`](Self::DEPTH_MAX); the matching `END` closes this
     /// component.
     fn take_component(input: &'a [u8], depth: usize) -> Result<(Self, &'a [u8]), IcalParseError> {
-        let mut begin = IcalLine::empty();
-        let rest = IcalLine::take_into(input, &mut begin)?;
+        let mut cst = Self::bare(Vec::new());
+        let begin = cst.begin.insert(IcalLine::empty());
+        let rest = IcalLine::take_into(input, begin)?;
 
         if !begin.name.get().eq_ignore_ascii_case("BEGIN") {
             return Err(IcalParseError::ExpectedBegin(begin.name.get().to_string()));
         }
 
-        Self::take_body(begin, rest, depth)
+        let rest = cst.take_body(rest, depth)?;
+        Ok((cst, rest))
     }
 
-    /// Take the body of a component whose `BEGIN` line was taken, at nesting
-    /// `depth`, up to its matching `END`: the component and the unconsumed
+    /// Take the body of this component, whose `BEGIN` line was taken, at
+    /// nesting `depth`, up to its matching `END`, returning the unconsumed
     /// rest.
     ///
-    /// Every line is taken into a slot the item list grows by, so it is
-    /// written once; a nested `BEGIN` line is moved out to open its child, and
-    /// the `END` line to close this component.
-    fn take_body(
-        begin: IcalLine<'a>,
-        mut rest: &'a [u8],
-        depth: usize,
-    ) -> Result<(Self, &'a [u8]), IcalParseError> {
-        let mut items: Vec<IcalItem<'a>> = Vec::with_capacity(ITEMS);
+    /// Everything is written where it stays: a line into a slot the item list
+    /// grows by, a nested component into its box, which it fills itself, and
+    /// a line starting `BEGIN:` or `END:` straight into the envelope it opens
+    /// or closes. A line or a component built aside and moved in would wait
+    /// on its stores.
+    fn take_body(&mut self, mut rest: &'a [u8], depth: usize) -> Result<&'a [u8], IcalParseError> {
+        self.items.reserve_exact(ITEMS);
 
         loop {
             if rest.is_empty() {
                 // NOTE: The component's name, not the whole input: an error
                 // that carries a megabyte of calendar is not a diagnostic.
                 return Err(IcalParseError::MissingEnd(
-                    begin.raw_value_str().into_owned(),
+                    self.component_name().into_owned(),
                 ));
             }
 
-            let line = push_line(&mut items);
-            let tail = IcalLine::take_into(rest, line)?;
-            let name = line.name.get();
-
-            if name.eq_ignore_ascii_case("END") {
-                let end = pop_line(&mut items);
-
-                return Ok((
-                    Self {
-                        begin: Some(begin),
-                        items,
-                        end,
-                        trailing: Cow::Borrowed(""),
-                    },
-                    tail,
-                ));
+            if is_named(rest, b"END:") {
+                return IcalLine::take_into(rest, self.end.insert(IcalLine::empty()));
             }
 
-            if name.eq_ignore_ascii_case("BEGIN") {
-                if depth >= Self::DEPTH_MAX {
-                    return Err(IcalParseError::TooDeep(line.raw_value_str().into_owned()));
+            let mut child = if is_named(rest, b"BEGIN:") {
+                let mut child = Box::new(const { Self::bare(Vec::new()) });
+                rest = IcalLine::take_into(rest, child.begin.insert(IcalLine::empty()))?;
+                child
+            } else {
+                // NOTE: Any other line, an `END` or a `BEGIN` spelled another
+                // way included (a blank line before it, a parameter, a fold),
+                // is taken into the next slot and moved out when it is one.
+                let line = push_line(&mut self.items);
+                rest = IcalLine::take_into(rest, line)?;
+                let name = line.name.get();
+
+                if name.eq_ignore_ascii_case("END") {
+                    self.end = pop_line(&mut self.items);
+                    return Ok(rest);
                 }
 
-                if let Some(begin) = pop_line(&mut items) {
-                    let (child, next) = Self::take_body(begin, tail, depth + 1)?;
-                    items.push(IcalItem::Component(Box::new(child)));
-                    rest = next;
+                if !name.eq_ignore_ascii_case("BEGIN") {
                     continue;
                 }
+
+                let mut child = Box::new(const { Self::bare(Vec::new()) });
+                child.begin = pop_line(&mut self.items);
+                child
+            };
+
+            if depth >= Self::DEPTH_MAX {
+                return Err(IcalParseError::TooDeep(child.component_name().into_owned()));
             }
 
-            rest = tail;
+            rest = child.take_body(rest, depth + 1)?;
+            self.items.push(IcalItem::Component(child));
         }
     }
 
@@ -789,16 +789,22 @@ fn is_blank(bytes: &[u8]) -> bool {
     bytes.iter().all(|byte| matches!(byte, b'\r' | b'\n'))
 }
 
+/// Whether the line at the start of `rest` starts with `name` and its colon,
+/// `BEGIN:` or `END:`, in any case: the line is named so, whatever follows.
+fn is_named(rest: &[u8], name: &[u8]) -> bool {
+    rest.get(..name.len())
+        .is_some_and(|head| head.eq_ignore_ascii_case(name))
+}
+
 /// The slots a parsed component's item list starts with, enough for all but
-/// about one component in fifty in the test corpus, its `END` line included
-/// while it is read.
+/// about one component in fifty in the test corpus.
 const ITEMS: usize = 16;
 
 /// Grow `items` by an empty property line for [`IcalLine::take_into`] to fill
 /// in place, where a line pushed by value would be staged on the stack and
 /// copied.
-fn push_line<'i, 'a>(items: &'i mut Vec<IcalItem<'a>>) -> &'i mut IcalLine<'a> {
-    items.push(const { IcalItem::Prop(IcalLine::empty()) });
+pub(crate) fn push_line<'i, 'a>(items: &'i mut Vec<IcalItem<'a>>) -> &'i mut IcalLine<'a> {
+    items.resize_with(items.len() + 1, || IcalItem::Prop(IcalLine::empty()));
 
     match items.last_mut() {
         Some(IcalItem::Prop(line)) => line,
@@ -815,20 +821,32 @@ fn pop_line<'a>(items: &mut Vec<IcalItem<'a>>) -> Option<IcalLine<'a>> {
 }
 
 impl fmt::Display for IcalCst<'_> {
+    /// Every line as text, as `Display` for [`IcalLine`] writes it, through
+    /// one buffer for the whole tree.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.write_text(f, &mut Vec::new())
+    }
+}
+
+impl IcalCst<'_> {
+    /// Write every line into `f` as text, each laid out in `buffer` first.
+    fn write_text(&self, f: &mut fmt::Formatter<'_>, buffer: &mut Vec<u8>) -> fmt::Result {
         if let Some(begin) = &self.begin {
-            write!(f, "{begin}")?;
+            begin.write_text(f, buffer)?;
         }
+
         for item in &self.items {
             match item {
-                IcalItem::Prop(line) => write!(f, "{line}")?,
+                IcalItem::Prop(line) => line.write_text(f, buffer)?,
                 IcalItem::Opaque(bytes) => f.write_str(&String::from_utf8_lossy(bytes))?,
-                IcalItem::Component(child) => write!(f, "{child}")?,
+                IcalItem::Component(child) => child.write_text(f, buffer)?,
             }
         }
+
         if let Some(end) = &self.end {
-            write!(f, "{end}")?;
+            end.write_text(f, buffer)?;
         }
+
         Ok(())
     }
 }

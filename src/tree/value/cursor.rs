@@ -109,10 +109,11 @@ impl IcalValueCursor<'_, '_> {
     /// charset; pair with [`charset`](Self::charset) to get text. Requires the
     /// `quoted-printable` feature.
     ///
-    /// Decoding loses no byte and runs the backend of the CPU token the
+    /// Decoding never fails and runs the backend of the CPU token the
     /// application installed through simd-cpu: an `=` starting no valid
     /// sequence stays literal, a raw 8-bit byte and a bare CR pass through,
-    /// and a hex digit reads in either case.
+    /// and a hex digit reads in either case. Blanks ending a line or the
+    /// value go, as RFC 2045 6.7 asks of transport padding.
     #[cfg(feature = "quoted-printable")]
     pub fn quoted_printable(&self) -> Vec<u8> {
         let raw = self.bytes();

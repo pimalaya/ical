@@ -483,9 +483,25 @@ impl fmt::Display for IcalLine<'_> {
     /// The line as text, wire shape included, lossily for a non-UTF-8 value.
     /// `IcalLine::write_bytes` is the byte-faithful path.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut bytes = Vec::new();
-        self.write_bytes(&mut bytes);
-        f.write_str(&String::from_utf8_lossy(&bytes))
+        self.write_text(f, &mut Vec::new())
+    }
+}
+
+impl IcalLine<'_> {
+    /// Write the line into `f` as `Display` does, laid out in `buffer` first,
+    /// whatever it held.
+    pub(crate) fn write_text(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+        buffer: &mut Vec<u8>,
+    ) -> fmt::Result {
+        buffer.clear();
+        self.write_bytes(buffer);
+
+        match text(buffer) {
+            Some(text) => f.write_str(text),
+            None => f.write_str(&String::from_utf8_lossy(buffer)),
+        }
     }
 }
 
@@ -566,18 +582,21 @@ fn value_colon(content: &[u8]) -> Option<usize> {
 
 /// The index of the first `:` outside a double-quoted parameter value, with no
 /// fallback.
+///
+/// The colon and the quotes are found by block scans, a quote skipping to the
+/// one closing it, rather than byte by byte.
 fn unquoted_colon(content: &[u8]) -> Option<usize> {
-    let mut quoted = false;
+    let mut at = 0;
 
-    for (i, &byte) in content.iter().enumerate() {
-        match byte {
-            b'"' => quoted = !quoted,
-            b':' if !quoted => return Some(i),
-            _ => {}
+    loop {
+        at += position(&content[at..], |byte| (byte == b':') | (byte == b'"'))?;
+
+        if content[at] == b':' {
+            return Some(at);
         }
-    }
 
-    None
+        at += 1 + position(&content[at + 1..], |byte| byte == b'"')? + 1;
+    }
 }
 
 /// The byte index of the first `;` of a head that sits outside a double-quoted

@@ -3,10 +3,11 @@
 //! The write side of the structural bridge: project the decoded model onto a
 //! raw syntax tree.
 //!
-//! A value's [`Codec`] impl encodes it into a [`IcalValueNode`], an
-//! [`IcalParam`] into an [`IcalParamNode`], a [`IcalProp`] into an
-//! [`IcalLine`], an [`IcalComponent`] into a nested [`IcalCst`], and an
-//! [`Ical`] into the whole `VCALENDAR` [`IcalCst`], recursively.
+//! A value's [`Codec`](crate::tree::codec::Codec) impl encodes it into a
+//! [`IcalValueNode`], an [`IcalParam`] into an [`IcalParamNode`], a
+//! [`IcalProp`] into an [`IcalLine`], an [`IcalComponent`] into a nested
+//! [`IcalCst`], and an [`Ical`] into the whole `VCALENDAR` [`IcalCst`],
+//! recursively.
 //!
 //! The whole calendar is encoded for its version's [`Escaper`], which the
 //! value codecs use to escape every leaf.
@@ -25,23 +26,21 @@ use alloc::{
 };
 
 use crate::{
-    component::IcalComponent,
+    component::{IcalComponent, IcalComponentName},
     ical::Ical,
     param::IcalParam,
-    prop::IcalProp,
+    prop::{IcalProp, IcalPropName},
     tree::{
         codec::{
-            Codec,
-            escape::{escape_into, escape_param, escape_with},
+            escape::{escape_into, escape_param, escape_with, position},
             mode::Escaper,
             unescape::text,
         },
-        cst::{IcalCst, IcalItem},
+        cst::{IcalCst, IcalItem, push_line},
         leaf::{IcalLeaf, IcalValueLeaf},
         line::{IcalLine, fold_long},
         param::node::IcalParamNode,
         value::node::IcalValueNode,
-        wire::IcalWire,
     },
     validator::IcalValid,
 };
@@ -55,18 +54,9 @@ impl Ical<'_> {
         let mut items = Vec::with_capacity(1 + self.props.len() + self.components.len());
         items.push(IcalItem::Prop(IcalLine::text(
             "VERSION",
-            self.version.to_string(),
+            self.version.wire_name(),
         )));
-        items.extend(
-            self.props
-                .iter()
-                .map(|prop| IcalItem::Prop(prop.encode(escaper))),
-        );
-        items.extend(
-            self.components
-                .iter()
-                .map(|component| IcalItem::Component(Box::new(component.encode(escaper)))),
-        );
+        encode_items(&self.props, &self.components, escaper, &mut items);
 
         IcalCst {
             begin: Some(IcalLine::text("BEGIN", "VCALENDAR")),
@@ -81,26 +71,24 @@ impl IcalComponent<'_> {
     /// Encode this component (and its nested components) into a CST for the
     /// given escaping mode.
     pub fn encode(&self, escaper: Escaper) -> IcalCst<'static> {
-        let name = self.name.to_string();
+        let mut cst = IcalCst::bare(Vec::new());
+        self.encode_into(escaper, &mut cst);
+        cst
+    }
 
-        let mut items = Vec::with_capacity(self.props.len() + self.components.len());
-        items.extend(
-            self.props
-                .iter()
-                .map(|prop| IcalItem::Prop(prop.encode(escaper))),
-        );
-        items.extend(
-            self.components
-                .iter()
-                .map(|component| IcalItem::Component(Box::new(component.encode(escaper)))),
-        );
+    /// [`encode`](Self::encode) into `cst`, a bare component holding nothing.
+    fn encode_into(&self, escaper: Escaper, cst: &mut IcalCst<'static>) {
+        // NOTE: A known name is its canonical spelling, borrowed for good.
+        let name: Cow<'static, str> = match &self.name {
+            IcalComponentName::Kind(kind) => Cow::Borrowed(kind.wire_name()),
+            IcalComponentName::Unknown(name) => Cow::Owned(name.to_string()),
+        };
 
-        IcalCst {
-            begin: Some(IcalLine::text("BEGIN", name.clone())),
-            items,
-            end: Some(IcalLine::text("END", name)),
-            trailing: Cow::Borrowed(""),
-        }
+        cst.items
+            .reserve_exact(self.props.len() + self.components.len());
+        encode_items(&self.props, &self.components, escaper, &mut cst.items);
+        cst.begin = Some(IcalLine::text("BEGIN", name.clone()));
+        cst.end = Some(IcalLine::text("END", name));
     }
 
     /// Append the lines [`encode`](Self::encode) builds, as they serialize.
@@ -142,19 +130,34 @@ impl IcalProp<'_> {
     /// Encode the property into a raw content line for the given escaping mode,
     /// dispatching on its value.
     pub fn encode(&self, escaper: Escaper) -> IcalLine<'static> {
-        IcalLine {
-            name: IcalLeaf::from(self.name.to_string()),
-            params: self
-                .params
-                .iter()
-                .map(|param| param.encode(escaper))
-                .collect(),
-            value: self.value.encode(escaper),
-            eol: IcalLeaf::from("\r\n"),
-            // NOTE: An encoded property has no wire history: it is written out
-            // in canonical form, folded at 75 octets.
-            wire: IcalWire::default(),
-        }
+        let mut line = IcalLine::empty();
+        self.encode_into(escaper, &mut line);
+        line
+    }
+
+    /// [`encode`](Self::encode) into `slot`, an [empty](IcalLine::empty) line
+    /// whose fields are written over without being dropped, there being
+    /// nothing in them to free.
+    ///
+    /// Its wire shape stays empty: an encoded property has no wire history,
+    /// it is written out in canonical form, folded at 75 octets.
+    fn encode_into(&self, escaper: Escaper, slot: &mut IcalLine<'static>) {
+        // NOTE: A known name is its canonical spelling, borrowed for good.
+        let name = match &self.name {
+            IcalPropName::Kind(kind) => Cow::Borrowed(kind.wire_name()),
+            IcalPropName::Unknown(name) => Cow::Owned(name.to_string()),
+        };
+
+        mem::forget(mem::replace(&mut slot.name, IcalLeaf(name)));
+        slot.params.reserve_exact(self.params.len());
+        slot.params
+            .extend(self.params.iter().map(|param| param.encode(escaper)));
+        slot.value.escaper = escaper;
+        self.value.emit(&mut IcalValueOut {
+            escaper,
+            sink: Sink::Node(&mut slot.value),
+        });
+        mem::forget(mem::replace(&mut slot.eol, IcalLeaf::from("\r\n")));
     }
 
     /// Append the line [`encode`](Self::encode) builds, as it serializes.
@@ -189,7 +192,10 @@ impl IcalParam<'_> {
         let (name, values) = self.wire();
 
         IcalParamNode {
-            name: IcalLeaf::from(name.to_string()),
+            name: IcalLeaf(match self.kind() {
+                Some(kind) => Cow::Borrowed(kind.wire_name()),
+                None => Cow::Owned(name.to_string()),
+            }),
             values: values
                 .iter()
                 .map(|value| IcalLeaf::from(escape_param(value, escaper).into_owned()))
@@ -306,8 +312,29 @@ fn end_line(out: &mut Vec<u8>, start: usize) {
     out.extend_from_slice(b"\r\n");
 }
 
+/// Encode `props`, then `components`, onto `items`, each into a slot it
+/// lands in: a line or a component encoded aside and moved in waits on its
+/// stores.
+fn encode_items(
+    props: &[IcalProp<'_>],
+    components: &[IcalComponent<'_>],
+    escaper: Escaper,
+    items: &mut Vec<IcalItem<'static>>,
+) {
+    for prop in props {
+        prop.encode_into(escaper, push_line(items));
+    }
+
+    for component in components {
+        let mut child = Box::new(const { IcalCst::bare(Vec::new()) });
+        component.encode_into(escaper, &mut child);
+        items.push(IcalItem::Component(child));
+    }
+}
+
 /// Where a value's wire shape goes: the leaves of a syntax node, as
-/// [`Codec::encode`] builds it, or the bytes that node serializes to.
+/// [`Codec::encode`](crate::tree::codec::Codec::encode) builds it, or the
+/// bytes that node serializes to.
 ///
 /// A value type spells its shape once, in its `emit`, as one
 /// [`uri`](Self::uri) or [`raw`](Self::raw) value or a run of
@@ -405,14 +432,21 @@ pub(crate) fn verbatim_node(value: &[u8], escaper: Escaper) -> IcalValueNode<'st
 /// Append a URI to `out`, its line breaks and backslashes percent-encoded, as
 /// [`verbatim_node`] writes it.
 fn percent_into(value: &[u8], out: &mut Vec<u8>) {
-    for &byte in value {
-        match byte {
-            b'\r' => out.extend_from_slice(b"%0D"),
-            b'\n' => out.extend_from_slice(b"%0A"),
-            b'\\' => out.extend_from_slice(b"%5C"),
-            _ => out.push(byte),
-        }
+    let mut rest = value;
+
+    while let Some(at) = position(rest, |byte| {
+        (byte == b'\r') | (byte == b'\n') | (byte == b'\\')
+    }) {
+        out.extend_from_slice(&rest[..at]);
+        out.extend_from_slice(match rest[at] {
+            b'\r' => b"%0D",
+            b'\n' => b"%0A",
+            _ => b"%5C",
+        });
+        rest = &rest[at + 1..];
     }
+
+    out.extend_from_slice(rest);
 }
 
 /// Escape and own a clean value list into one component, by escaping mode.

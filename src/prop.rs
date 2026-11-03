@@ -105,7 +105,7 @@ use alloc::{
 
 use crate::{
     param::IcalParam,
-    value::{IcalValue, owned, text::IcalText},
+    value::{IcalUnknownValue, IcalValue, owned, text::IcalText},
 };
 
 /// Parse iCalendar property kind error.
@@ -217,6 +217,17 @@ impl<'a> IcalProp<'a> {
 }
 
 impl IcalProp<'_> {
+    /// A property holding nothing, for the decoder to fill in place.
+    pub(crate) const fn empty() -> Self {
+        Self {
+            name: IcalPropName::Unknown(Cow::Borrowed("")),
+            params: Vec::new(),
+            value: IcalValue::Unknown(IcalUnknownValue {
+                components: Vec::new(),
+            }),
+        }
+    }
+
     /// The same property with every borrow replaced by an allocation, so it
     /// outlives the bytes it was decoded from. See
     /// [`IcalValue::into_owned`](crate::value::IcalValue::into_owned).
@@ -576,6 +587,13 @@ impl ops::Deref for IcalPropKind {
     type Target = str;
 
     fn deref(&self) -> &Self::Target {
+        self.wire_name()
+    }
+}
+
+impl IcalPropKind {
+    /// The name as written on the wire, in its canonical spelling.
+    pub(crate) const fn wire_name(self) -> &'static str {
         match self {
             Self::CalScale => "CALSCALE",
             Self::Method => "METHOD",

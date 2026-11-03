@@ -129,6 +129,15 @@ impl IcalComponentName<'_> {
 }
 
 impl IcalComponent<'_> {
+    /// A component holding nothing, for the decoder to fill in place.
+    pub(crate) const fn empty() -> Self {
+        Self {
+            name: IcalComponentName::Unknown(Cow::Borrowed("")),
+            props: Vec::new(),
+            components: Vec::new(),
+        }
+    }
+
     /// The same component, and everything nested in it, with every borrow
     /// replaced by an allocation. See
     /// [`IcalValue::into_owned`](crate::value::IcalValue::into_owned).
@@ -259,6 +268,13 @@ impl ops::Deref for IcalComponentKind {
     type Target = str;
 
     fn deref(&self) -> &Self::Target {
+        self.wire_name()
+    }
+}
+
+impl IcalComponentKind {
+    /// The name as written on the wire, in its canonical spelling.
+    pub(crate) const fn wire_name(self) -> &'static str {
         match self {
             Self::VCalendar => "VCALENDAR",
             Self::VEvent => "VEVENT",

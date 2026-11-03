@@ -47,19 +47,9 @@ pub(crate) fn unescape_bytes(bytes: &[u8], escaper: Escaper) -> Cow<'_, [u8]> {
 /// `quoted-string` production its double quotes: see
 /// [`Escaper::has_param_encoding`] and [`Escaper::has_param_quoting`].
 pub(crate) fn unescape_param(text: &str, escaper: Escaper) -> Cow<'_, str> {
-    // NOTE: RFC 5545 3.1 wraps a value carrying `,`, `;` or `:` in double
-    // quotes. The pair is the production's own, never part of what it
-    // encloses, so it comes off before the carets are read. An unbalanced one
-    // closed nothing and is therefore content.
-    let text = match escaper.has_param_quoting() {
-        true => text
-            .strip_prefix('"')
-            .and_then(|inner| inner.strip_suffix('"'))
-            .unwrap_or(text),
-        false => text,
-    };
+    let text = param_text(text, escaper);
 
-    if !escaper.has_param_encoding() || !text.contains('^') {
+    if !has_carets(text, escaper) {
         return Cow::Borrowed(text);
     }
 
@@ -88,6 +78,30 @@ pub(crate) fn unescape_param(text: &str, escaper: Escaper) -> Cow<'_, str> {
     }
 
     Cow::Owned(out)
+}
+
+/// A parameter value with its RFC 5545 3.1 delimiters stripped.
+///
+/// RFC 5545 3.1 wraps a value carrying `,`, `;` or `:` in double quotes. The
+/// pair is the production's own, never part of what it encloses, so it comes
+/// off before the carets are read. An unbalanced one closed nothing and is
+/// therefore content.
+#[inline(always)]
+pub(crate) fn param_text(text: &str, escaper: Escaper) -> &str {
+    if !escaper.has_param_quoting() {
+        return text;
+    }
+
+    text.strip_prefix('"')
+        .and_then(|inner| inner.strip_suffix('"'))
+        .unwrap_or(text)
+}
+
+/// Whether a parameter value, its delimiters stripped, holds a caret that
+/// `escaper` reads as an RFC 6868 encoding.
+#[inline(always)]
+pub(crate) fn has_carets(text: &str, escaper: Escaper) -> bool {
+    escaper.has_param_encoding() && text.as_bytes().contains(&b'^')
 }
 
 /// Interpret bytes as UTF-8, keeping the borrow or the buffer when they are,
