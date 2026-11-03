@@ -73,6 +73,11 @@ path = "examples/time_zones.rs"
 required-features = ["parser"]
 
 [[example]]
+name = "time_zone_database"
+path = "examples/time_zone_database.rs"
+required-features = ["parser", "tzdb"]
+
+[[example]]
 name = "strict_builder"
 path = "examples/strict_builder.rs"
 required-features = ["parser"]

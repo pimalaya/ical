@@ -6,11 +6,18 @@
 //! walks are lazy and both are civil, since RFC 5545 expands on the local
 //! wall-clock time of `DTSTART` and never needs an offset.
 //!
+//! Last comes the timeline, which places each occurrence of a series on
+//! instants, with its end, over a window of the caller's choosing.
+//!
 //! Run with: `cargo run --example recurrence`
 
 use ical::{
-    recur::{IcalRecurDateTime, IcalRecurRule, expand::IcalRecurExpand, set::IcalRecurSet},
+    recur::{
+        IcalRecurDateTime, IcalRecurRule, expand::IcalRecurExpand, instant::IcalRecurTimeline,
+        set::IcalRecurSet,
+    },
     tree::cst::IcalCst,
+    tz::IcalTz,
 };
 
 fn main() {
@@ -71,4 +78,57 @@ fn main() {
     println!("  added {} by RDATE", set.dates.len());
     println!("  removed {} by EXDATE", set.exdates.len());
     println!("  moved {} by RECURRENCE-ID", set.overrides.len());
+
+    // A rule with no end is walked from where the caller looks, not from its
+    // start: `skip_to` jumps straight to the period holding that date.
+    let rule = IcalRecurRule::parse("FREQ=DAILY").unwrap();
+    let mut daily = IcalRecurExpand::new(rule, IcalRecurDateTime::date(1970, 1, 1));
+
+    println!("\nFREQ=DAILY from 1970, skipped to 2026-06-01:");
+    for at in daily.skip_to(IcalRecurDateTime::date(2026, 6, 1)).take(3) {
+        println!("  {}-{:02}-{:02}", at.year, at.month, at.day);
+    }
+
+    // A timeline places each occurrence on the clock of the world, start and
+    // end in seconds since the Unix epoch, over a window: what a calendar view
+    // or an alarm scheduler asks of a series that never ends.
+    let raw = concat!(
+        "BEGIN:VCALENDAR\r\n",
+        "VERSION:2.0\r\n",
+        "PRODID:-//Example//EN\r\n",
+        "BEGIN:VEVENT\r\n",
+        "UID:review@example.com\r\n",
+        "DTSTAMP:20260101T000000Z\r\n",
+        "DTSTART:20260102T150000Z\r\n",
+        "DURATION:PT1H30M\r\n",
+        "RRULE:FREQ=WEEKLY\r\n",
+        "SUMMARY:Review\r\n",
+        "END:VEVENT\r\n",
+        "END:VCALENDAR\r\n",
+    );
+    let cst = IcalCst::parse(raw).unwrap();
+    let cal = cst.decode();
+
+    // The zones a time resolves through: the calendar's own `VTIMEZONE`s,
+    // none here since every time is UTC.
+    let zones = IcalTz::of_components(&cal.components);
+    let timeline = IcalRecurTimeline::of_uid(&cal.components, "review@example.com", &zones);
+
+    let from = IcalRecurDateTime::date(2027, 3, 1).seconds();
+    let until = IcalRecurDateTime::date(2027, 3, 22).seconds();
+
+    println!("\nthe weekly review between 2027-03-01 and 2027-03-22, UTC:");
+    for instant in timeline.expand(from, until) {
+        println!("  {} to {}", utc(instant.start), utc(instant.end));
+    }
+}
+
+/// An instant in seconds since the Unix epoch, as a UTC date-time.
+fn utc(seconds: i64) -> String {
+    let at = IcalRecurDateTime::from_seconds(seconds);
+
+    format!(
+        "{}-{:02}-{:02} {:02}:{:02}",
+        at.year, at.month, at.day, at.hour, at.minute,
+    )
 }
