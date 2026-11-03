@@ -6,52 +6,78 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-03
+
 ### Added
 
-- Added `IcalCst::DEPTH_MAX` (16) and `IcalParseError::TooDeep`: the strict parsers refuse a component nested deeper, and `IcalCst::parse_recovering` keeps it as raw lines of the deepest component it admits, reporting `TooDeep`. **Breaking** for an exhaustive match on `IcalParseError`.
-- Added `IcalRecurExpand::skip_to` and `IcalRecurSetExpand::skip_to`, which skip a walk to a date-time without stepping through every earlier occurrence when the rule has no `COUNT`, so a windowed expansion costs the window rather than the history since `DTSTART`.
-- Added `recur::instant`: `IcalRecurTimeline::of_uid(components, uid, zones)` reads one series and its overrides, and `IcalRecurTimeline::expand(from, until)` walks the occurrences overlapping a window of Unix seconds as `IcalRecurInstant`s, each with its identity, its start and its end as instants. The end is the component's own `DTEND` (`DUE`) on its own clock, else its `DURATION`, a day of it added on the wall clock so `P1D` lasts 25 hours across a fall-back, else the RFC 5545 3.6.1 default; an `RDATE` period ends where it says. A floating or date time reads as if on UTC and is flagged.
-- Added `IcalDuration::nominal`, a duration as wall-clock days and exact seconds (RFC 5545 3.3.6), `IcalTz::of_components` and `IcalRecurSet::of_uid_in`, which reads a set through a given zone list.
-- Added `tzdb::version`, the IANA release of the bundled database, and `tzdb::zone` and `tzdb::zones`, which resolve a `TZID` the calendar defines no `VTIMEZONE` for through the database, the calendar's own definition always winning. The `tzdb` feature now depends on `jiff-tzdb` directly, the crate jiff already bundles.
-- Added `IcalRecurTimeline::of_component`, which walks a component with no `UID` as a series of its own.
-- Added `IcalTz::x_wr_timezone` and `IcalTz::apply_x_wr_timezone`, which tells every UTC or floating date-time of a `VEVENT` on the zone `X-WR-TIMEZONE` names, as calendar applications read the extension.
-- Added `IcalValidateError::RuleSyntax`, reported for an `RRULE` or `EXRULE` holding a part whose value does not parse, which validation passed silently before. **Breaking** for an exhaustive match on `IcalValidateError`.
-- Added Windows time zone names to `tzdb::zone` and `tzdb::zones`: `Pacific Standard Time` reads as America/Los_Angeles, through the CLDR windowsZones table.
-- Added a timeline corpus, tests/corpus/timeline, crossed against recurring-ical-events 3.9.0 and ical.js 2.2.1 over 181 calendars.
-- Added the `rscale` feature, which expands a rule on the calendar its RFC 7529 `RSCALE` names (Hebrew, Chinese, Islamic and others) through `icu_calendar`, leap months and `SKIP` included.
-- Added `IcalRecurMonth`, a `BYMONTH` entry with a leap flag (`5L`), and `IcalRecurRuleProblem::MonthScale` for a 13th or a leap month on the Gregorian scale. **Breaking**: `IcalRecurRule::by_month` is a `Vec<IcalRecurMonth>`, and an exhaustive match on `IcalRecurRuleProblem` needs the arm.
-- Added `IcalPropKind::TzUntil` and `IcalTz::until`, read from a `VTIMEZONE`'s RFC 7808 `TZUNTIL`. **Breaking** for an exhaustive match on `IcalPropKind` and for an `IcalTz` built by its fields.
-- Added `IcalValidateError::StartType`, reported for an `UNTIL` or an `EXDATE` whose value type is not the `DTSTART`'s. **Breaking** for an exhaustive match on `IcalValidateError`.
+- **BREAKING**: Added `IcalParseError::TooDeep`, refusing a component nested deeper than `IcalCst::DEPTH_MAX` (16).
+
+  `IcalCst::parse_recovering` keeps it as raw lines of the deepest component it admits.
+
+- Added `IcalRecurExpand::skip_to` and `IcalRecurSetExpand::skip_to`, jumping a walk to a date-time.
+
+  A window over a rule with no `COUNT` costs the window, not the history since `DTSTART`.
+
+- Added `recur::instant::IcalRecurTimeline`, walking a series and its overrides as instants within a window.
+
+  Each `IcalRecurInstant` carries its identity, start and end, the end read from `DTEND`, `DUE` or `DURATION`, else the RFC 5545 3.6.1 default.
+
+- Added `IcalRecurTimeline::of_component`, walking a component with no `UID` as a series of its own.
+- Added `IcalRecurSet::of_uid_in`, reading a set through a given zone list.
 - Added `IcalRecurSet::exdays`, the days a `DATE` `EXDATE` names beside a `DATE-TIME` start.
-- Added recurrence benchmarks against rrule 0.14, benches/recur.rs, and a cross-language ballpark in benches/README.md.
+- Added `IcalDuration::nominal`, a duration as wall-clock days and exact seconds.
+- Added `IcalTz::of_components`, every zone the `VTIMEZONE`s of a calendar define.
+- Added `IcalTz::x_wr_timezone` and `IcalTz::apply_x_wr_timezone`, reading UTC and floating times on the zone `X-WR-TIMEZONE` names.
+- **BREAKING**: Added `IcalPropKind::TzUntil` and `IcalTz::until`, read from the RFC 7808 `TZUNTIL`.
+- Added `tzdb::zone` and `tzdb::zones`, resolving a `TZID` with no `VTIMEZONE` through the bundled IANA database.
+
+  The calendar's own definition wins, and Windows names (`Pacific Standard Time`) resolve through the CLDR table.
+
+- Added `tzdb::version`, the IANA release of the bundled database.
+- Added the `rscale` feature, expanding a rule on the calendar its RFC 7529 `RSCALE` names.
+- **BREAKING**: Added `IcalRecurMonth`, a `BYMONTH` entry with a leap flag (`5L`), now the item of `IcalRecurRule::by_month`.
+
+  `IcalRecurRuleProblem::MonthScale` reports a 13th or a leap month on the Gregorian scale.
+
+- **BREAKING**: Added `IcalValidateError::RuleSyntax`, reported for an `RRULE` or `EXRULE` part that does not parse.
+- **BREAKING**: Added `IcalValidateError::StartType`, reported for an `UNTIL` or `EXDATE` typed unlike `DTSTART`.
+- Added a timeline corpus, crossed against recurring-ical-events 3.9.0 and ical.js 2.2.1 over 181 calendars.
+- Added recurrence benchmarks against rrule 0.14.
 
 ### Changed
 
-- Changed `IcalBinary::decode_base64` to return `Option<(Vec<u8>, bool)>`, the decoded bytes and whether the payload was well-formed. **Breaking** for a caller matching the base64 crate's error.
+- **BREAKING**: Changed `IcalBinary::decode_base64` to return `Option<(Vec<u8>, bool)>`, the bytes and whether they were well-formed.
 
-  Decoding is liberal: line breaks and blanks are skipped, any other byte outside the alphabet is skipped and reported, missing padding is accepted.
+  Decoding is lenient: blanks, line breaks and missing padding are accepted, other stray bytes skipped and reported.
 
-- Changed the `base64` and `quoted-printable` features to run on base64-codec and quoted-printable-codec, with SIMD kernels for the CPU token the application installs through simd-cpu (`SimdCpu::install_detected()` in `main`), the portable code otherwise. `rust-version` is 1.89.
-- Changed `IcalRecurSet::of_uid_in` and `IcalRecurTimeline::of_uid` to pick the series and each override by highest `SEQUENCE` rather than by listing order, and to drop a former series a reschedule left behind: an override with its own `RRULE`, a lower `SEQUENCE` and an instance the series no longer generates.
-- Changed a `VTODO` with no `DTSTART` to recur from its `DUE` (RFC 8984 4.3.3); only one with no `RRULE` yielded before, as one point.
-- Changed an end before its start to be swapped with it rather than read as the start, the identity staying on `DTSTART`.
+- Changed the `base64` and `quoted-printable` features to run on base64-codec and quoted-printable-codec.
+
+  They use SIMD once the application calls simd-cpu's `SimdCpu::install_detected()`. `rust-version` is 1.89.
+
+- Changed the `tzdb` feature to depend on `jiff-tzdb` directly.
+- Changed the series and each override to be picked by highest `SEQUENCE` rather than by listing order.
+
+  A former series a reschedule left behind is dropped.
+
+- Changed a `VTODO` with no `DTSTART` to recur from its `DUE` (RFC 8984 4.3.3).
+- Changed an end before its start to be swapped with it, the identity staying on `DTSTART`.
 - Changed a `RANGE=THISANDFUTURE` override to carry its own duration to the instances it shifts.
-- Changed `tzdb::zones` to read a time before a `VTIMEZONE`'s earliest observance through the database, for a name it knows (RFC 7808 7.1), rather than at the offset that observance came from.
-- Changed a recurrence set whose every rule ends on a day before its `DTSTART` to yield nothing, its `DTSTART` included: the shape of a series deleted from its first instance on.
-- Changed a recurrence set to read a rule holding a malformed part (`COUNT=-1`) without that part, rather than drop the whole rule.
-- Changed `tzdb::zones` to read a time past a `VTIMEZONE`'s `TZUNTIL`, or past the end of a truncated definition, through the database.
-- Changed an `EXDATE` of value type `DATE` beside a `DATE-TIME` `DTSTART` to remove every instance on that day, as libical, recurring-ical-events and ical.js do.
-- Changed expansion to walk a yearly or monthly period a month at a time: a yearly rule expands about six times faster.
-- Changed parsing, decoding and serializing to take fewer cycles, with the same output: 41% fewer for a strict parse of the test corpus, 35% for parse and decode, 39% for parse and `to_bytes`, 47 to 49% on a short calendar. A folded line is joined once, its head borrowed from the input; lines are filled in place and a nested `BEGIN` line is read once; names are looked up with no allocation; decoding checks UTF-8 before any lossy walk. A parsed component's item list now starts with room for 16 items.
-- Changed `Display` for `Ical` (and so `to_string`) to write the text straight from the decoded model rather than through an encoded syntax tree, with the same output: 90% fewer cycles over the test corpus, 92% on a short calendar.
-- Changed parsing, decoding and serializing to take fewer cycles again, in a second pass with the same output: 29% fewer for a strict parse of the test corpus, 29% for parse and decode, 27% for parse and `to_bytes`, 24 to 29% on a short calendar; `to_string` of a parsed calendar 49% fewer (64% on a short one) and `encode` of a decoded one 20% fewer (25%). ASCII names and values skip the UTF-8 check's call; lines, components, decoded properties and parameters are written where they stay; encoding borrows a known name's canonical spelling rather than allocating it.
+- Changed `tzdb::zones` to read a time outside a known `VTIMEZONE`'s definition through the database.
+- Changed a recurrence set whose every rule ends before its `DTSTART` to yield nothing.
+- Changed a rule holding a malformed part (`COUNT=-1`) to be read without that part rather than dropped.
+- Changed a `DATE` `EXDATE` beside a `DATE-TIME` `DTSTART` to remove every instance on that day.
+- Changed yearly and monthly expansion to walk a month at a time, a yearly rule about six times faster.
+- Changed parsing, decoding and serializing to take about half the cycles, with the same output.
+
+  A decoded calendar's `Display` writes straight from the model, in a tenth of the cycles or less.
 
 ### Fixed
 
-- Fixed `IcalBinary::decode_base64` failing on a payload missing its padding or holding a byte outside the alphabet.
-- Fixed `IcalValueCursor::quoted_printable` (and `charset` through it) dropping every byte outside printable ASCII and the blanks before it: `caf=E9 \xFF` read `caf\xE9`. Every byte is kept.
-- Fixed a stack overflow parsing a calendar nesting a few hundred components (about 9 KB of `BEGIN` lines on a 1 MiB stack), and in every later walk of such a tree.
-- Fixed a merge of two identical sides reporting a collision when both retyped or rezoned a value and changed it, and landing twice a stamp both sides added beside another.
+- Fixed `IcalBinary::decode_base64` failing on a payload missing its padding or holding a stray byte.
+- Fixed `IcalValueCursor::quoted_printable` dropping bytes outside printable ASCII, and the blanks before them.
+- Fixed a stack overflow on a calendar nesting a few hundred components.
+- Fixed a merge of two identical sides reporting a collision when both retyped or rezoned a value and changed it.
+- Fixed a merge landing twice a stamp both sides added.
 
 ## [0.6.1] - 2026-10-10
 

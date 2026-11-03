@@ -16,17 +16,14 @@ iCalendar parser, validator, editor, merger and builder library for Rust
 
 ## Features
 
-- **Both iCalendar flavours**: read and write vCalendar 1.0 and iCalendar 2.0 through one version-agnostic model.
-- **Nested structure, preserved**: events, to-dos, journals, free/busy blocks, time zones and alarms, parsed and round-tripped whole.
-- **Byte-faithful editing**: change one field and every other byte comes back unchanged, line endings and fold points included.
-- **Forgiving parser**: accept any real calendar, with a recovering mode for the ones a strict reading would throw away whole.
-- **Strict building and validation**: construct calendars checked against the standard, with an escape hatch to step outside it.
-- **Recurrence and time zones**: expand a rule or a whole recurrence set, and resolve an offset from the calendar's own rules.
-- **Three-way merge**: reconcile two divergent edits against their common base, every action and conflict reported.
-- **Small and portable**: no_std compatible, with an allocation-only core that pulls in no dependencies; the parser itself is optional.
-- **Optional content decoding**: quoted-printable text, inline base64 binary and foreign character sets, each behind its own feature; quoted-printable and base64 run SIMD kernels (AVX-512, AVX2, SSSE3, NEON) once the application installs its CPU token with [simd-cpu](https://github.com/pimalaya/simd-cpu)'s `SimdCpu::install_detected()`.
-- **Optional jCal**: read and write a calendar as JSON.
-- **Optional JSCalendar**: convert a calendar to and from the object model exchanged over JMAP.
+- **Both flavours**: read and write vCalendar 1.0 and iCalendar 2.0 through one model.
+- **Byte-faithful editing**: change one field, every other byte comes back unchanged.
+- **Forgiving parser**: read any real calendar, with a recovering mode for broken ones.
+- **Strict building and validation**: construct calendars checked against the standard.
+- **Recurrence and time zones**: expand recurring series across zones, IANA database included.
+- **Three-way merge**: reconcile two divergent edits against their common base.
+- **Small and fast**: no_std, with SIMD-accelerated base64 and quoted-printable decoding.
+- **jCal and JSCalendar**: convert a calendar to and from JSON and the JMAP object model.
 
 > [!TIP]
 > ical-rs uses [cargo features](https://doc.rust-lang.org/cargo/reference/features.html) to gate optional support. The default feature set is declared in [Cargo.toml](./Cargo.toml) or on [docs.rs](https://docs.rs/crate/ical-rs/latest/features).

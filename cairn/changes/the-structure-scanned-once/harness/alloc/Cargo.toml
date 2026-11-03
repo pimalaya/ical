@@ -1,0 +1,12 @@
+[package]
+name = "ialloc"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+ical = { package = "ical-rs", path = "/tmp/claude-1000/-home-soywod-code-pimalaya/763c3b3e-4fde-4255-978b-60f2447b812a/scratchpad/alib" }
+
+[profile.release]
+codegen-units = 1
+
+[workspace]
