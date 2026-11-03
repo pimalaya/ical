@@ -103,9 +103,11 @@ use alloc::{
     vec::Vec,
 };
 
+#[cfg(feature = "parser")]
+use crate::value::IcalUnknownValue;
 use crate::{
     param::IcalParam,
-    value::{IcalUnknownValue, IcalValue, owned, text::IcalText},
+    value::{IcalValue, owned, text::IcalText},
 };
 
 /// Parse iCalendar property kind error.
@@ -218,6 +220,7 @@ impl<'a> IcalProp<'a> {
 
 impl IcalProp<'_> {
     /// A property holding nothing, for the decoder to fill in place.
+    #[cfg(feature = "parser")]
     pub(crate) const fn empty() -> Self {
         Self {
             name: IcalPropName::Unknown(Cow::Borrowed("")),

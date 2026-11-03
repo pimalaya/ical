@@ -362,6 +362,7 @@ pub enum IcalParam<'a> {
 
 impl IcalParam<'_> {
     /// A parameter holding nothing, for the decoder to fill in place.
+    #[cfg(feature = "parser")]
     pub(crate) const fn empty() -> Self {
         Self::Unknown {
             name: Cow::Borrowed(""),

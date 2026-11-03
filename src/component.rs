@@ -130,6 +130,7 @@ impl IcalComponentName<'_> {
 
 impl IcalComponent<'_> {
     /// A component holding nothing, for the decoder to fill in place.
+    #[cfg(feature = "parser")]
     pub(crate) const fn empty() -> Self {
         Self {
             name: IcalComponentName::Unknown(Cow::Borrowed("")),

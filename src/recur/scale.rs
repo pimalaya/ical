@@ -90,6 +90,7 @@ impl IcalRecurScale {
     }
 
     /// How many months a year has, leap months included.
+    #[cfg_attr(not(feature = "rscale"), allow(unused_variables))]
     pub(crate) fn months_in_year(&self, year: i32) -> u8 {
         match self {
             Self::Gregorian => 12,
@@ -119,6 +120,7 @@ impl IcalRecurScale {
     }
 
     /// The month a rule names that sits at an ordinal of a year.
+    #[cfg_attr(not(feature = "rscale"), allow(unused_variables))]
     pub(crate) fn month(&self, year: i32, ordinal: u8) -> IcalRecurMonth {
         match self {
             Self::Gregorian => IcalRecurMonth::regular(ordinal),
@@ -130,6 +132,7 @@ impl IcalRecurScale {
     /// The ordinal a month a rule names sits at in a year, `None` when the
     /// year lacks it: a leap month a common year does not have, or a number
     /// past the scale's last month.
+    #[cfg_attr(not(feature = "rscale"), allow(unused_variables))]
     pub(crate) fn ordinal(&self, year: i32, month: IcalRecurMonth) -> Option<u8> {
         match self {
             Self::Gregorian => (!month.leap && month.number <= 12).then_some(month.number),
@@ -166,8 +169,7 @@ impl IcalRecurScale {
     /// The month a number of months after another, each a year and an
     /// ordinal. A year past [`YEAR_CAP`] stops there.
     pub(crate) fn add_months(&self, (year, ordinal): (i32, u8), months: i64) -> (i32, u8) {
-        let mut year = year;
-        let mut index = i64::from(ordinal) - 1 + months;
+        let index = i64::from(ordinal) - 1 + months;
 
         match self {
             Self::Gregorian => {
@@ -176,6 +178,8 @@ impl IcalRecurScale {
             }
             #[cfg(feature = "rscale")]
             Self::Icu(_) => {
+                let (mut year, mut index) = (year, index);
+
                 while index >= i64::from(self.months_in_year(year)) && year < YEAR_CAP * 2 {
                     index -= i64::from(self.months_in_year(year));
                     year += 1;
