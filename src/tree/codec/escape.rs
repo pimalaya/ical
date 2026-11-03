@@ -84,7 +84,7 @@ fn escape_of(byte: u8) -> &'static [u8] {
 /// early exit, which compiles to vector compares and a mask move, so a long
 /// value passes at several bytes a cycle. `hit` must join its tests with `|`:
 /// a `matches!` compiles to a branch per byte.
-fn position(bytes: &[u8], hit: impl Fn(u8) -> bool) -> Option<usize> {
+pub(crate) fn position(bytes: &[u8], hit: impl Fn(u8) -> bool) -> Option<usize> {
     let (blocks, tail) = bytes.as_chunks::<16>();
 
     for (i, block) in blocks.iter().enumerate() {

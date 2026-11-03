@@ -34,6 +34,8 @@
 
 use alloc::{borrow::Cow, vec::Vec};
 
+use crate::tree::leaf::put;
+
 /// The longest a physical line runs, its line ending excluded (RFC 5545 3.1).
 pub(crate) const FOLD_OCTETS: usize = 75;
 
@@ -278,7 +280,7 @@ impl<'a> IcalWire<'a> {
     /// shape [`fits`](Self::fits) the line.
     pub(crate) fn lay_out_value(&self, out: &mut Vec<u8>, start: usize, value: &[u8]) {
         if self.parts.is_empty() {
-            return out.extend_from_slice(value);
+            return put(out, value);
         }
 
         let head = out.len() - start;

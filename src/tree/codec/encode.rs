@@ -15,7 +15,7 @@
 //! would serialize to straight from the model: each value type spells its
 //! wire shape once, in an `emit` that writes either a node's leaves or text.
 
-use core::{fmt, mem, slice, str};
+use core::{fmt, mem, slice};
 
 use alloc::{
     borrow::Cow,
@@ -34,6 +34,7 @@ use crate::{
             Codec,
             escape::{escape_into, escape_param, escape_with},
             mode::Escaper,
+            unescape::text,
         },
         cst::{IcalCst, IcalItem},
         leaf::{IcalLeaf, IcalValueLeaf},
@@ -279,9 +280,9 @@ impl fmt::Display for Ical<'_> {
 
         // NOTE: Every piece is text and every escape and fold keeps it so,
         // the lossy walk being there only to keep this total.
-        match str::from_utf8(&out) {
-            Ok(text) => f.write_str(text),
-            Err(_) => f.write_str(&String::from_utf8_lossy(&out)),
+        match text(&out) {
+            Some(text) => f.write_str(text),
+            None => f.write_str(&String::from_utf8_lossy(&out)),
         }
     }
 }

@@ -702,7 +702,9 @@ impl<'a> IcalCst<'a> {
 
     /// Serialize the calendar to raw bytes, exactly as parsed.
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(self.size_hint());
+        // NOTE: Sixteen bytes of headroom, so writing the last short piece
+        // over sixteen zeroes never grows the buffer.
+        let mut out = Vec::with_capacity(self.size_hint() + 16);
         self.write_bytes(&mut out);
         out
     }
@@ -762,8 +764,8 @@ impl<'a> IcalRecovery<'a> {
 
     /// Serialize every calendar, in order: the input, byte for byte.
     pub fn to_bytes(&self) -> Vec<u8> {
-        let size = self.calendars.iter().map(IcalCst::size_hint).sum();
-        let mut out = Vec::with_capacity(size);
+        let size = self.calendars.iter().map(IcalCst::size_hint).sum::<usize>();
+        let mut out = Vec::with_capacity(size + 16);
 
         for cst in &self.calendars {
             cst.write_bytes(&mut out);

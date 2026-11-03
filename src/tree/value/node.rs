@@ -19,7 +19,7 @@
 //! edits back lives on this type, applying the rules of the sibling
 //! [`mode`](crate::tree::codec::mode) codec.
 
-use core::fmt;
+use core::{fmt, mem};
 
 use alloc::{borrow::Cow, string::String, vec::Vec};
 
@@ -71,6 +71,13 @@ impl<'a> IcalValueNode<'a> {
             components: Vec::new(),
             escaper: Escaper::Modern,
         }
+    }
+
+    /// Hold `value` unsplit and borrowed, as [`parse`](Self::parse) does, in
+    /// a node that holds nothing: what it held is not dropped.
+    #[inline(always)]
+    pub(crate) fn hold(&mut self, value: &'a [u8]) {
+        mem::forget(self.raw.replace(Cow::Borrowed(value)));
     }
 
     /// Build a value node from already-split components (the model encode

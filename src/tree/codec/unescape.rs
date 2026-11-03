@@ -94,15 +94,30 @@ pub(crate) fn unescape_param(text: &str, escaper: Escaper) -> Cow<'_, str> {
 /// and walking them lossily only when they are not.
 pub(crate) fn utf8_lossy(bytes: Cow<'_, [u8]>) -> Cow<'_, str> {
     match bytes {
-        Cow::Borrowed(bytes) => match str::from_utf8(bytes) {
-            Ok(text) => Cow::Borrowed(text),
-            Err(_) => String::from_utf8_lossy(bytes),
+        Cow::Borrowed(bytes) => match text(bytes) {
+            Some(text) => Cow::Borrowed(text),
+            None => String::from_utf8_lossy(bytes),
         },
         Cow::Owned(bytes) => match String::from_utf8(bytes) {
             Ok(text) => Cow::Owned(text),
             Err(error) => Cow::Owned(String::from_utf8_lossy(error.as_bytes()).into_owned()),
         },
     }
+}
+
+/// The bytes as text, when they are UTF-8.
+///
+/// ASCII, which nearly every name, parameter and value is, passes an inlined
+/// word-at-a-time check instead of a call to `str::from_utf8`, whose result
+/// comes back through memory and stalls the loads that copy it out.
+pub(crate) fn text(bytes: &[u8]) -> Option<&str> {
+    if bytes.is_ascii() {
+        // SAFETY: Every ASCII byte is a whole UTF-8 character, so an ASCII
+        // byte string is valid UTF-8.
+        return Some(unsafe { str::from_utf8_unchecked(bytes) });
+    }
+
+    str::from_utf8(bytes).ok()
 }
 
 /// Resolve the RFC 5545 3.3.11 value escapes `\\` `\,` `\;` `\n`, borrowing
