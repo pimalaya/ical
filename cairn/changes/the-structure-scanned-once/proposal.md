@@ -14,6 +14,7 @@ The handoff for the next speed pass over the parser, the decoded model and the s
 - This repo's AGENTS.md, cairn/spec/parsing.md and cairn/spec/decoded-model.md: round-trip fidelity, the serialization fixpoint, line normalisation and the fold of an encoded line at 75 octets are the requirements a speed change must not move.
 - cairn/log/2026-11-03-the-lines-built-in-place.md: what the first pass changed, each change with its cycles, and what it dropped.
 - ~/code/pimalaya/vcard/cairn: its two passes (log/2026-11-02-the-lines-built-in-place.md, log/2026-11-03-the-card-written-straight.md) and its handoff changes/the-structure-scanned-once/proposal.md, whose levers and traps apply here almost word for word; ~/code/pimalaya/mime/cairn/changes/the-scratch-area/proposal.md for the method they come from.
+- cairn/changes/a-folded-line-is-stripped-once-assembled: a draft fix in the join paths of `IcalLine::take_into` (a whitespace-only line's continuation leaves a space in front of the name). A speed pass keeps today's reading until that change lands, and a rewrite of the join paths carries its rule after.
 - cairn/changes/an-edited-line-keeps-its-folds: a draft that will rewrite how an edited line is folded. A speed change in src/tree/wire.rs or `IcalLine::write_bytes` must keep today's output byte for byte, and `lay_out_value` (the one-copy layout of an unsplit value) must follow whatever it changes in `lay_out`.
 
 ## Goal and rules
