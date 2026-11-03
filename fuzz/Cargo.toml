@@ -10,7 +10,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 ical-rs = { path = "..", features = ["parser", "quoted-printable", "base64", "encoding"] }
-simd-cpu = { version = "0.1", default-features = false, features = ["std"] }
+simd-cpu = { version = "0.1", features = ["std"] }
 
 [[bin]]
 name = "parse"
