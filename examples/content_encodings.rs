@@ -17,6 +17,10 @@ use ical::{
 };
 
 fn main() {
+    // The decoders run SIMD kernels for the CPU the application detected, once,
+    // first thing in `main`; without it they run their portable code.
+    let _ = simd_cpu::SimdCpu::install_detected();
+
     let raw = concat!(
         "BEGIN:VCALENDAR\r\n",
         "VERSION:2.0\r\n",
@@ -60,9 +64,10 @@ fn main() {
         .find(|prop| matches!(prop.name, IcalPropName::Kind(IcalPropKind::Attach)));
 
     if let Some(IcalValue::Binary(binary)) = event.map(|prop| &prop.value)
-        && let Some(Ok(bytes)) = binary.decode_base64()
+        && let Some((bytes, clean)) = binary.decode_base64()
     {
         println!("base64-decoded:    {:?}", String::from_utf8_lossy(&bytes));
+        println!("well-formed:       {clean}");
     }
 
     // Nothing was rewritten: the calendar comes back exactly as it arrived,

@@ -27,6 +27,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- Changed `IcalBinary::decode_base64` to return `Option<(Vec<u8>, bool)>`, the decoded bytes and whether the payload was well-formed. **Breaking** for a caller matching the base64 crate's error.
+
+  Decoding is liberal: line breaks and blanks are skipped, any other byte outside the alphabet is skipped and reported, missing padding is accepted.
+
+- Changed the `base64` and `quoted-printable` features to run on base64-codec and quoted-printable-codec, with SIMD kernels for the CPU token the application installs through simd-cpu (`SimdCpu::install_detected()` in `main`), the portable code otherwise. `rust-version` is 1.89.
 - Changed `IcalRecurSet::of_uid_in` and `IcalRecurTimeline::of_uid` to pick the series and each override by highest `SEQUENCE` rather than by listing order, and to drop a former series a reschedule left behind: an override with its own `RRULE`, a lower `SEQUENCE` and an instance the series no longer generates.
 - Changed a `VTODO` with no `DTSTART` to recur from its `DUE` (RFC 8984 4.3.3); only one with no `RRULE` yielded before, as one point.
 - Changed an end before its start to be swapped with it rather than read as the start, the identity staying on `DTSTART`.
@@ -42,6 +47,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- Fixed `IcalBinary::decode_base64` failing on a payload missing its padding or holding a byte outside the alphabet.
+- Fixed `IcalValueCursor::quoted_printable` (and `charset` through it) dropping every byte outside printable ASCII and the blanks before it: `caf=E9 \xFF` read `caf\xE9`. Every byte is kept.
 - Fixed a stack overflow parsing a calendar nesting a few hundred components (about 9 KB of `BEGIN` lines on a 1 MiB stack), and in every later walk of such a tree.
 - Fixed a merge of two identical sides reporting a collision when both retyped or rezoned a value and changed it, and landing twice a stamp both sides added beside another.
 

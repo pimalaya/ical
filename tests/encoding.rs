@@ -175,10 +175,33 @@ fn decodes_an_inline_base64_payload_on_request() {
         panic!("the attachment did not decode as binary");
     };
 
-    assert_eq!(
-        binary.decode_base64().expect("inline data").unwrap(),
-        b"foo"
-    );
+    assert_eq!(binary.decode_base64(), Some((b"foo".to_vec(), true)));
+}
+
+#[cfg(feature = "quoted-printable")]
+#[test]
+fn keeps_a_raw_8_bit_byte_among_quoted_printable_octets() {
+    let raw = raw_calendar(b"DESCRIPTION;ENCODING=QUOTED-PRINTABLE:caf=E9 \xFF");
+    let mut cst = IcalCst::parse(&raw).expect("a readable calendar");
+
+    let event = cst.component_mut::<VEVENT>().expect("the event");
+    let value = event.prop_mut::<DESCRIPTION>().expect("the description");
+
+    assert_eq!(value.quoted_printable(), b"caf\xE9 \xFF");
+}
+
+#[cfg(feature = "base64")]
+#[test]
+fn decodes_an_inline_base64_payload_missing_its_padding() {
+    let ics = calendar("ATTACH;ENCODING=BASE64;VALUE=BINARY:Zm9vYg");
+    let cst = IcalCst::parse(&ics).expect("a readable calendar");
+    let decoded = cst.decode();
+
+    let IcalValue::Binary(binary) = &decoded.components[0].props[1].value else {
+        panic!("the attachment did not decode as binary");
+    };
+
+    assert_eq!(binary.decode_base64(), Some((b"foob".to_vec(), true)));
 }
 
 #[cfg(feature = "base64")]
@@ -196,7 +219,9 @@ fn decodes_nothing_for_a_uri_reference() {
 fn reports_a_malformed_base64_payload_rather_than_guessing() {
     let broken = IcalBinary::Base64(Cow::Borrowed("not base64!"));
 
-    assert!(broken.decode_base64().expect("inline data").is_err());
+    // NOTE: The stray `!` is skipped and reported, the rest decoded.
+    let (_, clean) = broken.decode_base64().expect("inline data");
+    assert!(!clean);
 }
 
 #[cfg(feature = "encoding")]

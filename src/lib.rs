@@ -165,9 +165,15 @@
 //! and both JSON representations are always available.
 //!
 //! Three content decoders are default too, one small crate each:
-//! `quoted-printable` decodes `QUOTED-PRINTABLE` value octets, `base64`
-//! decodes inline `BASE64` binary values, and `encoding` transcodes a foreign
-//! `CHARSET` to text through `encoding_rs` (the WHATWG Encoding Standard).
+//! `quoted-printable` decodes `QUOTED-PRINTABLE` value octets through
+//! quoted-printable-codec, `base64` decodes inline `BASE64` binary values
+//! through base64-codec, and `encoding` transcodes a foreign `CHARSET` to text
+//! through `encoding_rs` (the WHATWG Encoding Standard).
+//!
+//! The two codecs run SIMD kernels for the CPU token the application installs
+//! once through the simd-cpu crate, `SimdCpu::install_detected()` first thing
+//! in `main`, and their portable code when it installs none. The crate never
+//! detects the CPU itself.
 //!
 //! `jcal` adds the RFC 7265 JSON representation, via the `serde_json` crate.
 //! `jscalendar` adds the JSCalendar JSON data model, RFC 8984 and 2.0, implies

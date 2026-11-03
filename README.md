@@ -24,7 +24,7 @@ iCalendar parser, validator, editor, merger and builder library for Rust
 - **Recurrence and time zones**: expand a rule or a whole recurrence set, and resolve an offset from the calendar's own rules.
 - **Three-way merge**: reconcile two divergent edits against their common base, every action and conflict reported.
 - **Small and portable**: no_std compatible, with an allocation-only core that pulls in no dependencies; the parser itself is optional.
-- **Optional content decoding**: quoted-printable text, inline base64 binary and foreign character sets, each behind its own feature.
+- **Optional content decoding**: quoted-printable text, inline base64 binary and foreign character sets, each behind its own feature; quoted-printable and base64 run SIMD kernels (AVX-512, AVX2, SSSE3, NEON) once the application installs its CPU token with [simd-cpu](https://github.com/pimalaya/simd-cpu)'s `SimdCpu::install_detected()`.
 - **Optional jCal**: read and write a calendar as JSON.
 - **Optional JSCalendar**: convert a calendar to and from the object model exchanged over JMAP.
 

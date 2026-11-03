@@ -3,7 +3,7 @@ name = "ical-rs"
 description = "iCalendar parser, validator, editor, merger and builder library"
 version = "0.6.1"
 authors = ["Clément DOUIN (soywod) <pimalaya.org@posteo.net>"]
-rust-version = "1.88"
+rust-version = "1.89"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 categories = ["data-structures", "parser-implementations", "encoding", "no-std"]
@@ -24,8 +24,8 @@ default = ["parser", "quoted-printable", "base64", "encoding"]
 parser = ["dep:memchr"]
 jcal = ["dep:serde_json"]
 jscalendar = ["jcal"]
-quoted-printable = ["dep:quoted_printable"]
-base64 = ["dep:base64"]
+quoted-printable = ["dep:quoted-printable-codec"]
+base64 = ["dep:base64-codec"]
 encoding = ["dep:encoding_rs"]
 tzdb = ["parser", "dep:jiff", "dep:jiff-tzdb"]
 rscale = ["dep:icu_calendar"]
@@ -121,13 +121,14 @@ ical_crate = { package = "ical", version = "0.11", default-features = false, fea
 icalendar = { version = "0.17", default-features = false, features = ["parser"] }
 proptest = { version = "1", default-features = false, features = ["std"] }
 rrule = { version = "0.14", default-features = false }
+simd-cpu = { version = "0.1", default-features = false, features = ["std"] }
 
 [dependencies]
-base64 = { version = "0.23", default-features = false, features = ["alloc"], optional = true }
+base64-codec = { version = "0.1", default-features = false, features = ["alloc"], optional = true }
 encoding_rs = { version = "0.8", default-features = false, features = ["alloc"], optional = true }
 icu_calendar = { version = "~2.3", default-features = false, optional = true }
 jiff = { version = "0.2.33", default-features = false, features = ["alloc", "tzdb-bundle-always"], optional = true }
 jiff-tzdb = { version = "0.1.8", optional = true }
 memchr = { version = "2", default-features = false, optional = true }
-quoted_printable = { version = "0.5", default-features = false, optional = true }
+quoted-printable-codec = { version = "0.1", default-features = false, features = ["alloc"], optional = true }
 serde_json = { version = "1", default-features = false, features = ["alloc"], optional = true }
