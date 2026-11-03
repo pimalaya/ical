@@ -126,7 +126,7 @@ simd-cpu = { version = "0.1", features = ["std"] }
 [dependencies]
 base64-codec = { version = "0.1", features = ["alloc"], optional = true }
 encoding_rs = { version = "0.8", default-features = false, features = ["alloc"], optional = true }
-icu_calendar = { version = "~2.3", default-features = false, optional = true }
+icu_calendar = { version = "2.4", default-features = false, optional = true }
 jiff = { version = "0.2.33", default-features = false, features = ["alloc", "tzdb-bundle-always"], optional = true }
 jiff-tzdb = { version = "0.1.8", optional = true }
 memchr = { version = "2", default-features = false, optional = true }
