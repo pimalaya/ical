@@ -60,16 +60,22 @@ impl<'a> IcalValueNode<'a> {
     /// name and eol are the line's business; this is only the bytes after the
     /// colon.
     pub fn parse(value: &'a [u8]) -> Self {
+        Self::parse_cow(Cow::Borrowed(value))
+    }
+
+    /// Wrap a raw value, unsplit, borrowed or owned (the bytes of a folded
+    /// line, joined once).
+    pub(crate) fn parse_cow(value: Cow<'a, [u8]>) -> Self {
         Self {
-            raw: Some(Cow::Borrowed(value)),
+            raw: Some(value),
             components: Vec::new(),
-            escaper: Escaper::default(),
+            escaper: Escaper::Modern,
         }
     }
 
     /// Build a value node from already-split components (the model encode
     /// path); there is no `raw`, so the components are the source of truth.
-    pub(crate) fn from_components(
+    pub(crate) const fn from_components(
         components: Vec<Vec<IcalValueLeaf<'a>>>,
         escaper: Escaper,
     ) -> Self {
@@ -282,6 +288,13 @@ impl<'a> IcalValueNode<'a> {
         }
 
         self.components[i] = encode_bytes_component(values, self.escaper);
+    }
+
+    /// The value's bytes while it is unsplit, as [`write_bytes`] writes them.
+    ///
+    /// [`write_bytes`]: Self::write_bytes
+    pub(crate) fn unsplit_bytes(&self) -> Option<&[u8]> {
+        self.raw.as_deref()
     }
 
     /// Serialize the raw value bytes (name, colon and eol are the line's job)

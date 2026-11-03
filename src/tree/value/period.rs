@@ -5,7 +5,7 @@
 
 use crate::{
     tree::{
-        codec::{Codec, encode::scalar_node, mode::Escaper},
+        codec::{Codec, encode::IcalValueOut, mode::Escaper},
         value::node::IcalValueNode,
     },
     value::period::IcalPeriod,
@@ -17,6 +17,13 @@ impl<'v> Codec<'v> for IcalPeriod<'v> {
     }
 
     fn encode(&self, escaper: Escaper) -> IcalValueNode<'static> {
-        scalar_node(&self.0, escaper)
+        IcalValueOut::node(escaper, |out| self.emit(out))
+    }
+}
+
+impl IcalPeriod<'_> {
+    /// Write the period as one component holding one value.
+    pub(crate) fn emit(&self, out: &mut IcalValueOut<'_>) {
+        out.component(&[&*self.0]);
     }
 }

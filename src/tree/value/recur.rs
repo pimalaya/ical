@@ -7,7 +7,7 @@
 
 use crate::{
     tree::{
-        codec::{Codec, mode::Escaper},
+        codec::{Codec, encode::IcalValueOut, mode::Escaper},
         value::node::IcalValueNode,
     },
     value::recur::IcalRecur,
@@ -19,8 +19,13 @@ impl<'v> Codec<'v> for IcalRecur<'v> {
     }
 
     fn encode(&self, escaper: Escaper) -> IcalValueNode<'static> {
-        let mut node = IcalValueNode::parse(self.0.as_bytes()).into_static();
-        node.escaper = escaper;
-        node
+        IcalValueOut::node(escaper, |out| self.emit(out))
+    }
+}
+
+impl IcalRecur<'_> {
+    /// Write the rule byte for byte, its separators in place.
+    pub(crate) fn emit(&self, out: &mut IcalValueOut<'_>) {
+        out.raw(&self.0);
     }
 }

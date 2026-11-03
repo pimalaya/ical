@@ -30,7 +30,10 @@ pub mod mode;
 pub mod unescape;
 
 use crate::{
-    tree::{codec::mode::Escaper, value::node::IcalValueNode},
+    tree::{
+        codec::{encode::IcalValueOut, mode::Escaper},
+        value::node::IcalValueNode,
+    },
     value::{IcalUnknownValue, IcalValue},
 };
 
@@ -58,28 +61,35 @@ impl<'v> Codec<'v> for IcalValue<'v> {
         IcalValue::Unknown(IcalUnknownValue::decode(node))
     }
 
-    /// Encode by dispatching to the held value's own codec.
+    /// Encode by dispatching to the held value's own shape.
     fn encode(&self, escaper: Escaper) -> IcalValueNode<'static> {
+        IcalValueOut::node(escaper, |out| self.emit(out))
+    }
+}
+
+impl IcalValue<'_> {
+    /// Write the held value's wire shape.
+    pub(crate) fn emit(&self, out: &mut IcalValueOut<'_>) {
         match self {
-            IcalValue::Binary(v) => v.encode(escaper),
-            IcalValue::Boolean(v) => v.encode(escaper),
-            IcalValue::CalAddress(v) => v.encode(escaper),
-            IcalValue::Date(v) => v.encode(escaper),
-            IcalValue::DateTime(v) => v.encode(escaper),
-            IcalValue::DateTimeList(v) => v.encode(escaper),
-            IcalValue::Duration(v) => v.encode(escaper),
-            IcalValue::Float(v) => v.encode(escaper),
-            IcalValue::Geo(v) => v.encode(escaper),
-            IcalValue::Integer(v) => v.encode(escaper),
-            IcalValue::Period(v) => v.encode(escaper),
-            IcalValue::Recur(v) => v.encode(escaper),
-            IcalValue::RequestStatus(v) => v.encode(escaper),
-            IcalValue::Text(v) => v.encode(escaper),
-            IcalValue::TextList(v) => v.encode(escaper),
-            IcalValue::Time(v) => v.encode(escaper),
-            IcalValue::Uri(v) => v.encode(escaper),
-            IcalValue::UtcOffset(v) => v.encode(escaper),
-            IcalValue::Unknown(v) => v.encode(escaper),
+            IcalValue::Binary(v) => v.emit(out),
+            IcalValue::Boolean(v) => v.emit(out),
+            IcalValue::CalAddress(v) => v.emit(out),
+            IcalValue::Date(v) => v.emit(out),
+            IcalValue::DateTime(v) => v.emit(out),
+            IcalValue::DateTimeList(v) => v.emit(out),
+            IcalValue::Duration(v) => v.emit(out),
+            IcalValue::Float(v) => v.emit(out),
+            IcalValue::Geo(v) => v.emit(out),
+            IcalValue::Integer(v) => v.emit(out),
+            IcalValue::Period(v) => v.emit(out),
+            IcalValue::Recur(v) => v.emit(out),
+            IcalValue::RequestStatus(v) => v.emit(out),
+            IcalValue::Text(v) => v.emit(out),
+            IcalValue::TextList(v) => v.emit(out),
+            IcalValue::Time(v) => v.emit(out),
+            IcalValue::Uri(v) => v.emit(out),
+            IcalValue::UtcOffset(v) => v.emit(out),
+            IcalValue::Unknown(v) => v.emit(out),
         }
     }
 }

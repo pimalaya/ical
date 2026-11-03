@@ -107,6 +107,9 @@ fn ical_rs_pipeline(c: &mut Criterion) {
     c.bench_function("ical-rs: encode", |b| {
         b.iter(|| black_box(black_box(&cal).encode()))
     });
+    c.bench_function("ical-rs: to_string", |b| {
+        b.iter(|| black_box(black_box(&cal).to_string()))
+    });
     c.bench_function("ical-rs: to_bytes", |b| {
         b.iter(|| black_box(black_box(&cst).to_bytes()))
     });

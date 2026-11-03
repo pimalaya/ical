@@ -173,7 +173,7 @@ impl From<&IcalPropKind> for IcalPropName<'_> {
 
 impl<'a> From<Cow<'a, str>> for IcalPropName<'a> {
     fn from(name: Cow<'a, str>) -> Self {
-        match name.parse().ok() {
+        match IcalPropKind::from_name(&name) {
             Some(kind) => Self::Kind(kind),
             None => Self::Unknown(name),
         }
@@ -460,87 +460,115 @@ impl IcalPropKind {
     ];
 }
 
+impl IcalPropKind {
+    /// The known property for a wire name (case-insensitive), or `None`.
+    ///
+    /// The name is matched as it is first, the canonical upper case being the
+    /// usual spelling, and only a name holding a lower-case letter is
+    /// upper-cased into a stack copy and matched again: the copy is read back
+    /// before its stores land. No allocation, for an unknown name either.
+    pub(crate) fn from_name(kind: &str) -> Option<Self> {
+        if let Some(kind) = Self::from_upper(kind.as_bytes()) {
+            return Some(kind);
+        }
+
+        if !kind.bytes().any(|byte| byte.is_ascii_lowercase()) {
+            return None;
+        }
+
+        let mut upper = [0; 18];
+        let upper = upper.get_mut(..kind.len())?;
+        upper.copy_from_slice(kind.as_bytes());
+        upper.make_ascii_uppercase();
+
+        Self::from_upper(upper)
+    }
+
+    /// The known property for an upper-case wire name, or `None`.
+    fn from_upper(kind: &[u8]) -> Option<Self> {
+        Some(match kind {
+            b"CALSCALE" => Self::CalScale,
+            b"METHOD" => Self::Method,
+            b"PRODID" => Self::ProdId,
+            b"ATTACH" => Self::Attach,
+            b"CATEGORIES" => Self::Categories,
+            b"CLASS" => Self::Class,
+            b"COMMENT" => Self::Comment,
+            b"DESCRIPTION" => Self::Description,
+            b"GEO" => Self::Geo,
+            b"LOCATION" => Self::Location,
+            b"PERCENT-COMPLETE" => Self::PercentComplete,
+            b"PRIORITY" => Self::Priority,
+            b"RESOURCES" => Self::Resources,
+            b"STATUS" => Self::Status,
+            b"SUMMARY" => Self::Summary,
+            b"COMPLETED" => Self::Completed,
+            b"DTEND" => Self::DtEnd,
+            b"DUE" => Self::Due,
+            b"DTSTART" => Self::DtStart,
+            b"DURATION" => Self::Duration,
+            b"FREEBUSY" => Self::FreeBusy,
+            b"TRANSP" => Self::Transp,
+            b"TZID" => Self::TzId,
+            b"TZNAME" => Self::TzName,
+            b"TZOFFSETFROM" => Self::TzOffsetFrom,
+            b"TZOFFSETTO" => Self::TzOffsetTo,
+            b"TZURL" => Self::TzUrl,
+            b"TZUNTIL" => Self::TzUntil,
+            b"ATTENDEE" => Self::Attendee,
+            b"CONTACT" => Self::Contact,
+            b"ORGANIZER" => Self::Organizer,
+            b"RECURRENCE-ID" => Self::RecurrenceId,
+            b"RELATED-TO" => Self::RelatedTo,
+            b"URL" => Self::Url,
+            b"UID" => Self::Uid,
+            b"EXDATE" => Self::ExDate,
+            b"RDATE" => Self::RDate,
+            b"RRULE" => Self::RRule,
+            b"EXRULE" => Self::ExRule,
+            b"ACTION" => Self::Action,
+            b"REPEAT" => Self::Repeat,
+            b"TRIGGER" => Self::Trigger,
+            b"CREATED" => Self::Created,
+            b"DTSTAMP" => Self::DtStamp,
+            b"LAST-MODIFIED" => Self::LastModified,
+            b"SEQUENCE" => Self::Sequence,
+            b"REQUEST-STATUS" => Self::RequestStatus,
+            b"NAME" => Self::Name,
+            b"REFRESH-INTERVAL" => Self::RefreshInterval,
+            b"SOURCE" => Self::Source,
+            b"COLOR" => Self::Color,
+            b"IMAGE" => Self::Image,
+            b"CONFERENCE" => Self::Conference,
+            b"PARTICIPANT-TYPE" => Self::ParticipantType,
+            b"RESOURCE-TYPE" => Self::ResourceType,
+            b"CALENDAR-ADDRESS" => Self::CalendarAddress,
+            b"LOCATION-TYPE" => Self::LocationType,
+            b"STRUCTURED-DATA" => Self::StructuredData,
+            b"LINK" => Self::Link,
+            b"REFID" => Self::Refid,
+            b"CONCEPT" => Self::Concept,
+            b"BUSYTYPE" => Self::BusyType,
+            b"STYLED-DESCRIPTION" => Self::StyledDescription,
+            b"ACKNOWLEDGED" => Self::Acknowledged,
+            b"PROXIMITY" => Self::Proximity,
+            b"TZ" => Self::Tz,
+            b"AALARM" => Self::AAlarm,
+            b"DALARM" => Self::DAlarm,
+            b"MALARM" => Self::MAlarm,
+            b"PALARM" => Self::PAlarm,
+            b"RNUM" => Self::RNum,
+            _ => return None,
+        })
+    }
+}
+
 impl str::FromStr for IcalPropKind {
     type Err = ParseIcalPropKindError;
 
     /// The known property for a wire name (case-insensitive), or an error.
     fn from_str(kind: &str) -> Result<Self, Self::Err> {
-        let kind = match kind {
-            kind if kind.eq_ignore_ascii_case("CALSCALE") => Self::CalScale,
-            kind if kind.eq_ignore_ascii_case("METHOD") => Self::Method,
-            kind if kind.eq_ignore_ascii_case("PRODID") => Self::ProdId,
-            kind if kind.eq_ignore_ascii_case("ATTACH") => Self::Attach,
-            kind if kind.eq_ignore_ascii_case("CATEGORIES") => Self::Categories,
-            kind if kind.eq_ignore_ascii_case("CLASS") => Self::Class,
-            kind if kind.eq_ignore_ascii_case("COMMENT") => Self::Comment,
-            kind if kind.eq_ignore_ascii_case("DESCRIPTION") => Self::Description,
-            kind if kind.eq_ignore_ascii_case("GEO") => Self::Geo,
-            kind if kind.eq_ignore_ascii_case("LOCATION") => Self::Location,
-            kind if kind.eq_ignore_ascii_case("PERCENT-COMPLETE") => Self::PercentComplete,
-            kind if kind.eq_ignore_ascii_case("PRIORITY") => Self::Priority,
-            kind if kind.eq_ignore_ascii_case("RESOURCES") => Self::Resources,
-            kind if kind.eq_ignore_ascii_case("STATUS") => Self::Status,
-            kind if kind.eq_ignore_ascii_case("SUMMARY") => Self::Summary,
-            kind if kind.eq_ignore_ascii_case("COMPLETED") => Self::Completed,
-            kind if kind.eq_ignore_ascii_case("DTEND") => Self::DtEnd,
-            kind if kind.eq_ignore_ascii_case("DUE") => Self::Due,
-            kind if kind.eq_ignore_ascii_case("DTSTART") => Self::DtStart,
-            kind if kind.eq_ignore_ascii_case("DURATION") => Self::Duration,
-            kind if kind.eq_ignore_ascii_case("FREEBUSY") => Self::FreeBusy,
-            kind if kind.eq_ignore_ascii_case("TRANSP") => Self::Transp,
-            kind if kind.eq_ignore_ascii_case("TZID") => Self::TzId,
-            kind if kind.eq_ignore_ascii_case("TZNAME") => Self::TzName,
-            kind if kind.eq_ignore_ascii_case("TZOFFSETFROM") => Self::TzOffsetFrom,
-            kind if kind.eq_ignore_ascii_case("TZOFFSETTO") => Self::TzOffsetTo,
-            kind if kind.eq_ignore_ascii_case("TZURL") => Self::TzUrl,
-            kind if kind.eq_ignore_ascii_case("TZUNTIL") => Self::TzUntil,
-            kind if kind.eq_ignore_ascii_case("ATTENDEE") => Self::Attendee,
-            kind if kind.eq_ignore_ascii_case("CONTACT") => Self::Contact,
-            kind if kind.eq_ignore_ascii_case("ORGANIZER") => Self::Organizer,
-            kind if kind.eq_ignore_ascii_case("RECURRENCE-ID") => Self::RecurrenceId,
-            kind if kind.eq_ignore_ascii_case("RELATED-TO") => Self::RelatedTo,
-            kind if kind.eq_ignore_ascii_case("URL") => Self::Url,
-            kind if kind.eq_ignore_ascii_case("UID") => Self::Uid,
-            kind if kind.eq_ignore_ascii_case("EXDATE") => Self::ExDate,
-            kind if kind.eq_ignore_ascii_case("RDATE") => Self::RDate,
-            kind if kind.eq_ignore_ascii_case("RRULE") => Self::RRule,
-            kind if kind.eq_ignore_ascii_case("EXRULE") => Self::ExRule,
-            kind if kind.eq_ignore_ascii_case("ACTION") => Self::Action,
-            kind if kind.eq_ignore_ascii_case("REPEAT") => Self::Repeat,
-            kind if kind.eq_ignore_ascii_case("TRIGGER") => Self::Trigger,
-            kind if kind.eq_ignore_ascii_case("CREATED") => Self::Created,
-            kind if kind.eq_ignore_ascii_case("DTSTAMP") => Self::DtStamp,
-            kind if kind.eq_ignore_ascii_case("LAST-MODIFIED") => Self::LastModified,
-            kind if kind.eq_ignore_ascii_case("SEQUENCE") => Self::Sequence,
-            kind if kind.eq_ignore_ascii_case("REQUEST-STATUS") => Self::RequestStatus,
-            kind if kind.eq_ignore_ascii_case("NAME") => Self::Name,
-            kind if kind.eq_ignore_ascii_case("REFRESH-INTERVAL") => Self::RefreshInterval,
-            kind if kind.eq_ignore_ascii_case("SOURCE") => Self::Source,
-            kind if kind.eq_ignore_ascii_case("COLOR") => Self::Color,
-            kind if kind.eq_ignore_ascii_case("IMAGE") => Self::Image,
-            kind if kind.eq_ignore_ascii_case("CONFERENCE") => Self::Conference,
-            kind if kind.eq_ignore_ascii_case("PARTICIPANT-TYPE") => Self::ParticipantType,
-            kind if kind.eq_ignore_ascii_case("RESOURCE-TYPE") => Self::ResourceType,
-            kind if kind.eq_ignore_ascii_case("CALENDAR-ADDRESS") => Self::CalendarAddress,
-            kind if kind.eq_ignore_ascii_case("LOCATION-TYPE") => Self::LocationType,
-            kind if kind.eq_ignore_ascii_case("STRUCTURED-DATA") => Self::StructuredData,
-            kind if kind.eq_ignore_ascii_case("LINK") => Self::Link,
-            kind if kind.eq_ignore_ascii_case("REFID") => Self::Refid,
-            kind if kind.eq_ignore_ascii_case("CONCEPT") => Self::Concept,
-            kind if kind.eq_ignore_ascii_case("BUSYTYPE") => Self::BusyType,
-            kind if kind.eq_ignore_ascii_case("STYLED-DESCRIPTION") => Self::StyledDescription,
-            kind if kind.eq_ignore_ascii_case("ACKNOWLEDGED") => Self::Acknowledged,
-            kind if kind.eq_ignore_ascii_case("PROXIMITY") => Self::Proximity,
-            kind if kind.eq_ignore_ascii_case("TZ") => Self::Tz,
-            kind if kind.eq_ignore_ascii_case("AALARM") => Self::AAlarm,
-            kind if kind.eq_ignore_ascii_case("DALARM") => Self::DAlarm,
-            kind if kind.eq_ignore_ascii_case("MALARM") => Self::MAlarm,
-            kind if kind.eq_ignore_ascii_case("PALARM") => Self::PAlarm,
-            kind if kind.eq_ignore_ascii_case("RNUM") => Self::RNum,
-            _ => return Err(ParseIcalPropKindError(kind.to_string())),
-        };
-
-        Ok(kind)
+        Self::from_name(kind).ok_or_else(|| ParseIcalPropKindError(kind.to_string()))
     }
 }
 

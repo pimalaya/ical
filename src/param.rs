@@ -158,49 +158,76 @@ impl IcalParamKind {
     ];
 }
 
+impl IcalParamKind {
+    /// The known parameter for a wire name (case-insensitive), or `None`.
+    ///
+    /// Matched as it is first, then upper-cased into a stack copy only when it
+    /// holds a lower-case letter, as
+    /// [`IcalPropKind::from_name`](crate::prop::IcalPropKind) does.
+    pub(crate) fn from_name(kind: &str) -> Option<Self> {
+        if let Some(kind) = Self::from_upper(kind.as_bytes()) {
+            return Some(kind);
+        }
+
+        if !kind.bytes().any(|byte| byte.is_ascii_lowercase()) {
+            return None;
+        }
+
+        let mut upper = [0; 19];
+        let upper = upper.get_mut(..kind.len())?;
+        upper.copy_from_slice(kind.as_bytes());
+        upper.make_ascii_uppercase();
+
+        Self::from_upper(upper)
+    }
+
+    /// The known parameter for an upper-case wire name, or `None`.
+    fn from_upper(kind: &[u8]) -> Option<Self> {
+        Some(match kind {
+            b"ALTREP" => Self::AltRep,
+            b"CN" => Self::Cn,
+            b"CUTYPE" => Self::CuType,
+            b"DELEGATED-FROM" => Self::DelegatedFrom,
+            b"DELEGATED-TO" => Self::DelegatedTo,
+            b"DIR" => Self::Dir,
+            b"ENCODING" => Self::Encoding,
+            b"FMTTYPE" => Self::FmtType,
+            b"FBTYPE" => Self::FbType,
+            b"LANGUAGE" => Self::Language,
+            b"MEMBER" => Self::Member,
+            b"PARTSTAT" => Self::PartStat,
+            b"RANGE" => Self::Range,
+            b"RELATED" => Self::Related,
+            b"RELTYPE" => Self::RelType,
+            b"ROLE" => Self::Role,
+            b"RSVP" => Self::Rsvp,
+            b"SENT-BY" => Self::SentBy,
+            b"TZID" => Self::TzId,
+            b"VALUE" => Self::Value,
+            b"DISPLAY" => Self::Display,
+            b"EMAIL" => Self::Email,
+            b"FEATURE" => Self::Feature,
+            b"LABEL" => Self::Label,
+            b"ORDER" => Self::Order,
+            b"SCHEMA" => Self::Schema,
+            b"DERIVED" => Self::Derived,
+            b"SCHEDULE-AGENT" => Self::ScheduleAgent,
+            b"SCHEDULE-FORCE-SEND" => Self::ScheduleForceSend,
+            b"SCHEDULE-STATUS" => Self::ScheduleStatus,
+            b"LINKREL" => Self::LinkRel,
+            b"GAP" => Self::Gap,
+            b"CHARSET" => Self::Charset,
+            _ => return None,
+        })
+    }
+}
+
 impl str::FromStr for IcalParamKind {
     type Err = ParseIcalParamKindError;
 
     /// The known parameter for a wire name (case-insensitive).
     fn from_str(kind: &str) -> Result<Self, Self::Err> {
-        let kind = match kind {
-            kind if kind.eq_ignore_ascii_case("ALTREP") => Self::AltRep,
-            kind if kind.eq_ignore_ascii_case("CN") => Self::Cn,
-            kind if kind.eq_ignore_ascii_case("CUTYPE") => Self::CuType,
-            kind if kind.eq_ignore_ascii_case("DELEGATED-FROM") => Self::DelegatedFrom,
-            kind if kind.eq_ignore_ascii_case("DELEGATED-TO") => Self::DelegatedTo,
-            kind if kind.eq_ignore_ascii_case("DIR") => Self::Dir,
-            kind if kind.eq_ignore_ascii_case("ENCODING") => Self::Encoding,
-            kind if kind.eq_ignore_ascii_case("FMTTYPE") => Self::FmtType,
-            kind if kind.eq_ignore_ascii_case("FBTYPE") => Self::FbType,
-            kind if kind.eq_ignore_ascii_case("LANGUAGE") => Self::Language,
-            kind if kind.eq_ignore_ascii_case("MEMBER") => Self::Member,
-            kind if kind.eq_ignore_ascii_case("PARTSTAT") => Self::PartStat,
-            kind if kind.eq_ignore_ascii_case("RANGE") => Self::Range,
-            kind if kind.eq_ignore_ascii_case("RELATED") => Self::Related,
-            kind if kind.eq_ignore_ascii_case("RELTYPE") => Self::RelType,
-            kind if kind.eq_ignore_ascii_case("ROLE") => Self::Role,
-            kind if kind.eq_ignore_ascii_case("RSVP") => Self::Rsvp,
-            kind if kind.eq_ignore_ascii_case("SENT-BY") => Self::SentBy,
-            kind if kind.eq_ignore_ascii_case("TZID") => Self::TzId,
-            kind if kind.eq_ignore_ascii_case("VALUE") => Self::Value,
-            kind if kind.eq_ignore_ascii_case("DISPLAY") => Self::Display,
-            kind if kind.eq_ignore_ascii_case("EMAIL") => Self::Email,
-            kind if kind.eq_ignore_ascii_case("FEATURE") => Self::Feature,
-            kind if kind.eq_ignore_ascii_case("LABEL") => Self::Label,
-            kind if kind.eq_ignore_ascii_case("ORDER") => Self::Order,
-            kind if kind.eq_ignore_ascii_case("SCHEMA") => Self::Schema,
-            kind if kind.eq_ignore_ascii_case("DERIVED") => Self::Derived,
-            kind if kind.eq_ignore_ascii_case("SCHEDULE-AGENT") => Self::ScheduleAgent,
-            kind if kind.eq_ignore_ascii_case("SCHEDULE-FORCE-SEND") => Self::ScheduleForceSend,
-            kind if kind.eq_ignore_ascii_case("SCHEDULE-STATUS") => Self::ScheduleStatus,
-            kind if kind.eq_ignore_ascii_case("LINKREL") => Self::LinkRel,
-            kind if kind.eq_ignore_ascii_case("GAP") => Self::Gap,
-            kind if kind.eq_ignore_ascii_case("CHARSET") => Self::Charset,
-            _ => return Err(ParseIcalParamKindError(kind.to_string())),
-        };
-
-        Ok(kind)
+        Self::from_name(kind).ok_or_else(|| ParseIcalParamKindError(kind.to_string()))
     }
 }
 

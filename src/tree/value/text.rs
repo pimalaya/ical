@@ -2,15 +2,9 @@
 //!
 //! [`Codec`] for a single text value and a comma-separated text list.
 
-use alloc::vec;
-
 use crate::{
     tree::{
-        codec::{
-            Codec,
-            encode::{encode_component, scalar_node},
-            mode::Escaper,
-        },
+        codec::{Codec, encode::IcalValueOut, mode::Escaper},
         value::node::IcalValueNode,
     },
     value::text::{IcalText, IcalTextList},
@@ -26,7 +20,14 @@ impl<'v> Codec<'v> for IcalText<'v> {
     }
 
     fn encode(&self, escaper: Escaper) -> IcalValueNode<'static> {
-        scalar_node(&self.0, escaper)
+        IcalValueOut::node(escaper, |out| self.emit(out))
+    }
+}
+
+impl IcalText<'_> {
+    /// Write the text as one component holding one value.
+    pub(crate) fn emit(&self, out: &mut IcalValueOut<'_>) {
+        out.component(&[&*self.0]);
     }
 }
 
@@ -36,6 +37,13 @@ impl<'v> Codec<'v> for IcalTextList<'v> {
     }
 
     fn encode(&self, escaper: Escaper) -> IcalValueNode<'static> {
-        IcalValueNode::from_components(vec![encode_component(&self.0, escaper)], escaper)
+        IcalValueOut::node(escaper, |out| self.emit(out))
+    }
+}
+
+impl IcalTextList<'_> {
+    /// Write the list as one component of its values.
+    pub(crate) fn emit(&self, out: &mut IcalValueOut<'_>) {
+        out.component(&self.0);
     }
 }

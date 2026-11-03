@@ -6,7 +6,7 @@
 
 use crate::{
     tree::{
-        codec::{Codec, encode::scalar_node, mode::Escaper},
+        codec::{Codec, encode::IcalValueOut, mode::Escaper},
         value::node::IcalValueNode,
     },
     value::binary::IcalBinary,
@@ -18,10 +18,15 @@ impl<'v> Codec<'v> for IcalBinary<'v> {
     }
 
     fn encode(&self, escaper: Escaper) -> IcalValueNode<'static> {
-        let raw = match self {
-            IcalBinary::Uri(value) | IcalBinary::Base64(value) => value.as_ref(),
-        };
+        IcalValueOut::node(escaper, |out| self.emit(out))
+    }
+}
 
-        scalar_node(raw, escaper)
+impl IcalBinary<'_> {
+    /// Write the value as one component holding one value, whichever form it
+    /// holds.
+    pub(crate) fn emit(&self, out: &mut IcalValueOut<'_>) {
+        let (IcalBinary::Uri(value) | IcalBinary::Base64(value)) = self;
+        out.component(&[&**value]);
     }
 }

@@ -54,8 +54,7 @@ impl IcalCst<'_> {
     /// held as the calendar's indicator, not as a free property.
     pub fn decode(&self) -> Ical<'_> {
         let version = self.version();
-        let mut props = Vec::new();
-        let mut components = Vec::new();
+        let (mut props, mut components) = self.decoded_lists();
 
         for item in &self.items {
             match item {
@@ -76,8 +75,7 @@ impl IcalCst<'_> {
 
     /// Decode a nested component into the recursive [`IcalComponent`] model.
     fn decode_component(&self, version: IcalVersion) -> IcalComponent<'_> {
-        let mut props = Vec::new();
-        let mut components = Vec::new();
+        let (mut props, mut components) = self.decoded_lists();
 
         for item in &self.items {
             match item {
@@ -94,6 +92,21 @@ impl IcalCst<'_> {
             components,
         }
     }
+
+    /// The decoded property and component lists, each sized for the items it
+    /// will hold, so neither grows while it is filled.
+    fn decoded_lists<'d>(&self) -> (Vec<IcalProp<'d>>, Vec<IcalComponent<'d>>) {
+        let props = self
+            .items
+            .iter()
+            .filter(|item| matches!(item, IcalItem::Prop(_)))
+            .count();
+
+        (
+            Vec::with_capacity(props),
+            Vec::with_capacity(self.items.len() - props),
+        )
+    }
 }
 
 impl IcalLine<'_> {
@@ -103,14 +116,18 @@ impl IcalLine<'_> {
     pub fn decode(&self, version: IcalVersion) -> IcalProp<'_> {
         let name = self.name.get();
         let params = self.params.iter().map(IcalParamNode::decode).collect();
+        let prop = IcalPropKind::from_name(name);
 
-        let value = match self.value_kind(version) {
+        let value = match self.value_kind_of(prop, version) {
             Some(kind) => decode_value_kind(kind, &self.value),
             None => IcalValue::Unknown(IcalUnknownValue::decode(&self.value)),
         };
 
         IcalProp {
-            name: IcalPropName::from(name),
+            name: match prop {
+                Some(kind) => IcalPropName::Kind(kind),
+                None => IcalPropName::Unknown(Cow::Borrowed(name)),
+            },
             params,
             value,
         }
@@ -122,13 +139,23 @@ impl IcalLine<'_> {
     ///
     /// None for an undeclared extension, whose value stays raw.
     pub(crate) fn value_kind(&self, version: IcalVersion) -> Option<IcalValueKind> {
-        match self.name.get().parse::<IcalPropKind>() {
-            Ok(prop) => Some((prop_spec(prop).value)(version, self.declared_value_kind())),
+        self.value_kind_of(IcalPropKind::from_name(self.name.get()), version)
+    }
+
+    /// The [`value_kind`](Self::value_kind) of the line, its name already
+    /// looked up as `prop`.
+    fn value_kind_of(
+        &self,
+        prop: Option<IcalPropKind>,
+        version: IcalVersion,
+    ) -> Option<IcalValueKind> {
+        match prop {
+            Some(prop) => Some((prop_spec(prop).value)(version, self.declared_value_kind())),
             // NOTE: A name outside the vocabulary has no spec to consult, but a
             // line that declares its own VALUE has said what to read it as
             // (RFC 5545 3.2.20), and that holds for an X- name as much as for a
             // registered one.
-            Err(_) => self.declared_value_kind(),
+            None => self.declared_value_kind(),
         }
     }
 
@@ -136,9 +163,9 @@ impl IcalLine<'_> {
     fn declared_value_kind(&self) -> Option<IcalValueKind> {
         self.params
             .iter()
-            .find(|param| matches!(param.name.get().parse(), Ok(IcalParamKind::Value)))
+            .find(|param| param.name.get().eq_ignore_ascii_case("VALUE"))
             .and_then(|param| param.values.first())
-            .and_then(|value| value.get().parse::<IcalValueKind>().ok())
+            .and_then(|value| IcalValueKind::from_name(value.get()))
     }
 
     /// Whether the line declares the `QUOTED-PRINTABLE` encoding, as an
@@ -187,7 +214,7 @@ fn decode_value_kind<'v>(kind: IcalValueKind, node: &'v IcalValueNode<'_>) -> Ic
 impl IcalParamNode<'_> {
     /// Decode the parameter into a typed parameter, dispatching on the name.
     pub fn decode(&self) -> IcalParam<'_> {
-        let Ok(kind) = self.name.get().parse::<IcalParamKind>() else {
+        let Some(kind) = IcalParamKind::from_name(self.name.get()) else {
             return IcalParam::Unknown {
                 // NOTE: a parameter name is a token (RFC 5545 3.2), with no
                 // encoding of any kind to resolve.

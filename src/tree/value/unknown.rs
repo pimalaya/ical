@@ -5,7 +5,7 @@
 
 use crate::{
     tree::{
-        codec::{Codec, encode::encode_component, mode::Escaper},
+        codec::{Codec, encode::IcalValueOut, mode::Escaper},
         value::node::IcalValueNode,
     },
     value::IcalUnknownValue,
@@ -21,12 +21,15 @@ impl<'v> Codec<'v> for IcalUnknownValue<'v> {
     }
 
     fn encode(&self, escaper: Escaper) -> IcalValueNode<'static> {
-        IcalValueNode::from_components(
-            self.components
-                .iter()
-                .map(|component| encode_component(component, escaper))
-                .collect(),
-            escaper,
-        )
+        IcalValueOut::node(escaper, |out| self.emit(out))
+    }
+}
+
+impl IcalUnknownValue<'_> {
+    /// Write every component, each a list of its values.
+    pub(crate) fn emit(&self, out: &mut IcalValueOut<'_>) {
+        for component in &self.components {
+            out.component(component);
+        }
     }
 }

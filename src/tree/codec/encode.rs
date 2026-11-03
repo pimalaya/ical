@@ -11,12 +11,18 @@
 //! The whole calendar is encoded for its version's [`Escaper`], which the
 //! value codecs use to escape every leaf.
 //!
-//! [`Display`](core::fmt::Display) for [`Ical`] renders a decoded calendar
-//! straight to its serialized bytes through here.
+//! [`Display`](core::fmt::Display) for [`Ical`] writes the bytes that tree
+//! would serialize to straight from the model: each value type spells its
+//! wire shape once, in an `emit` that writes either a node's leaves or text.
 
-use core::fmt;
+use core::{fmt, mem, slice, str};
 
-use alloc::{borrow::Cow, boxed::Box, string::ToString, vec, vec::Vec};
+use alloc::{
+    borrow::Cow,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
 
 use crate::{
     component::IcalComponent,
@@ -26,12 +32,12 @@ use crate::{
     tree::{
         codec::{
             Codec,
-            escape::{escape_param, escape_with},
+            escape::{escape_into, escape_param, escape_with},
             mode::Escaper,
         },
         cst::{IcalCst, IcalItem},
         leaf::{IcalLeaf, IcalValueLeaf},
-        line::IcalLine,
+        line::{IcalLine, fold_long},
         param::node::IcalParamNode,
         value::node::IcalValueNode,
         wire::IcalWire,
@@ -95,6 +101,28 @@ impl IcalComponent<'_> {
             trailing: Cow::Borrowed(""),
         }
     }
+
+    /// Append the lines [`encode`](Self::encode) builds, as they serialize.
+    fn write_text(&self, escaper: Escaper, out: &mut Vec<u8>) {
+        write_text_line(out, "BEGIN", &self.name);
+
+        for prop in &self.props {
+            prop.write_text(escaper, out);
+        }
+
+        for component in &self.components {
+            component.write_text(escaper, out);
+        }
+
+        write_text_line(out, "END", &self.name);
+    }
+
+    /// About how many bytes [`write_text`](Self::write_text) appends: a short
+    /// line a property, which most are.
+    fn text_size_hint(&self) -> usize {
+        let components = self.components.iter().map(Self::text_size_hint);
+        64 + 32 * self.props.len() + components.sum::<usize>()
+    }
 }
 
 impl<'a> From<Ical<'a>> for IcalCst<'static> {
@@ -121,11 +149,35 @@ impl IcalProp<'_> {
                 .map(|param| param.encode(escaper))
                 .collect(),
             value: self.value.encode(escaper),
-            eol: IcalLeaf::from("\r\n".to_string()),
+            eol: IcalLeaf::from("\r\n"),
             // NOTE: An encoded property has no wire history: it is written out
             // in canonical form, folded at 75 octets.
             wire: IcalWire::default(),
         }
+    }
+
+    /// Append the line [`encode`](Self::encode) builds, as it serializes.
+    fn write_text(&self, escaper: Escaper, out: &mut Vec<u8>) {
+        let start = out.len();
+
+        out.extend_from_slice(self.name.as_bytes());
+
+        for param in &self.params {
+            out.push(b';');
+            param.write_text(escaper, out);
+        }
+
+        out.push(b':');
+
+        self.value.emit(&mut IcalValueOut {
+            escaper,
+            sink: Sink::Bytes {
+                out,
+                started: false,
+            },
+        });
+
+        end_line(out, start);
     }
 }
 
@@ -133,59 +185,204 @@ impl IcalParam<'_> {
     /// Encode the parameter into a raw parameter node for the given escaping
     /// mode, dispatching on its kind.
     pub fn encode(&self, escaper: Escaper) -> IcalParamNode<'static> {
+        let (name, values) = self.wire();
+
+        IcalParamNode {
+            name: IcalLeaf::from(name.to_string()),
+            values: values
+                .iter()
+                .map(|value| IcalLeaf::from(escape_param(value, escaper).into_owned()))
+                .collect(),
+            escaper,
+        }
+    }
+
+    /// Append the node [`encode`](Self::encode) builds, as it serializes.
+    fn write_text(&self, escaper: Escaper, out: &mut Vec<u8>) {
+        let (name, values) = self.wire();
+
+        out.extend_from_slice(name.as_bytes());
+
+        for (i, value) in values.iter().enumerate() {
+            out.push(if i == 0 { b'=' } else { b',' });
+            out.extend_from_slice(escape_param(value, escaper).as_bytes());
+        }
+    }
+
+    /// The parameter's wire name and its values, not yet encoded: a scalar
+    /// kind holds one.
+    fn wire(&self) -> (&str, &[Cow<'_, str>]) {
         use crate::param::IcalParamKind::*;
 
         match self {
-            IcalParam::AltRep(v) => param_scalar(&AltRep, v, escaper),
-            IcalParam::Cn(v) => param_scalar(&Cn, v, escaper),
-            IcalParam::CuType(v) => param_scalar(&CuType, v, escaper),
-            IcalParam::DelegatedFrom(vs) => param_list(&DelegatedFrom, vs, escaper),
-            IcalParam::DelegatedTo(vs) => param_list(&DelegatedTo, vs, escaper),
-            IcalParam::Dir(v) => param_scalar(&Dir, v, escaper),
-            IcalParam::Encoding(v) => param_scalar(&Encoding, v, escaper),
-            IcalParam::FmtType(v) => param_scalar(&FmtType, v, escaper),
-            IcalParam::FbType(v) => param_scalar(&FbType, v, escaper),
-            IcalParam::Language(v) => param_scalar(&Language, v, escaper),
-            IcalParam::Member(vs) => param_list(&Member, vs, escaper),
-            IcalParam::PartStat(v) => param_scalar(&PartStat, v, escaper),
-            IcalParam::Range(v) => param_scalar(&Range, v, escaper),
-            IcalParam::Related(v) => param_scalar(&Related, v, escaper),
-            IcalParam::RelType(v) => param_scalar(&RelType, v, escaper),
-            IcalParam::Role(v) => param_scalar(&Role, v, escaper),
-            IcalParam::Rsvp(v) => param_scalar(&Rsvp, v, escaper),
-            IcalParam::SentBy(v) => param_scalar(&SentBy, v, escaper),
-            IcalParam::TzId(v) => param_scalar(&TzId, v, escaper),
-            IcalParam::Value(v) => param_scalar(&Value, v, escaper),
-            IcalParam::Display(v) => param_scalar(&Display, v, escaper),
-            IcalParam::Email(v) => param_scalar(&Email, v, escaper),
-            IcalParam::Feature(vs) => param_list(&Feature, vs, escaper),
-            IcalParam::Label(v) => param_scalar(&Label, v, escaper),
-            IcalParam::Order(v) => param_scalar(&Order, v, escaper),
-            IcalParam::Schema(v) => param_scalar(&Schema, v, escaper),
-            IcalParam::Derived(v) => param_scalar(&Derived, v, escaper),
-            IcalParam::ScheduleAgent(v) => param_scalar(&ScheduleAgent, v, escaper),
-            IcalParam::ScheduleForceSend(v) => param_scalar(&ScheduleForceSend, v, escaper),
-            IcalParam::ScheduleStatus(v) => param_scalar(&ScheduleStatus, v, escaper),
-            IcalParam::LinkRel(v) => param_scalar(&LinkRel, v, escaper),
-            IcalParam::Gap(v) => param_scalar(&Gap, v, escaper),
-            IcalParam::Charset(v) => param_scalar(&Charset, v, escaper),
+            IcalParam::AltRep(v) => (&AltRep, slice::from_ref(v)),
+            IcalParam::Cn(v) => (&Cn, slice::from_ref(v)),
+            IcalParam::CuType(v) => (&CuType, slice::from_ref(v)),
+            IcalParam::DelegatedFrom(vs) => (&DelegatedFrom, vs),
+            IcalParam::DelegatedTo(vs) => (&DelegatedTo, vs),
+            IcalParam::Dir(v) => (&Dir, slice::from_ref(v)),
+            IcalParam::Encoding(v) => (&Encoding, slice::from_ref(v)),
+            IcalParam::FmtType(v) => (&FmtType, slice::from_ref(v)),
+            IcalParam::FbType(v) => (&FbType, slice::from_ref(v)),
+            IcalParam::Language(v) => (&Language, slice::from_ref(v)),
+            IcalParam::Member(vs) => (&Member, vs),
+            IcalParam::PartStat(v) => (&PartStat, slice::from_ref(v)),
+            IcalParam::Range(v) => (&Range, slice::from_ref(v)),
+            IcalParam::Related(v) => (&Related, slice::from_ref(v)),
+            IcalParam::RelType(v) => (&RelType, slice::from_ref(v)),
+            IcalParam::Role(v) => (&Role, slice::from_ref(v)),
+            IcalParam::Rsvp(v) => (&Rsvp, slice::from_ref(v)),
+            IcalParam::SentBy(v) => (&SentBy, slice::from_ref(v)),
+            IcalParam::TzId(v) => (&TzId, slice::from_ref(v)),
+            IcalParam::Value(v) => (&Value, slice::from_ref(v)),
+            IcalParam::Display(v) => (&Display, slice::from_ref(v)),
+            IcalParam::Email(v) => (&Email, slice::from_ref(v)),
+            IcalParam::Feature(vs) => (&Feature, vs),
+            IcalParam::Label(v) => (&Label, slice::from_ref(v)),
+            IcalParam::Order(v) => (&Order, slice::from_ref(v)),
+            IcalParam::Schema(v) => (&Schema, slice::from_ref(v)),
+            IcalParam::Derived(v) => (&Derived, slice::from_ref(v)),
+            IcalParam::ScheduleAgent(v) => (&ScheduleAgent, slice::from_ref(v)),
+            IcalParam::ScheduleForceSend(v) => (&ScheduleForceSend, slice::from_ref(v)),
+            IcalParam::ScheduleStatus(v) => (&ScheduleStatus, slice::from_ref(v)),
+            IcalParam::LinkRel(v) => (&LinkRel, slice::from_ref(v)),
+            IcalParam::Gap(v) => (&Gap, slice::from_ref(v)),
+            IcalParam::Charset(v) => (&Charset, slice::from_ref(v)),
 
-            IcalParam::Unknown { name, values } => param_list(name, values, escaper),
+            IcalParam::Unknown { name, values } => (name, values),
         }
     }
 }
 
-/// Serialize the decoded calendar by encoding it into a CST (canonical).
+/// Serialize the decoded calendar as its [`encode`](Ical::encode)d tree
+/// serializes, written straight from the model.
 impl fmt::Display for Ical<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.encode())
+        let escaper = Escaper::for_version(self.version);
+
+        let components = self.components.iter().map(IcalComponent::text_size_hint);
+        let size = 64 + 32 * self.props.len() + components.sum::<usize>();
+        let mut out = Vec::with_capacity(size);
+
+        write_text_line(&mut out, "BEGIN", "VCALENDAR");
+        write_text_line(&mut out, "VERSION", &self.version);
+
+        for prop in &self.props {
+            prop.write_text(escaper, &mut out);
+        }
+
+        for component in &self.components {
+            component.write_text(escaper, &mut out);
+        }
+
+        write_text_line(&mut out, "END", "VCALENDAR");
+
+        // NOTE: Every piece is text and every escape and fold keeps it so,
+        // the lossy walk being there only to keep this total.
+        match str::from_utf8(&out) {
+            Ok(text) => f.write_str(text),
+            Err(_) => f.write_str(&String::from_utf8_lossy(&out)),
+        }
     }
 }
 
-/// A one-component, one-value syntax node, escaping the value by the given
-/// mode.
-pub(crate) fn scalar_node(value: &str, escaper: Escaper) -> IcalValueNode<'static> {
-    IcalValueNode::from_components(vec![encode_component(&[value], escaper)], escaper)
+/// Append a line of a raw text value, as [`IcalLine::text`] builds it and it
+/// serializes.
+fn write_text_line(out: &mut Vec<u8>, name: &str, value: &str) {
+    let start = out.len();
+
+    out.extend_from_slice(name.as_bytes());
+    out.push(b':');
+    out.extend_from_slice(value.as_bytes());
+
+    end_line(out, start);
+}
+
+/// End the encoded line written in `out` from `start` on, folded as a line
+/// with no recorded shape and broken with `\r\n`.
+fn end_line(out: &mut Vec<u8>, start: usize) {
+    fold_long(out, start, true);
+    out.extend_from_slice(b"\r\n");
+}
+
+/// Where a value's wire shape goes: the leaves of a syntax node, as
+/// [`Codec::encode`] builds it, or the bytes that node serializes to.
+///
+/// A value type spells its shape once, in its `emit`, as one
+/// [`uri`](Self::uri) or [`raw`](Self::raw) value or a run of
+/// [`component`](Self::component)s, so the two ways out cannot drift apart.
+pub(crate) struct IcalValueOut<'o> {
+    /// The escaping mode.
+    pub(crate) escaper: Escaper,
+    /// What the shape is written into.
+    sink: Sink<'o>,
+}
+
+impl IcalValueOut<'_> {
+    /// Build a value's node from what `emit` writes.
+    pub(crate) fn node(
+        escaper: Escaper,
+        emit: impl FnOnce(&mut IcalValueOut<'_>),
+    ) -> IcalValueNode<'static> {
+        let mut node = IcalValueNode::from_components(Vec::new(), escaper);
+
+        emit(&mut IcalValueOut {
+            escaper,
+            sink: Sink::Node(&mut node),
+        });
+
+        node
+    }
+
+    /// Write one URI exactly as given, with no text escaping at all, as
+    /// [`verbatim_node`] owns one.
+    pub(crate) fn uri(&mut self, value: &str) {
+        match &mut self.sink {
+            Sink::Node(node) => **node = verbatim_node(value.as_bytes(), self.escaper),
+            Sink::Bytes { out, .. } => percent_into(value.as_bytes(), out),
+        }
+    }
+
+    /// Write one value byte for byte, with no escaping of any kind.
+    pub(crate) fn raw(&mut self, value: &str) {
+        match &mut self.sink {
+            Sink::Node(node) => {
+                **node = IcalValueNode::from_raw(value.as_bytes().to_vec(), self.escaper);
+            }
+            Sink::Bytes { out, .. } => out.extend_from_slice(value.as_bytes()),
+        }
+    }
+
+    /// Write one `;`-separated component of `,`-separated values, each
+    /// escaped by the mode.
+    pub(crate) fn component<S: AsRef<str>>(&mut self, values: &[S]) {
+        match &mut self.sink {
+            Sink::Node(node) => node.set_component(node.component_count(), values),
+            Sink::Bytes { out, started } => {
+                if mem::replace(started, true) {
+                    out.push(b';');
+                }
+
+                for (i, value) in values.iter().enumerate() {
+                    if i > 0 {
+                        out.push(b',');
+                    }
+
+                    escape_into(value.as_ref().as_bytes(), self.escaper, out);
+                }
+            }
+        }
+    }
+}
+
+/// What an [`IcalValueOut`] writes into.
+enum Sink<'o> {
+    /// A node, its components pushed one by one, or replaced whole by a URI
+    /// or a raw value.
+    Node(&'o mut IcalValueNode<'static>),
+    /// Bytes, `started` once a component is written, so the next one goes
+    /// after a `;`.
+    Bytes { out: &'o mut Vec<u8>, started: bool },
 }
 
 /// Own one URI exactly as given, with no text escaping at all.
@@ -200,17 +397,21 @@ pub(crate) fn scalar_node(value: &str, escaper: Escaper) -> IcalValueNode<'stati
 /// producer in the wild put there, so the value would not read back.
 pub(crate) fn verbatim_node(value: &[u8], escaper: Escaper) -> IcalValueNode<'static> {
     let mut bytes = Vec::with_capacity(value.len());
+    percent_into(value, &mut bytes);
+    IcalValueNode::from_raw(bytes, escaper)
+}
 
+/// Append a URI to `out`, its line breaks and backslashes percent-encoded, as
+/// [`verbatim_node`] writes it.
+fn percent_into(value: &[u8], out: &mut Vec<u8>) {
     for &byte in value {
         match byte {
-            b'\r' => bytes.extend_from_slice(b"%0D"),
-            b'\n' => bytes.extend_from_slice(b"%0A"),
-            b'\\' => bytes.extend_from_slice(b"%5C"),
-            _ => bytes.push(byte),
+            b'\r' => out.extend_from_slice(b"%0D"),
+            b'\n' => out.extend_from_slice(b"%0A"),
+            b'\\' => out.extend_from_slice(b"%5C"),
+            _ => out.push(byte),
         }
     }
-
-    IcalValueNode::from_raw(bytes, escaper)
 }
 
 /// Escape and own a clean value list into one component, by escaping mode.
@@ -236,29 +437,6 @@ pub(crate) fn encode_bytes_component<B: AsRef<[u8]>>(
         .iter()
         .map(|v| IcalValueLeaf::from(escape_with(v.as_ref(), escaper).into_owned()))
         .collect()
-}
-
-/// A parameter node from a single value, encoded by the given mode's parameter
-/// rules.
-fn param_scalar(name: &str, value: &str, escaper: Escaper) -> IcalParamNode<'static> {
-    IcalParamNode {
-        name: IcalLeaf::from(name.to_string()),
-        values: vec![IcalLeaf::from(escape_param(value, escaper).into_owned())],
-        escaper,
-    }
-}
-
-/// A parameter node from a value list, encoded by the given mode's parameter
-/// rules.
-fn param_list(name: &str, values: &[Cow<'_, str>], escaper: Escaper) -> IcalParamNode<'static> {
-    IcalParamNode {
-        name: IcalLeaf::from(name.to_string()),
-        values: values
-            .iter()
-            .map(|v| IcalLeaf::from(escape_param(v, escaper).into_owned()))
-            .collect(),
-        escaper,
-    }
 }
 
 #[cfg(test)]

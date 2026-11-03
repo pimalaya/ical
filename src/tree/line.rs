@@ -17,17 +17,17 @@
 //! A calendar therefore round-trips byte for byte however it was laid out.
 //! The final line needs no trailing break.
 
-use core::{fmt, str};
+use core::{fmt, mem, str};
 
 use alloc::{borrow::Cow, string::String, vec, vec::Vec};
 
 use crate::tree::{
-    codec::mode::Escaper,
+    codec::{mode::Escaper, unescape::utf8_lossy},
     error::IcalParseError,
     leaf::{IcalLeaf, IcalValueLeaf},
     param::{lens::IcalParamLens, node::IcalParamNode},
     value::node::IcalValueNode,
-    wire::{FOLD_OCTETS, IcalWire, write_folded},
+    wire::{FOLD_OCTETS, IcalWire, fold},
 };
 
 /// One raw content line: a name, parameters, a value and the line ending.
@@ -75,12 +75,28 @@ impl<'a> IcalLine<'a> {
     ///
     /// Returns the line and the remaining input. RFC 5545 3.1 folds a long line
     /// by inserting a CRLF and a single leading space or tab; unfolding drops
-    /// them. A line with no folds borrows the source; a folded one is rebuilt
-    /// owned, its bytes no longer contiguous.
+    /// them. A line with no folds borrows the source; a folded one owns its
+    /// joined value, its bytes no longer contiguous, and borrows its head when
+    /// its colon sits on its first physical line.
     pub fn take(rest: &'a [u8]) -> Result<(Self, &'a [u8]), IcalParseError> {
+        let mut line = Self::empty();
+        let tail = Self::take_into(rest, &mut line)?;
+        Ok((line, tail))
+    }
+
+    /// [`take`](Self::take) the line into `slot`, returning the rest.
+    ///
+    /// A component grows its item list by an [`empty`](Self::empty) line and
+    /// fills it here: a line returned by value is staged on the stack and
+    /// copied, which stalls the loads that follow.
+    ///
+    /// `slot` must be an [`empty`](Self::empty) line: its fields are written
+    /// over without being dropped, there being nothing in them to free. It is
+    /// left empty on an error.
+    pub(crate) fn take_into(rest: &'a [u8], slot: &mut Self) -> Result<&'a [u8], IcalParseError> {
         // NOTE: Everything this tokeniser resolves is recorded here, so
         // serialization can put it back.
-        let mut wire = IcalWire::default();
+        let mut wire = IcalWire::new();
 
         // NOTE: skip blank lines: real-world exports sometimes emit them.
         let mut head = rest;
@@ -116,15 +132,42 @@ impl<'a> IcalLine<'a> {
         // ENCODING=QUOTED-PRINTABLE and whose value ends with `=` continues on
         // the next physical line. Param-driven, so it applies to any version's
         // calendar that uses the encoding, not just 2.1.
-        if first.ends_with(b"=") && head_is_quoted_printable(first) {
-            let mut logical = Vec::from(&first[..first.len() - 1]);
-            wire.soft(logical.len(), is_crlf(eol));
+        let soft = first.ends_with(b"=") && head_is_quoted_printable(first);
 
-            let mut last_eol;
+        if !soft && !starts_with_wsp(tail) {
+            let Some(colon) = value_colon(first) else {
+                return Err(IcalParseError::MissingPropertyColon(lossy(first)));
+            };
+
+            Self::build(
+                slot,
+                &first[..colon],
+                Cow::Borrowed(&first[colon + 1..]),
+                eol_leaf(eol),
+                wire,
+            )?;
+
+            return Ok(tail);
+        }
+
+        // NOTE: The line goes on past its first physical line. With the colon
+        // on that first line (outside quotes, the scan that finds the same
+        // colon on the joined line), the head borrows the input and only the
+        // value is joined, once, into the buffer the line keeps. Otherwise the
+        // whole logical line is joined, parsed, then copied out.
+        let colon = unquoted_colon(first);
+        let base = colon.map_or(0, |colon| colon + 1);
+        let mut logical = Vec::new();
+        let last_eol;
+
+        if soft {
+            logical.extend_from_slice(&first[base..first.len() - 1]);
+            wire.soft(base + logical.len(), is_crlf(eol));
+
             loop {
                 let (continuation, eol, next) = physical_line(tail);
-                last_eol = eol;
                 tail = next;
+
                 match continuation.strip_suffix(b"=") {
                     Some(head) => {
                         logical.extend_from_slice(head);
@@ -133,46 +176,81 @@ impl<'a> IcalLine<'a> {
                             // soft-break marker and nothing follows: the `=` is
                             // on the wire, the break after it is the line's own
                             // ending.
-                            wire.skipped(logical.len(), "=");
+                            wire.skipped(base + logical.len(), "=");
+                            last_eol = eol;
                             break;
                         }
-                        wire.soft(logical.len(), is_crlf(eol));
+                        wire.soft(base + logical.len(), is_crlf(eol));
                     }
                     None => {
                         logical.extend_from_slice(continuation);
+                        last_eol = eol;
                         break;
                     }
                 }
             }
+        } else {
+            // NOTE: Each continuation is found once, its fold recorded and its
+            // length counted, so a long folded value is sized before its one
+            // copy, and the copy takes each continuation's length from the
+            // offset of the fold after it rather than scanning again.
+            let (mut len, mut eol, mut next) = (first.len(), eol, tail);
 
-            let mut line = Self::parse(&logical, b"")?.into_static();
-            line.eol = eol_leaf(last_eol);
-            line.wire.prepend(wire.into_static());
-            return Ok((line, tail));
-        }
+            while starts_with_wsp(next) {
+                let (continuation, next_eol, rest) = physical_line(&next[1..]);
+                wire.fold(len, is_crlf(eol), next[0]);
+                len += continuation.len();
+                eol = next_eol;
+                next = rest;
+            }
 
-        if !starts_with_wsp(tail) {
-            let mut line = Self::parse(first, eol)?;
-            line.wire.prepend(wire);
-            return Ok((line, tail));
-        }
-
-        let mut logical = Vec::from(first);
-        let mut last_eol = eol;
-
-        while starts_with_wsp(tail) {
-            let (continuation, eol, next) = physical_line(&tail[1..]);
-            wire.fold(logical.len(), is_crlf(last_eol), tail[0]);
-            logical.extend_from_slice(continuation);
             last_eol = eol;
-            tail = next;
+            logical.reserve_exact(len - base);
+            logical.extend_from_slice(&first[base..]);
+
+            let mut folds = wire.folds().peekable();
+
+            while let Some((offset, _)) = folds.next() {
+                let (end, eol) = match folds.peek() {
+                    Some(&(end, crlf)) => (end, if crlf { 2 } else { 1 }),
+                    None => (len, last_eol.len()),
+                };
+
+                logical.extend_from_slice(&tail[1..1 + end - offset]);
+                tail = &tail[1 + end - offset + eol..];
+            }
+
+            debug_assert_eq!(tail.len(), next.len());
         }
 
-        let mut line = Self::parse(&logical, b"")?.into_static();
-        line.eol = eol_leaf(last_eol);
-        line.wire.prepend(wire.into_static());
+        match colon {
+            Some(colon) => Self::build(
+                slot,
+                &first[..colon],
+                Cow::Owned(logical),
+                eol_leaf(last_eol),
+                wire,
+            )?,
+            None => {
+                let mut line = Self::parse(&logical)?.into_static();
+                line.eol = eol_leaf(last_eol);
+                line.wire.prepend(wire);
+                *slot = line;
+            }
+        }
 
-        Ok((line, tail))
+        Ok(tail)
+    }
+
+    /// A placeholder line for [`take_into`](Self::take_into) to fill in place.
+    pub(crate) const fn empty() -> Self {
+        Self {
+            name: IcalLeaf(Cow::Borrowed("")),
+            params: Vec::new(),
+            value: IcalValueNode::from_components(Vec::new(), Escaper::Modern),
+            eol: IcalLeaf(Cow::Borrowed("")),
+            wire: IcalWire::new(),
+        }
     }
 
     /// Split the first physical line off `rest` verbatim, content and ending.
@@ -213,42 +291,19 @@ impl<'a> IcalLine<'a> {
     ///
     /// [`raw_value`]: Self::raw_value
     pub fn raw_value_str(&self) -> Cow<'_, str> {
-        match self.value.raw_bytes() {
-            Cow::Borrowed(bytes) => String::from_utf8_lossy(bytes),
-            Cow::Owned(bytes) => Cow::Owned(String::from_utf8_lossy(&bytes).into_owned()),
-        }
+        utf8_lossy(self.value.raw_bytes())
     }
 
-    /// Serialize the whole line to bytes: its logical content, laid back out in
-    /// the wire shape it arrived in, or folded at 75 octets when it has none
-    /// that still fits it (see [`IcalWire`]).
+    /// Serialize the whole line to bytes: its logical content (its name,
+    /// parameters and value, the byte string the wire offsets index), laid
+    /// back out in the wire shape it arrived in, or folded at 75 octets when
+    /// it has none that still fits it (see [`IcalWire`]).
+    ///
+    /// An unsplit value is laid out straight from its node, so a long folded
+    /// value is copied once.
     pub(crate) fn write_bytes(&self, out: &mut Vec<u8>) {
         let start = out.len();
-        self.write_logical(out);
 
-        let logical = &out[start..];
-        let recorded = self.wire.lays_out(logical);
-
-        // NOTE: A QUOTED-PRINTABLE line is never folded: a fold after one of
-        // its `=` would read back as a soft break, and the encoding has soft
-        // breaks of its own for a long value.
-        let fold = !recorded && logical.len() > FOLD_OCTETS && !head_is_quoted_printable(logical);
-
-        if recorded && !self.wire.is_empty() {
-            let logical = out.split_off(start);
-            self.wire.write_bytes(&logical, out);
-        } else if fold {
-            let logical = out.split_off(start);
-            write_folded(&logical, self.eol.get() != "\n", out);
-        }
-
-        out.extend_from_slice(self.eol.get().as_bytes());
-    }
-
-    /// Serialize the logical line (its name, parameters and value), with no
-    /// line ending and no wire shape. This is the byte string the wire offsets
-    /// index.
-    fn write_logical(&self, out: &mut Vec<u8>) {
         out.extend_from_slice(self.name.get().as_bytes());
 
         for param in &self.params {
@@ -257,7 +312,29 @@ impl<'a> IcalLine<'a> {
         }
 
         out.push(b':');
-        self.value.write_bytes(out);
+
+        match self.value.unsplit_bytes() {
+            Some(value) if self.wire.fits(out.len() - start + value.len()) => {
+                self.wire.lay_out_value(out, start, value);
+            }
+            _ => {
+                self.value.write_bytes(out);
+
+                if self.wire.fits(out.len() - start) {
+                    self.wire.lay_out(out, start);
+                } else {
+                    fold_long(out, start, self.eol.get() != "\n");
+                }
+            }
+        }
+
+        out.extend_from_slice(self.eol.get().as_bytes());
+    }
+
+    /// About how many bytes [`write_bytes`](Self::write_bytes) writes: exact
+    /// for an unedited parsed line folded with `\r\n`, a guess otherwise.
+    pub(crate) fn size_hint(&self) -> usize {
+        self.wire.size_hint() + self.eol.get().len()
     }
 
     /// The first parameter of type `P`, decoded.
@@ -279,17 +356,40 @@ impl<'a> IcalLine<'a> {
     /// name, its parameters and the value. The head (name and parameters) must
     /// be valid UTF-8, as every version's grammar guarantees; only the value
     /// may carry a foreign charset, so it is kept as raw bytes.
-    fn parse<'b>(content: &'b [u8], eol: &'b [u8]) -> Result<IcalLine<'b>, IcalParseError> {
+    fn parse(content: &[u8]) -> Result<IcalLine<'_>, IcalParseError> {
         let Some(colon) = value_colon(content) else {
             return Err(IcalParseError::MissingPropertyColon(lossy(content)));
         };
 
-        let head = str::from_utf8(&content[..colon])
-            .map_err(|_| IcalParseError::NonUtf8Header(lossy(&content[..colon])))?;
-        let (name, params) = split_head(head);
+        let mut line = IcalLine::empty();
 
-        let mut value = &content[colon + 1..];
-        let mut wire = IcalWire::default();
+        IcalLine::build(
+            &mut line,
+            &content[..colon],
+            Cow::Borrowed(&content[colon + 1..]),
+            IcalLeaf(Cow::Borrowed("")),
+            IcalWire::new(),
+        )?;
+
+        Ok(line)
+    }
+
+    /// Fill `slot` from a line's head (the name and parameters before the
+    /// colon), its value bytes, its line ending and the wire shape the
+    /// tokeniser recorded, in offset order.
+    ///
+    /// `slot` is an [`empty`](Self::empty) line, untouched on an error.
+    fn build(
+        slot: &mut Self,
+        head: &'a [u8],
+        mut value: Cow<'a, [u8]>,
+        eol: IcalLeaf<'a>,
+        mut wire: IcalWire<'a>,
+    ) -> Result<(), IcalParseError> {
+        let head_str =
+            str::from_utf8(head).map_err(|_| IcalParseError::NonUtf8Header(lossy(head)))?;
+
+        let base = head.len() + 1;
 
         // NOTE: A QUOTED-PRINTABLE value ending in `=` is a dangling soft-break
         // marker, however it got there (a soft-break join, a folded
@@ -298,26 +398,34 @@ impl<'a> IcalLine<'a> {
         // and swallow the next line, so the logical line drops it and the wire
         // shape keeps it. This never touches base64 padding, since
         // `ENCODING=BASE64` is not quoted-printable.
-        if head_is_quoted_printable(content) {
+        if value.last() == Some(&b'=') && head_declares_quoted_printable(head) {
             let full = value.len();
-            while value.last() == Some(&b'=') {
-                value = &value[..value.len() - 1];
+            let kept = full - value.iter().rev().take_while(|&&b| b == b'=').count();
+
+            match &mut value {
+                Cow::Borrowed(bytes) => *bytes = &bytes[..kept],
+                Cow::Owned(bytes) => bytes.truncate(kept),
             }
-            if value.len() < full {
-                let end = colon + 1 + value.len();
-                wire.skipped(end, ascii(&content[end..colon + 1 + full]));
-            }
+
+            wire.insert_skipped_equals(base + kept, full - kept);
         }
 
-        wire.seal(colon + 1 + value.len());
+        wire.seal(base + value.len());
 
-        Ok(IcalLine {
-            name: IcalLeaf::from(name),
-            params,
-            value: IcalValueNode::parse(value),
-            eol: IcalLeaf::from(str::from_utf8(eol).unwrap_or("")),
-            wire,
-        })
+        let (name, params) = split_head(head_str);
+
+        // NOTE: The empty line's fields hold no allocation, so forgetting
+        // them saves a drop per field, the value's an out-of-line call.
+        mem::forget(mem::replace(&mut slot.name, IcalLeaf::from(name)));
+        mem::forget(mem::replace(&mut slot.params, params));
+        mem::forget(mem::replace(
+            &mut slot.value,
+            IcalValueNode::parse_cow(value),
+        ));
+        mem::forget(mem::replace(&mut slot.eol, eol));
+        mem::forget(mem::replace(&mut slot.wire, wire));
+
+        Ok(())
     }
 }
 
@@ -331,26 +439,34 @@ impl fmt::Display for IcalLine<'_> {
     }
 }
 
+/// Fold the logical line written in `out` from `start` on at 75 octets when it
+/// runs longer, as a line with no recorded shape is laid out.
+///
+/// A `QUOTED-PRINTABLE` line is never folded: a fold after one of its `=` would
+/// read back as a soft break, and the encoding has soft breaks of its own for
+/// a long value.
+pub(crate) fn fold_long(out: &mut Vec<u8>, start: usize, crlf: bool) {
+    if out.len() - start > FOLD_OCTETS && !head_is_quoted_printable(&out[start..]) {
+        fold(out, start, crlf);
+    }
+}
+
 /// Split a head into its name and its `;`-separated parameters.
 fn split_head(head: &str) -> (&str, Vec<IcalParamNode<'_>>) {
-    let (name, mut rest) = match param_semicolon(head) {
-        Some(semi) => (&head[..semi], &head[semi..]),
-        None => return (head, Vec::new()),
+    let Some(semi) = param_semicolon(head) else {
+        return (head, Vec::new());
     };
 
     let mut params = Vec::new();
+    let mut rest = Some(&head[semi + 1..]);
 
-    while let Some(after) = rest.strip_prefix(';') {
-        let (param, tail) = match param_semicolon(after) {
-            Some(semi) => (&after[..semi], &after[semi..]),
-            None => (after, ""),
-        };
-
-        params.push(IcalParamNode::parse(param));
+    while let Some(after) = rest {
+        let (param, tail) = IcalParamNode::take(after);
+        params.push(param);
         rest = tail;
     }
 
-    (name, params)
+    (&head[..semi], params)
 }
 
 /// The index of the `:` separating a line's head from its value.
@@ -360,6 +476,12 @@ fn split_head(head: &str) -> (&str, Vec<IcalParamNode<'_>>) {
 /// would swallow the rest of the line, so with no colon outside quotes the
 /// scan falls back to the first colon anywhere and the line still parses.
 fn value_colon(content: &[u8]) -> Option<usize> {
+    unquoted_colon(content).or_else(|| memchr::memchr(b':', content))
+}
+
+/// The index of the first `:` outside a double-quoted parameter value, with no
+/// fallback.
+fn unquoted_colon(content: &[u8]) -> Option<usize> {
     let mut quoted = false;
 
     for (i, &byte) in content.iter().enumerate() {
@@ -370,7 +492,7 @@ fn value_colon(content: &[u8]) -> Option<usize> {
         }
     }
 
-    memchr::memchr(b':', content)
+    None
 }
 
 /// The byte index of the first `;` of a head that sits outside a double-quoted
@@ -426,20 +548,29 @@ fn strip_leading_wsp(mut bytes: &[u8]) -> &[u8] {
 /// Whether a line's head (its name and parameters, before the `:`) declares the
 /// `QUOTED-PRINTABLE` encoding, as an `ENCODING=` parameter or a bare token.
 fn head_is_quoted_printable(line: &[u8]) -> bool {
-    let head = match value_colon(line) {
-        Some(colon) => &line[..colon],
-        None => return false,
-    };
+    match value_colon(line) {
+        Some(colon) => head_declares_quoted_printable(&line[..colon]),
+        None => false,
+    }
+}
 
+/// Whether a head (a line's bytes before its value colon) declares the
+/// `QUOTED-PRINTABLE` encoding.
+fn head_declares_quoted_printable(head: &[u8]) -> bool {
     head.split(|&b| b == b';').any(|token| {
         token.eq_ignore_ascii_case(b"QUOTED-PRINTABLE")
             || token.eq_ignore_ascii_case(b"ENCODING=QUOTED-PRINTABLE")
     })
 }
 
-/// An owned line-ending leaf from raw bytes (always an ASCII `\r\n` / `\n`).
+/// The line-ending leaf of raw line-ending bytes, which the splitter only
+/// ever cuts as `\r\n`, `\n` or nothing.
 fn eol_leaf(bytes: &[u8]) -> IcalLeaf<'static> {
-    IcalLeaf::from(String::from_utf8_lossy(bytes).into_owned())
+    IcalLeaf::from(match bytes {
+        b"\r\n" => "\r\n",
+        b"\n" => "\n",
+        _ => "",
+    })
 }
 
 /// Whether a line ending is a `\r\n` rather than a bare `\n`.

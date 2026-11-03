@@ -11,6 +11,8 @@
 //! `unescape_param`. RFC 5545 section 3.2 gives a parameter no backslash
 //! escapes at all, which is why RFC 6868 gives it the caret ones instead.
 
+use core::str;
+
 use alloc::{borrow::Cow, string::String, vec::Vec};
 
 use crate::tree::codec::mode::Escaper;
@@ -19,7 +21,7 @@ use crate::tree::codec::mode::Escaper;
 /// bytes and yielding the decoded text (lossily when the bytes are not UTF-8;
 /// the caller keeps the raw bytes on the syntax leaf for fidelity).
 pub(crate) fn unescape_with(bytes: &[u8], escaper: Escaper) -> Cow<'_, str> {
-    lossy(unescape_bytes(bytes, escaper))
+    utf8_lossy(unescape_bytes(bytes, escaper))
 }
 
 /// Resolve value escapes by the calendar's escaping mode at the byte level,
@@ -88,11 +90,18 @@ pub(crate) fn unescape_param(text: &str, escaper: Escaper) -> Cow<'_, str> {
     Cow::Owned(out)
 }
 
-/// Interpret unescaped bytes as UTF-8, keeping the borrow when possible.
-fn lossy(bytes: Cow<'_, [u8]>) -> Cow<'_, str> {
+/// Interpret bytes as UTF-8, keeping the borrow or the buffer when they are,
+/// and walking them lossily only when they are not.
+pub(crate) fn utf8_lossy(bytes: Cow<'_, [u8]>) -> Cow<'_, str> {
     match bytes {
-        Cow::Borrowed(bytes) => String::from_utf8_lossy(bytes),
-        Cow::Owned(bytes) => Cow::Owned(String::from_utf8_lossy(&bytes).into_owned()),
+        Cow::Borrowed(bytes) => match str::from_utf8(bytes) {
+            Ok(text) => Cow::Borrowed(text),
+            Err(_) => String::from_utf8_lossy(bytes),
+        },
+        Cow::Owned(bytes) => match String::from_utf8(bytes) {
+            Ok(text) => Cow::Owned(text),
+            Err(error) => Cow::Owned(String::from_utf8_lossy(error.as_bytes()).into_owned()),
+        },
     }
 }
 

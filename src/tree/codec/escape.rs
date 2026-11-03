@@ -28,10 +28,80 @@ use crate::tree::codec::mode::Escaper;
 /// Borrows when nothing needs escaping; non-UTF-8 content passes through
 /// verbatim.
 pub(crate) fn escape_with(bytes: &[u8], escaper: Escaper) -> Cow<'_, [u8]> {
-    match escaper {
-        Escaper::Modern => escape_modern(bytes),
-        Escaper::V1_0 => escape_v21(bytes),
+    if escaped_at(bytes, escaper).is_none() {
+        return Cow::Borrowed(bytes);
     }
+
+    let mut out = Vec::with_capacity(bytes.len() + 2);
+    escape_into(bytes, escaper, &mut out);
+    Cow::Owned(out)
+}
+
+/// Append `bytes` to `out` with the value escapes of the mode applied, as
+/// [`escape_with`] returns them.
+pub(crate) fn escape_into(bytes: &[u8], escaper: Escaper, out: &mut Vec<u8>) {
+    let mut rest = bytes;
+
+    while let Some(at) = escaped_at(rest, escaper) {
+        out.extend_from_slice(&rest[..at]);
+        out.extend_from_slice(escape_of(rest[at]));
+        rest = &rest[at + 1..];
+    }
+
+    out.extend_from_slice(rest);
+}
+
+/// The index of the first byte a value escape rewrites, by escaping mode:
+/// `\`, `,`, `;` and a newline in RFC 5545 3.3.11, `;` and a newline in
+/// vCalendar 1.0.
+///
+/// Versit has no newline escape, so a newline written into a 1.0 value goes
+/// out as `\n` and reads back as those two characters: that is the closest 1.0
+/// can carry it, left raw it would end the line and the calendar would not
+/// parse.
+fn escaped_at(bytes: &[u8], escaper: Escaper) -> Option<usize> {
+    match escaper {
+        Escaper::Modern => position(bytes, |b| {
+            (b == b'\\') | (b == b',') | (b == b';') | (b == b'\n')
+        }),
+        Escaper::V1_0 => memchr::memchr2(b';', b'\n', bytes),
+    }
+}
+
+/// The escape written for a byte [`escaped_at`] finds.
+fn escape_of(byte: u8) -> &'static [u8] {
+    match byte {
+        b'\\' => br"\\",
+        b',' => br"\,",
+        b';' => br"\;",
+        _ => br"\n",
+    }
+}
+
+/// The index of the first byte `hit` matches.
+///
+/// Sixteen bytes at a time, each block's hits gathered into a bit mask with no
+/// early exit, which compiles to vector compares and a mask move, so a long
+/// value passes at several bytes a cycle. `hit` must join its tests with `|`:
+/// a `matches!` compiles to a branch per byte.
+fn position(bytes: &[u8], hit: impl Fn(u8) -> bool) -> Option<usize> {
+    let (blocks, tail) = bytes.as_chunks::<16>();
+
+    for (i, block) in blocks.iter().enumerate() {
+        let mut mask = 0u16;
+
+        for (j, &b) in block.iter().enumerate() {
+            mask |= u16::from(hit(b)) << j;
+        }
+
+        if mask != 0 {
+            return Some(i * 16 + mask.trailing_zeros() as usize);
+        }
+    }
+
+    tail.iter()
+        .position(|&b| hit(b))
+        .map(|j| blocks.len() * 16 + j)
 }
 
 /// Apply the RFC 6868 3.1 parameter value encoding (a newline as `^n`, a caret
@@ -48,7 +118,7 @@ pub(crate) fn escape_param(value: &str, escaper: Escaper) -> Cow<'_, str> {
         false => Cow::Borrowed(value),
     };
 
-    if !escaper.has_param_quoting() || !value.contains([',', ';', ':']) {
+    if !escaper.has_param_quoting() || !value.bytes().any(|b| matches!(b, b',' | b';' | b':')) {
         return value;
     }
 
@@ -62,56 +132,9 @@ pub(crate) fn escape_param(value: &str, escaper: Escaper) -> Cow<'_, str> {
     Cow::Owned(out)
 }
 
-/// Apply the RFC 5545 3.3.11 value escapes `\\` `\,` `\;` `\n`.
-fn escape_modern(bytes: &[u8]) -> Cow<'_, [u8]> {
-    if !bytes
-        .iter()
-        .any(|b| matches!(b, b'\\' | b',' | b';' | b'\n'))
-    {
-        return Cow::Borrowed(bytes);
-    }
-
-    let mut out = Vec::with_capacity(bytes.len());
-
-    for &b in bytes {
-        match b {
-            b'\\' => out.extend_from_slice(b"\\\\"),
-            b',' => out.extend_from_slice(b"\\,"),
-            b';' => out.extend_from_slice(b"\\;"),
-            b'\n' => out.extend_from_slice(b"\\n"),
-            other => out.push(other),
-        }
-    }
-
-    Cow::Owned(out)
-}
-
-/// Apply the vCalendar 1.0 value escapes: `\;`, plus `\n` for a newline.
-///
-/// Versit has no newline escape, so a newline written into a 1.0 value goes out
-/// as `\n` and reads back as those two characters. That is the closest 1.0 can
-/// carry it; left raw it would end the line and the calendar would not parse.
-fn escape_v21(bytes: &[u8]) -> Cow<'_, [u8]> {
-    if !bytes.iter().any(|b| matches!(b, b';' | b'\n')) {
-        return Cow::Borrowed(bytes);
-    }
-
-    let mut out = Vec::with_capacity(bytes.len() + 2);
-
-    for &b in bytes {
-        match b {
-            b';' => out.extend_from_slice(b"\\;"),
-            b'\n' => out.extend_from_slice(b"\\n"),
-            other => out.push(other),
-        }
-    }
-
-    Cow::Owned(out)
-}
-
 /// Apply the RFC 6868 caret encoding over every character of `value`.
 fn escape_carets(value: &str) -> Cow<'_, str> {
-    if !value.contains(['\n', '^', '"']) {
+    if !value.bytes().any(|b| matches!(b, b'\n' | b'^' | b'"')) {
         return Cow::Borrowed(value);
     }
 

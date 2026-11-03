@@ -140,6 +140,53 @@ impl IcalValueKind {
         Self::Uri,
         Self::UtcOffset,
     ];
+
+    /// The value kind a `VALUE` parameter names (case-insensitive), or `None`.
+    ///
+    /// Matched as it is first, then upper-cased into a stack copy only when it
+    /// holds a lower-case letter, as
+    /// [`IcalPropKind::from_name`](crate::prop::IcalPropKind) does.
+    pub(crate) fn from_name(kind: &str) -> Option<Self> {
+        if let Some(kind) = Self::from_upper(kind.as_bytes()) {
+            return Some(kind);
+        }
+
+        if !kind.bytes().any(|byte| byte.is_ascii_lowercase()) {
+            return None;
+        }
+
+        let mut upper = [0; 14];
+        let upper = upper.get_mut(..kind.len())?;
+        upper.copy_from_slice(kind.as_bytes());
+        upper.make_ascii_uppercase();
+
+        Self::from_upper(upper)
+    }
+
+    /// The value kind an upper-case `VALUE` names, or `None`.
+    fn from_upper(kind: &[u8]) -> Option<Self> {
+        Some(match kind {
+            b"BINARY" => Self::Binary,
+            b"BOOLEAN" => Self::Boolean,
+            b"CAL-ADDRESS" => Self::CalAddress,
+            b"DATE" => Self::Date,
+            b"DATE-TIME" => Self::DateTime,
+            b"DATE-TIME-LIST" => Self::DateTimeList,
+            b"DURATION" => Self::Duration,
+            b"FLOAT" => Self::Float,
+            b"GEO" => Self::Geo,
+            b"INTEGER" => Self::Integer,
+            b"PERIOD" => Self::Period,
+            b"RECUR" => Self::Recur,
+            b"REQUEST-STATUS" => Self::RequestStatus,
+            b"TEXT" => Self::Text,
+            b"TEXT-LIST" => Self::TextList,
+            b"TIME" => Self::Time,
+            b"URI" => Self::Uri,
+            b"UTC-OFFSET" => Self::UtcOffset,
+            _ => return None,
+        })
+    }
 }
 
 impl str::FromStr for IcalValueKind {
@@ -149,27 +196,7 @@ impl str::FromStr for IcalValueKind {
     /// it maps every wire spelling onto a model kind, leaving membership checks
     /// to a later validation tier.
     fn from_str(kind: &str) -> Result<Self, Self::Err> {
-        match kind {
-            kind if kind.eq_ignore_ascii_case("BINARY") => Ok(Self::Binary),
-            kind if kind.eq_ignore_ascii_case("BOOLEAN") => Ok(Self::Boolean),
-            kind if kind.eq_ignore_ascii_case("CAL-ADDRESS") => Ok(Self::CalAddress),
-            kind if kind.eq_ignore_ascii_case("DATE") => Ok(Self::Date),
-            kind if kind.eq_ignore_ascii_case("DATE-TIME") => Ok(Self::DateTime),
-            kind if kind.eq_ignore_ascii_case("DATE-TIME-LIST") => Ok(Self::DateTimeList),
-            kind if kind.eq_ignore_ascii_case("DURATION") => Ok(Self::Duration),
-            kind if kind.eq_ignore_ascii_case("FLOAT") => Ok(Self::Float),
-            kind if kind.eq_ignore_ascii_case("GEO") => Ok(Self::Geo),
-            kind if kind.eq_ignore_ascii_case("INTEGER") => Ok(Self::Integer),
-            kind if kind.eq_ignore_ascii_case("PERIOD") => Ok(Self::Period),
-            kind if kind.eq_ignore_ascii_case("RECUR") => Ok(Self::Recur),
-            kind if kind.eq_ignore_ascii_case("REQUEST-STATUS") => Ok(Self::RequestStatus),
-            kind if kind.eq_ignore_ascii_case("TEXT") => Ok(Self::Text),
-            kind if kind.eq_ignore_ascii_case("TEXT-LIST") => Ok(Self::TextList),
-            kind if kind.eq_ignore_ascii_case("TIME") => Ok(Self::Time),
-            kind if kind.eq_ignore_ascii_case("URI") => Ok(Self::Uri),
-            kind if kind.eq_ignore_ascii_case("UTC-OFFSET") => Ok(Self::UtcOffset),
-            _ => Err(ParseIcalValueKindError(kind.to_string())),
-        }
+        Self::from_name(kind).ok_or_else(|| ParseIcalValueKindError(kind.to_string()))
     }
 }
 

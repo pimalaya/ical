@@ -4,21 +4,23 @@ Single-calendar [criterion](https://crates.io/crates/criterion) medians, run wit
 
 The comparison is level-matched, so each group compares like with like: content-line parsers stop at a line tree like our `IcalCst::parse` step, while model parsers build a decoded object like our `parse + decode` step.
 
+The figures below are the medians of three interleaved runs on 2026-11-03 (Zen 5, rustc 1.99.1, `taskset -c 12`) on a quiet core. The previous figures (2.20 µs and 4.23 µs for our two rows) were taken on another day and toolchain: compare deltas, not times, across the two.
+
 ## Parsing into content lines (no decoding)
 
 | library | time | delta |
 | --- | --- | --- |
-| **ical-rs** (`IcalCst::parse`) | **2.20 µs** | baseline |
-| [`ical`](https://crates.io/crates/ical) (`PropertyParser`) | 4.81 µs | +119% |
+| **ical-rs** (`IcalCst::parse`) | **0.82 µs** | baseline |
+| [`ical`](https://crates.io/crates/ical) (`PropertyParser`) | 2.90 µs | +254% |
 
 ## Parsing into a decoded model
 
 | library | time | delta |
 | --- | --- | --- |
-| **ical-rs** (`parse + decode`) | **4.23 µs** | baseline |
-| [`calcard`](https://crates.io/crates/calcard) | 4.60 µs | +9% |
-| [`ical`](https://crates.io/crates/ical) (`IcalParser`) | 5.39 µs | +27% |
-| [`icalendar`](https://crates.io/crates/icalendar) | 13.2 µs | +213% |
+| **ical-rs** (`parse + decode`) | **1.53 µs** | baseline |
+| [`calcard`](https://crates.io/crates/calcard) | 2.97 µs | +95% |
+| [`ical`](https://crates.io/crates/ical) (`IcalParser`) | 3.66 µs | +139% |
+| [`icalendar`](https://crates.io/crates/icalendar) | 10.4 µs | +579% |
 
 ## Reading the numbers
 
@@ -26,7 +28,42 @@ These are a ballpark, not a strict ranking: the libraries produce different repr
 
 The `ical` crate reads through a `BufRead`, which costs it a copy at both levels, and its `IcalParser` sits below the other model parsers since it nests components but leaves every value as a string, so it does less work than the line it is compared against.
 
-At the model level `calcard` is the closest, within ten percent.
+At the model level `calcard` is the closest, at about twice our time.
+
+## This crate's pipeline
+
+The same calendar through the bench's own rows, before and after the first speed pass ([the-lines-built-in-place](../cairn/log/2026-11-03-the-lines-built-in-place.md)), interleaved in the same session:
+
+| step | before | after | delta |
+| --- | ---: | ---: | ---: |
+| `IcalCst::parse` | 1,607 ns | 818 ns | -49% |
+| parse + `decode` | 2,667 ns | 1,528 ns | -43% |
+| `decode` of a parsed calendar | 896 ns | 601 ns | -33% |
+| `encode` of a decoded calendar | 2,509 ns | 2,154 ns | -14% |
+| `to_string` of a decoded calendar | 4,292 ns | 326 ns | -92% |
+| `to_bytes` | 393 ns | 210 ns | -47% |
+| parse + `to_bytes` | 2,059 ns | 1,091 ns | -47% |
+
+The rivals moved within 4% between the two sides.
+
+## Cycles over the corpus
+
+Criterion times one short calendar. The speed passes also count user-space cycles over tests/corpus (293 files, 3.4 MB, 2,881 calendars) and over the same short calendar parsed 300 times, with `perf stat`, which another process's load moves far less than wall time. The harness lives in [the speed-pass handoff](../cairn/changes/the-structure-scanned-once/proposal.md).
+
+The first pass, medians of 11 interleaved runs a pass on a quiet core:
+
+| workload | before | after | delta |
+| --- | ---: | ---: | ---: |
+| corpus `parse` | 57,766k | 34,257k | -41% |
+| corpus `parse` + `decode` | 94,339k | 60,926k | -35% |
+| corpus `parse` + `to_bytes` | 68,421k | 41,665k | -39% |
+| corpus `to_string` of the decoded calendars | 126,519k | 12,071k | -90% |
+| short calendar `parse` | 2,145k | 1,097k | -49% |
+| short calendar `parse` + `decode` | 3,723k | 1,951k | -48% |
+| short calendar `parse` + `to_bytes` | 2,705k | 1,391k | -49% |
+| short calendar `to_string` | 5,717k | 479k | -92% |
+
+`to_bytes` of a large calendar parsed long before, its tree out of cache, is the one row that lost (+24% over the corpus): see the pass's log.
 
 ## Recurrence
 

@@ -89,24 +89,26 @@ fn write_eol(crlf: bool, out: &mut Vec<u8>) {
     out.extend_from_slice(if crlf { b"\r\n" } else { b"\n" });
 }
 
-/// Write `logical` folded at [`FOLD_OCTETS`] (RFC 5545 3.1): a line break and
-/// a space before every continuation, the space counting toward its length.
+/// Fold the logical line written in `out` from `start` on at [`FOLD_OCTETS`]
+/// (RFC 5545 3.1), in place: a line break and a space before every
+/// continuation, the space counting toward its length.
 ///
 /// A fold never lands inside a UTF-8 sequence: the cut backs off over the
 /// continuation bytes, at most three, so bytes that are not UTF-8 still go out.
-pub(crate) fn write_folded(logical: &[u8], crlf: bool, out: &mut Vec<u8>) {
+pub(crate) fn fold(out: &mut Vec<u8>, start: usize, crlf: bool) {
+    let len = out.len() - start;
     let mut at = 0;
     let mut room = FOLD_OCTETS;
 
-    while logical.len() - at > room {
+    while len - at > room {
         let mut cut = at + room;
         let floor = (cut - 3).max(at + 1);
 
-        while cut > floor && logical[cut] & 0xC0 == 0x80 {
+        while cut > floor && out[start + cut] & 0xC0 == 0x80 {
             cut -= 1;
         }
 
-        out.extend_from_slice(&logical[at..cut]);
+        out.extend_from_within(start + at..start + cut);
         write_eol(crlf, out);
         out.push(b' ');
 
@@ -114,7 +116,9 @@ pub(crate) fn write_folded(logical: &[u8], crlf: bool, out: &mut Vec<u8>) {
         room = FOLD_OCTETS - 1;
     }
 
-    out.extend_from_slice(&logical[at..]);
+    out.extend_from_within(start + at..start + len);
+    out.copy_within(start + len.., start);
+    out.truncate(out.len() - len);
 }
 
 /// The wire shape of one content line: every piece the parser resolved away,
@@ -133,9 +137,33 @@ pub struct IcalWire<'a> {
 }
 
 impl<'a> IcalWire<'a> {
+    /// The shape of a line built rather than parsed.
+    pub(crate) const fn new() -> Self {
+        Self {
+            parts: Vec::new(),
+            len: None,
+        }
+    }
+
     /// Whether the shape records no piece.
     pub fn is_empty(&self) -> bool {
         self.parts.is_empty()
+    }
+
+    /// About how many bytes the line takes on the wire, its ending aside:
+    /// exact for an unedited parsed line folded with `\r\n`, a guess to size
+    /// a buffer by otherwise.
+    pub(crate) fn size_hint(&self) -> usize {
+        self.len.unwrap_or(0) + 3 * self.parts.len()
+    }
+
+    /// The folds recorded, each as its offset and whether the break before it
+    /// was a `\r\n`.
+    pub(crate) fn folds(&self) -> impl Iterator<Item = (usize, bool)> + '_ {
+        self.parts.iter().filter_map(|(offset, part)| match part {
+            IcalWirePart::Fold { crlf, .. } => Some((*offset, *crlf)),
+            _ => None,
+        })
     }
 
     /// Record a fold at `offset`.
@@ -154,15 +182,34 @@ impl<'a> IcalWire<'a> {
             .push((offset, IcalWirePart::Skipped(Cow::Borrowed(bytes))));
     }
 
+    /// Record `count` dropped `=` at `offset`, after every piece recorded at
+    /// or before it, the pieces being in offset order.
+    ///
+    /// The dangling `=` of a `QUOTED-PRINTABLE` value, which the head splitter
+    /// finds once the tokeniser recorded the rest: a soft break at the same
+    /// offset or past it would otherwise go out first and swallow a line.
+    pub(crate) fn insert_skipped_equals(&mut self, offset: usize, count: usize) {
+        const EQUALS: &str = "================================================================";
+
+        let bytes = match EQUALS.get(..count) {
+            Some(bytes) => Cow::Borrowed(bytes),
+            None => Cow::Owned("=".repeat(count)),
+        };
+
+        let at = self.parts.partition_point(|(at, _)| *at <= offset);
+        self.parts
+            .insert(at, (offset, IcalWirePart::Skipped(bytes)));
+    }
+
     /// Pin the logical length the offsets were taken against.
     pub(crate) fn seal(&mut self, len: usize) {
         self.len = Some(len);
     }
 
-    /// Whether the shape was recorded against `logical`, so its offsets still
-    /// index those bytes.
-    pub(crate) fn lays_out(&self, logical: &[u8]) -> bool {
-        self.len == Some(logical.len())
+    /// Whether the shape was recorded against a logical line of `len` bytes,
+    /// so its offsets still index them.
+    pub(crate) fn fits(&self, len: usize) -> bool {
+        self.len == Some(len)
     }
 
     /// Put `earlier`'s pieces before this shape's, keeping the sealed length.
@@ -181,18 +228,28 @@ impl<'a> IcalWire<'a> {
             return;
         }
 
+        if self.parts.is_empty() {
+            self.parts = earlier.parts;
+            return;
+        }
+
         earlier.parts.append(&mut self.parts);
         earlier.parts.sort_by_key(|(offset, _)| *offset);
         self.parts = earlier.parts;
     }
 
-    /// Write `logical` back to the wire, re-inserting every piece.
+    /// Lay the logical line written in `out` from `start` on back out to the
+    /// wire, re-inserting every piece, in place.
     ///
-    /// A shape whose sealed length no longer matches `logical` is stale, left
-    /// by an edit, and is dropped: the logical bytes go out unfolded.
-    pub(crate) fn write_bytes(&self, logical: &[u8], out: &mut Vec<u8>) {
-        if self.parts.is_empty() || !self.lays_out(logical) {
-            out.extend_from_slice(logical);
+    /// The wire bytes are written past the logical ones, then moved down over
+    /// them, so no buffer is allocated for a folded line.
+    ///
+    /// A shape that no longer [`fits`](Self::fits) the line is stale, left by
+    /// an edit, and is not applied.
+    pub(crate) fn lay_out(&self, out: &mut Vec<u8>, start: usize) {
+        let len = out.len() - start;
+
+        if self.parts.is_empty() || !self.fits(len) {
             return;
         }
 
@@ -201,13 +258,60 @@ impl<'a> IcalWire<'a> {
         for (offset, part) in &self.parts {
             // NOTE: Clamped, so a shape recorded against other bytes can never
             // index out of this line or walk backwards.
-            let offset = (*offset).clamp(at, logical.len());
-            out.extend_from_slice(&logical[at..offset]);
+            let offset = (*offset).clamp(at, len);
+            out.extend_from_within(start + at..start + offset);
             part.write_bytes(out);
             at = offset;
         }
 
-        out.extend_from_slice(&logical[at..]);
+        out.extend_from_within(start + at..start + len);
+        out.copy_within(start + len.., start);
+        out.truncate(out.len() - len);
+    }
+
+    /// Lay a line out to the wire as [`lay_out`](Self::lay_out) does, its head
+    /// (name, parameters and colon) written in `out` from `start` on and its
+    /// value read from `value`, which is copied once.
+    ///
+    /// The pieces before the head go in front of it. A piece inside the head
+    /// (a fold before the colon) takes the general way. The caller checked the
+    /// shape [`fits`](Self::fits) the line.
+    pub(crate) fn lay_out_value(&self, out: &mut Vec<u8>, start: usize, value: &[u8]) {
+        if self.parts.is_empty() {
+            return out.extend_from_slice(value);
+        }
+
+        let head = out.len() - start;
+        let len = head + value.len();
+
+        let lead = self.parts.iter().take_while(|(at, _)| *at == 0).count();
+        let (front, back) = self.parts.split_at(lead);
+
+        if back.iter().any(|(at, _)| *at < head) {
+            out.extend_from_slice(value);
+            return self.lay_out(out, start);
+        }
+
+        if !front.is_empty() {
+            for (_, part) in front {
+                part.write_bytes(out);
+            }
+
+            let pieces = out.len() - start - head;
+            out[start..].rotate_right(pieces);
+        }
+
+        let mut at = head;
+
+        for (offset, part) in back {
+            // NOTE: Clamped as in `lay_out`.
+            let offset = (*offset).clamp(at, len);
+            out.extend_from_slice(&value[at - head..offset - head]);
+            part.write_bytes(out);
+            at = offset;
+        }
+
+        out.extend_from_slice(&value[at - head..]);
     }
 
     /// Convert into an owned shape (`'static`).
@@ -229,12 +333,15 @@ mod tests {
 
     use alloc::{vec, vec::Vec};
 
-    use crate::tree::wire::{IcalWire, write_folded};
+    use crate::tree::wire::{IcalWire, fold};
 
     fn written(wire: &IcalWire<'_>, logical: &[u8]) -> Vec<u8> {
-        let mut out = Vec::new();
-        wire.write_bytes(logical, &mut out);
-        out
+        let mut out = b"before".to_vec();
+        out.extend_from_slice(logical);
+        wire.lay_out(&mut out, 6);
+        let line = out.split_off(6);
+        assert_eq!(out, b"before");
+        line
     }
 
     #[test]
@@ -314,9 +421,12 @@ mod tests {
     }
 
     fn folded(logical: &[u8]) -> Vec<u8> {
-        let mut out = Vec::new();
-        write_folded(logical, true, &mut out);
-        out
+        let mut out = b"before".to_vec();
+        out.extend_from_slice(logical);
+        fold(&mut out, 6, true);
+        let line = out.split_off(6);
+        assert_eq!(out, b"before");
+        line
     }
 
     /// The physical lines `folded` wrote, each with its break taken off.

@@ -37,6 +37,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Changed `tzdb::zones` to read a time past a `VTIMEZONE`'s `TZUNTIL`, or past the end of a truncated definition, through the database.
 - Changed an `EXDATE` of value type `DATE` beside a `DATE-TIME` `DTSTART` to remove every instance on that day, as libical, recurring-ical-events and ical.js do.
 - Changed expansion to walk a yearly or monthly period a month at a time: a yearly rule expands about six times faster.
+- Changed parsing, decoding and serializing to take fewer cycles, with the same output: 41% fewer for a strict parse of the test corpus, 35% for parse and decode, 39% for parse and `to_bytes`, 47 to 49% on a short calendar. A folded line is joined once, its head borrowed from the input; lines are filled in place and a nested `BEGIN` line is read once; names are looked up with no allocation; decoding checks UTF-8 before any lossy walk. A parsed component's item list now starts with room for 16 items.
+- Changed `Display` for `Ical` (and so `to_string`) to write the text straight from the decoded model rather than through an encoded syntax tree, with the same output: 90% fewer cycles over the test corpus, 92% on a short calendar.
 
 ### Fixed
 

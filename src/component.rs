@@ -104,7 +104,7 @@ impl From<IcalComponentKind> for IcalComponentName<'_> {
 
 impl<'a> From<Cow<'a, str>> for IcalComponentName<'a> {
     fn from(name: Cow<'a, str>) -> Self {
-        match name.parse().ok() {
+        match IcalComponentKind::from_name(&name) {
             Some(kind) => Self::Kind(kind),
             None => Self::Unknown(name),
         }
@@ -201,30 +201,57 @@ impl IcalComponentKind {
     ];
 }
 
+impl IcalComponentKind {
+    /// The known component for a wire name (case-insensitive), or `None`.
+    ///
+    /// Matched as it is first, then upper-cased into a stack copy only when it
+    /// holds a lower-case letter, as
+    /// [`IcalPropKind::from_name`](crate::prop::IcalPropKind) does.
+    pub(crate) fn from_name(kind: &str) -> Option<Self> {
+        if let Some(kind) = Self::from_upper(kind.as_bytes()) {
+            return Some(kind);
+        }
+
+        if !kind.bytes().any(|byte| byte.is_ascii_lowercase()) {
+            return None;
+        }
+
+        let mut upper = [0; 13];
+        let upper = upper.get_mut(..kind.len())?;
+        upper.copy_from_slice(kind.as_bytes());
+        upper.make_ascii_uppercase();
+
+        Self::from_upper(upper)
+    }
+
+    /// The known component for an upper-case wire name, or `None`.
+    fn from_upper(kind: &[u8]) -> Option<Self> {
+        Some(match kind {
+            b"VCALENDAR" => Self::VCalendar,
+            b"VEVENT" => Self::VEvent,
+            b"VTODO" => Self::VTodo,
+            b"VJOURNAL" => Self::VJournal,
+            b"VFREEBUSY" => Self::VFreeBusy,
+            b"VTIMEZONE" => Self::VTimezone,
+            b"STANDARD" => Self::Standard,
+            b"DAYLIGHT" => Self::Daylight,
+            b"VALARM" => Self::VAlarm,
+            b"PARTICIPANT" => Self::Participant,
+            b"VLOCATION" => Self::VLocation,
+            b"VRESOURCE" => Self::VResource,
+            b"VAVAILABILITY" => Self::VAvailability,
+            b"AVAILABLE" => Self::Available,
+            _ => return None,
+        })
+    }
+}
+
 impl str::FromStr for IcalComponentKind {
     type Err = ParseIcalComponentKindError;
 
     /// The known component for a wire name (case-insensitive), or an error.
     fn from_str(kind: &str) -> Result<Self, Self::Err> {
-        let kind = match kind {
-            kind if kind.eq_ignore_ascii_case("VCALENDAR") => Self::VCalendar,
-            kind if kind.eq_ignore_ascii_case("VEVENT") => Self::VEvent,
-            kind if kind.eq_ignore_ascii_case("VTODO") => Self::VTodo,
-            kind if kind.eq_ignore_ascii_case("VJOURNAL") => Self::VJournal,
-            kind if kind.eq_ignore_ascii_case("VFREEBUSY") => Self::VFreeBusy,
-            kind if kind.eq_ignore_ascii_case("VTIMEZONE") => Self::VTimezone,
-            kind if kind.eq_ignore_ascii_case("STANDARD") => Self::Standard,
-            kind if kind.eq_ignore_ascii_case("DAYLIGHT") => Self::Daylight,
-            kind if kind.eq_ignore_ascii_case("VALARM") => Self::VAlarm,
-            kind if kind.eq_ignore_ascii_case("PARTICIPANT") => Self::Participant,
-            kind if kind.eq_ignore_ascii_case("VLOCATION") => Self::VLocation,
-            kind if kind.eq_ignore_ascii_case("VRESOURCE") => Self::VResource,
-            kind if kind.eq_ignore_ascii_case("VAVAILABILITY") => Self::VAvailability,
-            kind if kind.eq_ignore_ascii_case("AVAILABLE") => Self::Available,
-            _ => return Err(ParseIcalComponentKindError(kind.to_string())),
-        };
-
-        Ok(kind)
+        Self::from_name(kind).ok_or_else(|| ParseIcalComponentKindError(kind.to_string()))
     }
 }
 

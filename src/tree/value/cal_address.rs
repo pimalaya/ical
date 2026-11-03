@@ -7,7 +7,7 @@
 
 use crate::{
     tree::{
-        codec::{Codec, encode::verbatim_node, mode::Escaper},
+        codec::{Codec, encode::IcalValueOut, mode::Escaper},
         value::node::IcalValueNode,
     },
     value::cal_address::IcalCalAddress,
@@ -19,6 +19,13 @@ impl<'v> Codec<'v> for IcalCalAddress<'v> {
     }
 
     fn encode(&self, escaper: Escaper) -> IcalValueNode<'static> {
-        verbatim_node(self.0.as_bytes(), escaper)
+        IcalValueOut::node(escaper, |out| self.emit(out))
+    }
+}
+
+impl IcalCalAddress<'_> {
+    /// Write the address as the URI it is.
+    pub(crate) fn emit(&self, out: &mut IcalValueOut<'_>) {
+        out.uri(&self.0);
     }
 }

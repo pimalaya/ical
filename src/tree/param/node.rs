@@ -34,10 +34,7 @@ impl<'a> IcalParamNode<'a> {
         match param.split_once('=') {
             Some((name, values)) => Self {
                 name: IcalLeaf::from(name),
-                values: split_param_values(values)
-                    .into_iter()
-                    .map(IcalLeaf::from)
-                    .collect(),
+                values: split_param_values(values),
                 escaper: Escaper::default(),
             },
             None => Self {
@@ -46,6 +43,63 @@ impl<'a> IcalParamNode<'a> {
                 escaper: Escaper::default(),
             },
         }
+    }
+
+    /// Take one parameter off the front of `rest`, the head bytes after a `;`,
+    /// up to the next `;` outside double quotes: the node, then what follows
+    /// that `;`, if one ends it.
+    ///
+    /// One walk does what [`parse`](Self::parse) does once the head splitter
+    /// found the `;`: the first `=` ends the name, and a `,` outside quotes
+    /// counted from that `=` on splits two values.
+    pub(crate) fn take(rest: &'a str) -> (Self, Option<&'a str>) {
+        let mut quoted = false;
+        let mut values_quoted = false;
+        let mut eq = None;
+        let mut start = 0;
+        let mut values = Vec::new();
+        let mut end = rest.len();
+        let mut tail = None;
+
+        for (i, &byte) in rest.as_bytes().iter().enumerate() {
+            match byte {
+                b'"' => {
+                    quoted = !quoted;
+                    values_quoted = !values_quoted;
+                }
+                b';' if !quoted => {
+                    end = i;
+                    tail = Some(&rest[i + 1..]);
+                    break;
+                }
+                b'=' if eq.is_none() => {
+                    eq = Some(i);
+                    start = i + 1;
+                    values_quoted = false;
+                }
+                b',' if eq.is_some() && !values_quoted => {
+                    values.push(IcalLeaf::from(&rest[start..i]));
+                    start = i + 1;
+                }
+                _ => {}
+            }
+        }
+
+        let name = match eq {
+            Some(eq) => {
+                values.push(IcalLeaf::from(&rest[start..end]));
+                &rest[..eq]
+            }
+            None => &rest[..end],
+        };
+
+        let node = Self {
+            name: IcalLeaf::from(name),
+            values,
+            escaper: Escaper::default(),
+        };
+
+        (node, tail)
     }
 
     /// Convert into an owned parameter node (`'static`).
@@ -90,7 +144,7 @@ impl fmt::Display for IcalParamNode<'_> {
 }
 
 /// Split a parameter value list on commas outside double quotes.
-fn split_param_values(values: &str) -> Vec<&str> {
+fn split_param_values(values: &str) -> Vec<IcalLeaf<'_>> {
     let bytes = values.as_bytes();
     let mut pieces = Vec::new();
     let mut start = 0;
@@ -100,14 +154,14 @@ fn split_param_values(values: &str) -> Vec<&str> {
         match byte {
             b'"' => quoted = !quoted,
             b',' if !quoted => {
-                pieces.push(&values[start..i]);
+                pieces.push(IcalLeaf::from(&values[start..i]));
                 start = i + 1;
             }
             _ => {}
         }
     }
 
-    pieces.push(&values[start..]);
+    pieces.push(IcalLeaf::from(&values[start..]));
     pieces
 }
 

@@ -3,11 +3,9 @@
 //! [`Codec`] for the structured `GEO` value: a `latitude;longitude` pair of
 //! FLOATs, held as two `;`-separated components.
 
-use alloc::vec;
-
 use crate::{
     tree::{
-        codec::{Codec, encode::encode_component, mode::Escaper},
+        codec::{Codec, encode::IcalValueOut, mode::Escaper},
         value::node::IcalValueNode,
     },
     value::geo::IcalGeo,
@@ -22,12 +20,14 @@ impl<'v> Codec<'v> for IcalGeo<'v> {
     }
 
     fn encode(&self, escaper: Escaper) -> IcalValueNode<'static> {
-        IcalValueNode::from_components(
-            vec![
-                encode_component(&[self.latitude.as_ref()], escaper),
-                encode_component(&[self.longitude.as_ref()], escaper),
-            ],
-            escaper,
-        )
+        IcalValueOut::node(escaper, |out| self.emit(out))
+    }
+}
+
+impl IcalGeo<'_> {
+    /// Write the pair as two components, each holding one value.
+    pub(crate) fn emit(&self, out: &mut IcalValueOut<'_>) {
+        out.component(&[&*self.latitude]);
+        out.component(&[&*self.longitude]);
     }
 }

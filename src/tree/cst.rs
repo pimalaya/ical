@@ -139,29 +139,27 @@ impl<'a> IcalCst<'a> {
     /// calendar is dropped, except trailing blank lines, which are kept: use
     /// [`parse_many`](Self::parse_many) to read a multi-calendar file whole.
     pub fn parse<T: AsRef<[u8]> + ?Sized>(input: &'a T) -> Result<Self, IcalParseError> {
-        let input = input.as_ref();
-        let (first, _rest) = IcalLine::take(input)?;
+        let mut first = IcalLine::empty();
+        let rest = IcalLine::take_into(input.as_ref(), &mut first)?;
 
         if first.name.get().eq_ignore_ascii_case("BEGIN") {
-            let (mut cst, rest) = Self::take_component(input, 1)?;
+            let (mut cst, rest) = Self::take_body(first, rest, 1)?;
             cst.take_trailing(rest);
-            let escaper = Escaper::for_version_str(&cst.version_str());
-            cst.stamp_escaper(escaper);
+            cst.stamp();
             Ok(cst)
         } else {
-            Self::parse_bare(input)
+            Self::parse_bare(first, rest)
         }
     }
 
-    /// Parse a bare, envelope-less record: every line becomes a property.
-    fn parse_bare(input: &'a [u8]) -> Result<Self, IcalParseError> {
-        let mut items: Vec<IcalItem<'a>> = Vec::new();
-        let mut rest = input;
+    /// Parse a bare, envelope-less record from its `first` line and the input
+    /// after it: every line becomes a property.
+    fn parse_bare(first: IcalLine<'a>, mut rest: &'a [u8]) -> Result<Self, IcalParseError> {
+        let mut items: Vec<IcalItem<'a>> = Vec::with_capacity(ITEMS);
+        items.push(IcalItem::Prop(first));
 
         while !is_blank(rest) {
-            let (line, tail) = IcalLine::take(rest)?;
-            items.push(IcalItem::Prop(line));
-            rest = tail;
+            rest = IcalLine::take_into(rest, push_line(&mut items))?;
         }
 
         let mut cst = Self {
@@ -171,8 +169,7 @@ impl<'a> IcalCst<'a> {
             trailing: Cow::Borrowed(""),
         };
         cst.take_trailing(rest);
-        let escaper = Escaper::for_version_str(&cst.version_str());
-        cst.stamp_escaper(escaper);
+        cst.stamp();
         Ok(cst)
     }
 
@@ -195,8 +192,7 @@ impl<'a> IcalCst<'a> {
             match Self::take_component(rest, 1) {
                 Ok((mut cst, tail)) => {
                     rest = cst.take_trailing(tail);
-                    let escaper = Escaper::for_version_str(&cst.version_str());
-                    cst.stamp_escaper(escaper);
+                    cst.stamp();
                     Some(Ok(cst))
                 }
                 Err(error) => {
@@ -234,8 +230,7 @@ impl<'a> IcalCst<'a> {
 
                     let (mut cst, tail) = Self::take_component_recovering(rest, &mut recovery, 1);
                     rest = tail;
-                    let escaper = Escaper::for_version_str(&cst.version_str());
-                    cst.stamp_escaper(escaper);
+                    cst.stamp();
                     recovery.calendars.push(cst);
                 }
                 Ok((line, tail)) => {
@@ -405,13 +400,29 @@ impl<'a> IcalCst<'a> {
     /// up to [`DEPTH_MAX`](Self::DEPTH_MAX); the matching `END` closes this
     /// component.
     fn take_component(input: &'a [u8], depth: usize) -> Result<(Self, &'a [u8]), IcalParseError> {
-        let (begin, mut rest) = IcalLine::take(input)?;
+        let mut begin = IcalLine::empty();
+        let rest = IcalLine::take_into(input, &mut begin)?;
 
         if !begin.name.get().eq_ignore_ascii_case("BEGIN") {
             return Err(IcalParseError::ExpectedBegin(begin.name.get().to_string()));
         }
 
-        let mut items: Vec<IcalItem<'a>> = Vec::new();
+        Self::take_body(begin, rest, depth)
+    }
+
+    /// Take the body of a component whose `BEGIN` line was taken, at nesting
+    /// `depth`, up to its matching `END`: the component and the unconsumed
+    /// rest.
+    ///
+    /// Every line is taken into a slot the item list grows by, so it is
+    /// written once; a nested `BEGIN` line is moved out to open its child, and
+    /// the `END` line to close this component.
+    fn take_body(
+        begin: IcalLine<'a>,
+        mut rest: &'a [u8],
+        depth: usize,
+    ) -> Result<(Self, &'a [u8]), IcalParseError> {
+        let mut items: Vec<IcalItem<'a>> = Vec::with_capacity(ITEMS);
 
         loop {
             if rest.is_empty() {
@@ -422,15 +433,18 @@ impl<'a> IcalCst<'a> {
                 ));
             }
 
-            let (line, tail) = IcalLine::take(rest)?;
+            let line = push_line(&mut items);
+            let tail = IcalLine::take_into(rest, line)?;
             let name = line.name.get();
 
             if name.eq_ignore_ascii_case("END") {
+                let end = pop_line(&mut items);
+
                 return Ok((
                     Self {
                         begin: Some(begin),
                         items,
-                        end: Some(line),
+                        end,
                         trailing: Cow::Borrowed(""),
                     },
                     tail,
@@ -442,14 +456,27 @@ impl<'a> IcalCst<'a> {
                     return Err(IcalParseError::TooDeep(line.raw_value_str().into_owned()));
                 }
 
-                let (child, next) = Self::take_component(rest, depth + 1)?;
-                items.push(IcalItem::Component(Box::new(child)));
-                rest = next;
-                continue;
+                if let Some(begin) = pop_line(&mut items) {
+                    let (child, next) = Self::take_body(begin, tail, depth + 1)?;
+                    items.push(IcalItem::Component(Box::new(child)));
+                    rest = next;
+                    continue;
+                }
             }
 
-            items.push(IcalItem::Prop(line));
             rest = tail;
+        }
+    }
+
+    /// Stamp the escaping mode of the calendar's `VERSION` onto every value
+    /// and parameter node, which can only be known once the whole tree is
+    /// parsed. The parser leaves the default mode on every node, so a calendar
+    /// in that mode is already stamped.
+    fn stamp(&mut self) {
+        let escaper = Escaper::for_version_str(&self.version_str());
+
+        if escaper != Escaper::default() {
+            self.stamp_escaper(escaper);
         }
     }
 
@@ -675,9 +702,23 @@ impl<'a> IcalCst<'a> {
 
     /// Serialize the calendar to raw bytes, exactly as parsed.
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut out = Vec::new();
+        let mut out = Vec::with_capacity(self.size_hint());
         self.write_bytes(&mut out);
         out
+    }
+
+    /// About how many bytes [`to_bytes`](Self::to_bytes) writes: exact for an
+    /// unedited calendar parsed with `\r\n` folds, a guess otherwise.
+    fn size_hint(&self) -> usize {
+        let items = self.items.iter().map(|item| match item {
+            IcalItem::Prop(line) => line.size_hint(),
+            IcalItem::Component(child) => child.size_hint(),
+            IcalItem::Opaque(bytes) => bytes.len(),
+        });
+
+        let envelope = self.begin.iter().chain(&self.end).map(IcalLine::size_hint);
+
+        items.chain(envelope).sum::<usize>() + self.trailing.len()
     }
 
     fn write_bytes(&self, out: &mut Vec<u8>) {
@@ -721,7 +762,8 @@ impl<'a> IcalRecovery<'a> {
 
     /// Serialize every calendar, in order: the input, byte for byte.
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut out = Vec::new();
+        let size = self.calendars.iter().map(IcalCst::size_hint).sum();
+        let mut out = Vec::with_capacity(size);
 
         for cst in &self.calendars {
             cst.write_bytes(&mut out);
@@ -743,6 +785,31 @@ impl<'a> IcalRecovery<'a> {
 /// Whether nothing but blank-line bytes (`\r` / `\n`) is left.
 fn is_blank(bytes: &[u8]) -> bool {
     bytes.iter().all(|byte| matches!(byte, b'\r' | b'\n'))
+}
+
+/// The slots a parsed component's item list starts with, enough for all but
+/// about one component in fifty in the test corpus, its `END` line included
+/// while it is read.
+const ITEMS: usize = 16;
+
+/// Grow `items` by an empty property line for [`IcalLine::take_into`] to fill
+/// in place, where a line pushed by value would be staged on the stack and
+/// copied.
+fn push_line<'i, 'a>(items: &'i mut Vec<IcalItem<'a>>) -> &'i mut IcalLine<'a> {
+    items.push(const { IcalItem::Prop(IcalLine::empty()) });
+
+    match items.last_mut() {
+        Some(IcalItem::Prop(line)) => line,
+        _ => unreachable!("a property line was just pushed"),
+    }
+}
+
+/// Take back the line [`push_line`] pushed last.
+fn pop_line<'a>(items: &mut Vec<IcalItem<'a>>) -> Option<IcalLine<'a>> {
+    match items.pop() {
+        Some(IcalItem::Prop(line)) => Some(line),
+        _ => None,
+    }
 }
 
 impl fmt::Display for IcalCst<'_> {
