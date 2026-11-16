@@ -112,9 +112,9 @@ pub fn vtimezone(tzid: &str, anchor: i64) -> Option<IcalCst<'static>> {
 /// The IANA release of the bundled database, such as `2026c`.
 ///
 /// What a consumer stamps on the instants it materialised, to resolve them
-/// again when it moves. `None` only for a bundle generated without one.
+/// again when it moves. Always `Some` since jiff-tzdb 1 requires a version.
 pub fn version() -> Option<&'static str> {
-    jiff_tzdb::VERSION
+    Some(jiff_tzdb::VERSION)
 }
 
 /// The zone an IANA name stands for, as the database states it, usable
@@ -137,7 +137,7 @@ pub fn zone(tzid: &str, through: i32) -> Option<IcalTz> {
     let year = i16::try_from(through.saturating_add(2).clamp(1, 9999)).ok()?;
     let bound = civil::date(year, 1, 1)
         .to_datetime(civil::Time::MIN)
-        .to_zoned(TimeZone::UTC)
+        .to_zoned_datetime(TimeZone::UTC)
         .ok()?
         .timestamp();
 
@@ -719,7 +719,7 @@ mod tests {
     fn at(year: i16, month: i8, day: i8) -> i64 {
         civil::date(year, month, day)
             .to_datetime(civil::Time::MIN)
-            .to_zoned(TimeZone::UTC)
+            .to_zoned_datetime(TimeZone::UTC)
             .unwrap()
             .timestamp()
             .as_second()

@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-11-16
+
+### Changed
+
+- Changed the jiff dependency to 1 and jiff-tzdb to 1, behind the `tzdb` feature.
+
+  `tzdb::version` now always returns `Some`, jiff-tzdb 1 requiring a database version.
+
 ## [0.7.0] - 2026-11-03
 
 ### Added
