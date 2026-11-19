@@ -31,7 +31,7 @@ use crate::{
     value::IcalValue,
 };
 
-impl Builder {
+impl Builder<'_> {
     /// `ORGANIZER` is both the reply address and a participant owning the
     /// object (draft 2.3.29).
     pub(super) fn organizer(&mut self, prop: &IcalProp<'_>) {

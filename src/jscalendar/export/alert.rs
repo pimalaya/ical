@@ -19,7 +19,7 @@ use crate::{
     value::IcalValue,
 };
 
-impl Builder {
+impl Builder<'_> {
     /// A `VALARM` as an Alert (draft 2.2.2).
     pub(super) fn alarm(&mut self, component: &IcalComponent<'_>) {
         let mut alert = Map::new();

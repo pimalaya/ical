@@ -17,7 +17,7 @@ use crate::{
     prop::IcalProp,
 };
 
-impl Builder {
+impl Builder<'_> {
     /// `STYLED-DESCRIPTION` carries the description with its media type.
     pub(super) fn styled_description(&mut self, prop: &IcalProp<'_>) {
         let Some(text) = text(prop) else {

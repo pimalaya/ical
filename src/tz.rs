@@ -418,7 +418,7 @@ impl IcalTz {
 
     /// A date-time, or a period bound, told on this zone: a UTC time at the
     /// same instant, a floating one as it is, a duration left alone.
-    fn told(&self, text: &str) -> String {
+    pub(crate) fn told(&self, text: &str) -> String {
         if !text.ends_with(['Z', 'z']) {
             return text.to_string();
         }

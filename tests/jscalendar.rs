@@ -559,3 +559,268 @@ fn converts_the_whole_corpus_to_a_stable_group() {
     // being converted, cannot pass unnoticed.
     assert_eq!(converted, 186);
 }
+
+#[test]
+fn keeps_last_modified_beside_the_dtstamp_holding_updated() {
+    let ics = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:12\r\n\
+               LAST-MODIFIED:20240101T080000Z\r\nDTSTAMP:20240102T090000Z\r\n\
+               END:VEVENT\r\nEND:VCALENDAR\r\n";
+    let group = group(ics);
+
+    assert_eq!(entry(&group, "updated"), json!("2024-01-02T09:00:00Z"));
+    assert_eq!(
+        entry(&group, "iCalendar")["properties"],
+        json!([["last-modified", {}, "date-time", "2024-01-01T08:00:00Z"]])
+    );
+
+    let back = IcalCst::from(Ical::from_jscalendar(&group).expect("a calendar")).to_string();
+    assert!(back.contains("DTSTAMP:20240102T090000Z\r\n"), "{back}");
+    assert!(
+        back.contains("LAST-MODIFIED:20240101T080000Z\r\n"),
+        "{back}"
+    );
+    assert_eq!(again(&group), group);
+}
+
+#[test]
+fn tells_a_utc_until_on_the_zone_the_calendar_defines() {
+    let ics = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\n\
+               BEGIN:VTIMEZONE\r\nTZID:Paris\r\n\
+               BEGIN:STANDARD\r\nDTSTART:19701025T030000\r\n\
+               RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU\r\n\
+               TZOFFSETFROM:+0200\r\nTZOFFSETTO:+0100\r\nEND:STANDARD\r\n\
+               BEGIN:DAYLIGHT\r\nDTSTART:19700329T020000\r\n\
+               RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU\r\n\
+               TZOFFSETFROM:+0100\r\nTZOFFSETTO:+0200\r\nEND:DAYLIGHT\r\n\
+               END:VTIMEZONE\r\n\
+               BEGIN:VEVENT\r\nUID:13\r\n\
+               RRULE:FREQ=MONTHLY;UNTIL=20270603T080000Z\r\n\
+               DTSTART;TZID=Paris:20261203T100000\r\n\
+               END:VEVENT\r\nEND:VCALENDAR\r\n";
+    let group = group(ics);
+
+    assert_eq!(
+        entry(&group, "recurrenceRules")[0]["until"],
+        json!("2027-06-03T10:00:00")
+    );
+
+    let back = IcalCst::from(Ical::from_jscalendar(&group).expect("a calendar")).to_string();
+    assert!(
+        back.contains("RRULE:FREQ=MONTHLY;UNTIL=20270603T080000Z\r\n"),
+        "{back}"
+    );
+    assert_eq!(again(&group), group);
+}
+
+/// The calendar a Group reads back as, on the wire.
+fn back(group: &Value) -> String {
+    IcalCst::from(Ical::from_jscalendar(group).expect("a calendar")).to_string()
+}
+
+/// A monthly series starting at `start` and ending at `until`, both on
+/// `zone`'s clock, as a JMAP server hands a lone Event over.
+#[cfg(feature = "tzdb")]
+fn monthly(zone: &str, start: &str, until: &str) -> Value {
+    json!({
+        "@type": "Event",
+        "uid": "14",
+        "start": start,
+        "timeZone": zone,
+        "recurrenceRules": [{
+            "@type": "RecurrenceRule",
+            "frequency": "monthly",
+            "until": until,
+        }],
+    })
+}
+
+#[cfg(feature = "tzdb")]
+#[test]
+fn tells_a_utc_until_on_a_zone_only_the_database_knows() {
+    let ics = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:14\r\n\
+               DTSTART;TZID=Europe/Paris:20261203T100000\r\n\
+               RRULE:FREQ=MONTHLY;UNTIL=20270603T080000Z\r\n\
+               END:VEVENT\r\nEND:VCALENDAR\r\n";
+    let group = group(ics);
+
+    assert_eq!(
+        entry(&group, "recurrenceRules")[0]["until"],
+        json!("2027-06-03T10:00:00")
+    );
+
+    let back = back(&group);
+    assert!(
+        back.contains("RRULE:FREQ=MONTHLY;UNTIL=20270603T080000Z\r\n"),
+        "{back}"
+    );
+    assert_eq!(again(&group), group);
+}
+
+#[cfg(feature = "tzdb")]
+#[test]
+fn tells_a_local_until_back_to_utc_on_a_zone_only_the_database_knows() {
+    let event = monthly("Europe/Paris", "2026-12-03T10:00:00", "2027-06-03T10:00:00");
+
+    let lone = back(&event);
+    assert!(
+        lone.contains("RRULE:FREQ=MONTHLY;UNTIL=20270603T080000Z\r\n"),
+        "{lone}"
+    );
+
+    let group = json!({"@type": "Group", "entries": [event]});
+    let grouped = back(&group);
+    assert!(
+        grouped.contains("RRULE:FREQ=MONTHLY;UNTIL=20270603T080000Z\r\n"),
+        "{grouped}"
+    );
+}
+
+#[cfg(feature = "tzdb")]
+#[test]
+fn reads_a_local_until_in_a_gap_or_a_fold_as_a_written_time() {
+    let gap = back(&monthly(
+        "Europe/Paris",
+        "2026-12-28T02:30:00",
+        "2027-03-28T02:30:00",
+    ));
+    assert!(
+        gap.contains("RRULE:FREQ=MONTHLY;UNTIL=20270328T013000Z\r\n"),
+        "{gap}"
+    );
+
+    let fold = back(&monthly(
+        "Europe/Paris",
+        "2026-12-31T02:30:00",
+        "2027-10-31T02:30:00",
+    ));
+    assert!(
+        fold.contains("RRULE:FREQ=MONTHLY;UNTIL=20271031T003000Z\r\n"),
+        "{fold}"
+    );
+}
+
+#[cfg(feature = "tzdb")]
+#[test]
+fn tells_a_utc_until_in_a_fold_on_its_first_pass() {
+    let ics = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:14\r\n\
+               DTSTART;TZID=Europe/Paris:20261231T023000\r\n\
+               RRULE:FREQ=MONTHLY;UNTIL=20271031T013000Z\r\n\
+               END:VEVENT\r\nEND:VCALENDAR\r\n";
+    let group = group(ics);
+
+    assert_eq!(
+        entry(&group, "recurrenceRules")[0]["until"],
+        json!("2027-10-31T02:30:00")
+    );
+
+    let back = back(&group);
+    assert!(
+        back.contains("RRULE:FREQ=MONTHLY;UNTIL=20271031T003000Z\r\n"),
+        "{back}"
+    );
+}
+
+#[cfg(not(feature = "tzdb"))]
+#[test]
+fn carries_the_until_of_an_undefined_zone_unshifted_without_the_database() {
+    let ics = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:14\r\n\
+               DTSTART;TZID=Europe/Paris:20261203T100000\r\n\
+               RRULE:FREQ=MONTHLY;UNTIL=20270603T080000Z\r\n\
+               END:VEVENT\r\nEND:VCALENDAR\r\n";
+    let group = group(ics);
+
+    assert_eq!(
+        entry(&group, "recurrenceRules")[0]["until"],
+        json!("2027-06-03T08:00:00")
+    );
+
+    let back = back(&group);
+    assert!(
+        back.contains("RRULE:FREQ=MONTHLY;UNTIL=20270603T080000\r\n"),
+        "{back}"
+    );
+}
+
+#[test]
+fn carries_the_until_of_a_zone_nothing_defines_unshifted() {
+    let ics = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:14\r\n\
+               DTSTART;TZID=Custom/Nowhere:20261203T100000\r\n\
+               RRULE:FREQ=MONTHLY;UNTIL=20270603T080000Z\r\n\
+               END:VEVENT\r\nEND:VCALENDAR\r\n";
+    let group = group(ics);
+
+    assert_eq!(
+        entry(&group, "recurrenceRules")[0]["until"],
+        json!("2027-06-03T08:00:00")
+    );
+
+    let back = back(&group);
+    assert!(
+        back.contains("RRULE:FREQ=MONTHLY;UNTIL=20270603T080000\r\n"),
+        "{back}"
+    );
+}
+
+#[test]
+fn keeps_the_until_of_a_utc_series_in_utc() {
+    let ics = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:14\r\n\
+               DTSTART:20261203T090000Z\r\n\
+               RRULE:FREQ=MONTHLY;UNTIL=20270603T090000Z\r\n\
+               END:VEVENT\r\nEND:VCALENDAR\r\n";
+    let group = group(ics);
+
+    assert_eq!(entry(&group, "timeZone"), json!("Etc/UTC"));
+    assert_eq!(
+        entry(&group, "recurrenceRules")[0]["until"],
+        json!("2027-06-03T09:00:00")
+    );
+
+    let back = back(&group);
+    assert!(
+        back.contains("RRULE:FREQ=MONTHLY;UNTIL=20270603T090000Z\r\n"),
+        "{back}"
+    );
+    assert_eq!(again(&group), group);
+}
+
+#[test]
+fn keeps_the_until_of_a_floating_series_floating() {
+    let ics = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:14\r\n\
+               DTSTART:20261203T100000\r\n\
+               RRULE:FREQ=MONTHLY;UNTIL=20270603T100000\r\n\
+               END:VEVENT\r\nEND:VCALENDAR\r\n";
+    let group = group(ics);
+
+    assert_eq!(
+        entry(&group, "recurrenceRules")[0]["until"],
+        json!("2027-06-03T10:00:00")
+    );
+
+    let back = back(&group);
+    assert!(
+        back.contains("RRULE:FREQ=MONTHLY;UNTIL=20270603T100000\r\n"),
+        "{back}"
+    );
+    assert_eq!(again(&group), group);
+}
+
+#[test]
+fn keeps_the_until_of_an_all_day_series_a_date() {
+    let ics = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:14\r\n\
+               DTSTART;VALUE=DATE:20261203\r\n\
+               RRULE:FREQ=MONTHLY;UNTIL=20270603\r\n\
+               END:VEVENT\r\nEND:VCALENDAR\r\n";
+    let group = group(ics);
+
+    assert_eq!(
+        entry(&group, "recurrenceRules")[0]["until"],
+        json!("2027-06-03T00:00:00")
+    );
+
+    let back = back(&group);
+    assert!(
+        back.contains("RRULE:FREQ=MONTHLY;UNTIL=20270603\r\n"),
+        "{back}"
+    );
+    assert_eq!(again(&group), group);
+}

@@ -30,7 +30,7 @@ A decoded calendar SHALL convert to and from the RFC 8984 data model, and to JSC
 
 Everything the mapping cannot express SHALL be carried rather than dropped, and a second conversion SHALL change nothing a first one did not.
 
-Exporting, a property or component with no JSCalendar counterpart is kept whole in the object's `iCalendar` member, in jCal syntax, and a parameter left over after a property converts is kept in that member's `convertedProperties` record. The same record names the property a member came from wherever more than one could have, so `updated` knows whether it was a `DTSTAMP` or a `LAST-MODIFIED`.
+Exporting, a property or component with no JSCalendar counterpart is kept whole in the object's `iCalendar` member, in jCal syntax, and a parameter left over after a property converts is kept in that member's `convertedProperties` record. The same record names the property a member came from wherever more than one could have, so `updated` knows whether it was a `DTSTAMP` or a `LAST-MODIFIED`. A component stating both SHALL give `updated` its `DTSTAMP` and keep its `LAST-MODIFIED` whole in the hatch, whatever their order.
 
 Importing, the mirror hatch applies: a member with no iCalendar counterpart becomes a `JSPROP` property holding its JSON, located by a `JSPTR` parameter, and a collection key becomes a `JSID` parameter or property so it survives the next conversion.
 
@@ -74,19 +74,55 @@ An `RDATE` is an override with an empty patch and an `EXDATE` one whose patch sa
 
 ### Requirement: What JSCalendar normalises
 
-Three things SHALL NOT survive a round trip unchanged, and no more.
+A round trip SHALL change a calendar in these ways and no other.
 
-An `RRULE`'s `UNTIL` is stated in UTC whenever `DTSTART` is, and RFC 8984 states it in the object's own time zone; shifting between the two needs the time-zone database, which this crate does not carry, so the wall-clock digits are carried across unshifted. That is exact for a floating or UTC object and off by that zone's offset for any other.
+An `RRULE`'s `UNTIL` is stated in UTC beside a zoned `DTSTART` (RFC 5545 3.3.10), and RFC 8984 states it as a local date-time in the object's `timeZone` (4.3.3). Exporting, a UTC `UNTIL` of a zoned object SHALL be told on that zone's clock, and importing, the `until` of a zoned object SHALL be told back to UTC, read as RFC 5545 3.3.5 reads a written time (the earlier of a fold, the offset before a gap). The zone is the `VTIMEZONE` the calendar defines under the start's `TZID` (importing, one the Group's hatch carries), and behind the `tzdb` feature a zone the database knows, IANA or Windows named, a calendar's own definition completed from the database as `tzdb::zones` completes it; this holds for a lone object too. A UTC `UNTIL` in a fold's second pass reads back as the first, JSCalendar having no way to say which. A floating object's `UNTIL` SHALL stay floating and a UTC object's in UTC. An object shown without a time SHALL keep a `DATE` `UNTIL`, `T00:00:00` in JSCalendar. Without the `tzdb` feature, or for a zone neither the calendar nor the database defines, the wall-clock digits SHALL be carried across unshifted and written back without `Z`: exact for a floating or UTC object, off by the zone's offset exporting any other, and importing a local `UNTIL` that this crate's expansion compares on the start's clock as RFC 8984 does, though RFC 5545 wants UTC there.
 
 A `DTEND` becomes a duration, so an event that ended in another time zone than it started in comes back with the start's zone on both ends.
 
-Ordering inside a component is lost, since a JSCalendar object is a set of members rather than a list of lines.
+Ordering is lost: of the lines inside a component, of the parameters on a line, of the parts of a recurrence rule (written back in RFC 5545 order) and of the items of a `CATEGORIES` (keywords are a set). An `EXDATE` or `RDATE` listing several dates comes back one line per date. A parameter stating what a property means with none (`VALUE` of the default type, `ROLE=REQ-PARTICIPANT`, `RELATED=START`) is not written back, and a parameter value is quoted only where RFC 5545 3.2 needs it. Folds and the case of names are the writer's.
 
 #### Scenario: An event in a named zone
 
 - GIVEN `DTSTART;TZID=Europe/Berlin` and `DTEND;TZID=Europe/Berlin` an hour and a half later
 - WHEN the event is converted
 - THEN it states `PT1H30M` and the zone once
+
+#### Scenario: A UTC end of recurrence in a defined zone
+
+- GIVEN a calendar defining a `VTIMEZONE` and a series starting in it whose `RRULE` ends `UNTIL=20270603T080000Z`
+- WHEN it is converted to JSCalendar and back
+- THEN the rule's `until` is the zone's `2027-06-03T10:00:00`, and the `RRULE` comes back ending `UNTIL=20270603T080000Z`
+
+#### Scenario: A UTC end of recurrence in a zone only the database knows
+
+- GIVEN the `tzdb` feature, no `VTIMEZONE`, and a series starting `DTSTART;TZID=Europe/Paris:20261203T100000` whose `RRULE` ends `UNTIL=20270603T080000Z`
+- WHEN it is converted to JSCalendar and back
+- THEN the rule's `until` is `2027-06-03T10:00:00`, and the `RRULE` comes back ending `UNTIL=20270603T080000Z`
+
+#### Scenario: A local end of recurrence from a JMAP object
+
+- GIVEN the `tzdb` feature and an Event, lone or in a Group with no hatch, in `Europe/Paris` whose rule's `until` is `2027-06-03T10:00:00`
+- WHEN it is converted to iCalendar
+- THEN the `RRULE` ends `UNTIL=20270603T080000Z`
+
+#### Scenario: A local end of recurrence in a gap or a fold
+
+- GIVEN the `tzdb` feature and a rule in `Europe/Paris` whose `until` is `2027-03-28T02:30:00`, or `2027-10-31T02:30:00`
+- WHEN it is converted to iCalendar
+- THEN the `RRULE` ends `UNTIL=20270328T013000Z` (the offset before the gap), or `UNTIL=20271031T003000Z` (the earlier of the fold)
+
+#### Scenario: Floating, UTC and all-day ends of recurrence
+
+- GIVEN a floating series ending `UNTIL=20270603T100000`, a UTC one ending `UNTIL=20270603T090000Z` and an all-day one ending `UNTIL=20270603`
+- WHEN each is converted to JSCalendar and back
+- THEN each `RRULE` comes back with its `UNTIL` as written
+
+#### Scenario: Calendars as clients write them
+
+- GIVEN each of tests/corpus/clients: an iOS series with `X-APPLE-*` properties and parameters, alarms, a `VTIMEZONE`, an `EXDATE` and a moved occurrence; an Exchange meeting with `X-MICROSOFT-*` properties, attendees, an alarm, a monthly rule ending in UTC, an `EXDATE` and an exception; a Google invitation with `X-NUM-GUESTS` parameters, two alarms, an `EXDATE` list and a moved occurrence; a Thunderbird task and all-day event with `X-MOZ-*` properties
+- WHEN each is converted to JSCalendar, in RFC 8984 and in 2.0, and back
+- THEN it comes back line for line once the orderings, lists, defaults, quotes and folds above are normalized, and a second conversion equals the first
 
 ### Requirement: JSCalendar 2.0
 

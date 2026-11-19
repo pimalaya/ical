@@ -21,10 +21,12 @@ use crate::{
     jscalendar::{
         hatch::IcalConverted,
         import::{RULE_ORDER, scalar, text_prop},
+        until_zone,
     },
     param::IcalParam,
     prop::{IcalProp, IcalPropKind},
     recur::IcalRecurDateTime,
+    tz::IcalTz,
     value::{
         IcalValue,
         datetime::{IcalDate, IcalDateTime},
@@ -120,7 +122,17 @@ pub(super) fn basic(text: &str) -> String {
 }
 
 /// A RecurrenceRule object back in the `RECUR` spelling.
-pub(super) fn rule_from_json(rule: &Value, zone: Option<&str>) -> String {
+///
+/// Its `UNTIL` takes the value type of the start (RFC 5545 3.3.10): a date
+/// for an object shown without a time, else a date-time, in UTC when the
+/// object is zoned and `zones` or the database defines the zone, else on
+/// the object's own clock.
+pub(super) fn rule_from_json(
+    rule: &Value,
+    zone: Option<&str>,
+    date_only: bool,
+    zones: &[IcalTz],
+) -> String {
     let Some(object) = rule.as_object() else {
         return rule.as_str().unwrap_or_default().to_owned();
     };
@@ -136,12 +148,15 @@ pub(super) fn rule_from_json(rule: &Value, zone: Option<&str>) -> String {
             ("UNTIL", Value::String(until)) => {
                 let basic = basic(until);
 
-                // NOTE: RFC 5545 states UNTIL in UTC whenever DTSTART is; a
-                // floating or UTC object is the only case this can restore
-                // exactly, which is the one normalisation the mapping makes.
-                match zone.is_none() || zone == Some("Etc/UTC") {
-                    true => format!("{basic}Z"),
-                    false => basic,
+                match zone {
+                    _ if date_only => basic
+                        .split(['T', 't'])
+                        .next()
+                        .unwrap_or_default()
+                        .to_owned(),
+                    None => basic,
+                    Some("Etc/UTC") => format!("{basic}Z"),
+                    Some(id) => utc_text(zones, id, &basic).unwrap_or(basic),
                 }
             }
             ("BYDAY", Value::Array(days)) => days.iter().map(weekday).collect::<Vec<_>>().join(","),
@@ -193,4 +208,22 @@ pub(super) fn weekday(day: &Value) -> String {
         Some(nth) => format!("{nth}{name}"),
         None => name,
     }
+}
+
+/// A local date-time on the zone `tzid` names as the UTC date-time at the
+/// same instant, read as RFC 5545 3.3.5 reads a written one; `None` for a
+/// date or a zone neither `zones` nor the database defines.
+fn utc_text(zones: &[IcalTz], tzid: &str, local: &str) -> Option<String> {
+    if !local.contains(['T', 't']) {
+        return None;
+    }
+
+    let local = IcalRecurDateTime::parse(local).ok()?;
+    let zone = until_zone(zones, tzid, local.year)?;
+    let at = IcalRecurDateTime::from_seconds(zone.resolve(local).literal_instant(local));
+
+    Some(format!(
+        "{:04}{:02}{:02}T{:02}{:02}{:02}Z",
+        at.year, at.month, at.day, at.hour, at.minute, at.second
+    ))
 }

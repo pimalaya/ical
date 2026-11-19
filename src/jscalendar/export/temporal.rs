@@ -11,8 +11,9 @@
 //! started in comes back with the start's zone on both ends.
 //!
 //! An `RRULE`'s `UNTIL` is stated in UTC whenever `DTSTART` is, but RFC 8984
-//! states it in the object's own time zone. Shifting between the two needs the
-//! time-zone database, so the wall-clock digits are carried across unshifted.
+//! states it in the object's own time zone: it is told on the `VTIMEZONE` the
+//! calendar defines for that zone, else on the database's behind the `tzdb`
+//! feature, else its wall-clock digits are carried across unshifted.
 
 use alloc::{borrow::ToOwned, format, string::String};
 
@@ -23,14 +24,16 @@ use crate::{
     jscalendar::{
         IcalJscalendarVersion,
         export::{Builder, list, param, text},
+        until_zone,
     },
     param::IcalParamKind,
     prop::IcalProp,
     recur::IcalRecurDateTime,
+    tz::IcalTz,
     value::{IcalValue, duration::IcalDuration},
 };
 
-impl Builder {
+impl Builder<'_> {
     /// `DTSTART` carries the start, its time zone and, for a date-only value,
     /// that the object is shown without a time (draft 2.3.16).
     pub(super) fn start(&mut self, prop: &IcalProp<'_>) {
@@ -128,9 +131,11 @@ impl Builder {
             (false, false) => "recurrenceRules",
         };
 
+        let rule = rule_to_json(&text, self.zone.as_deref(), self.zones);
+
         match excluded {
-            true => self.excluded_rules.push(rule_to_json(&text)),
-            false => self.rules.push(rule_to_json(&text)),
+            true => self.excluded_rules.push(rule),
+            false => self.rules.push(rule),
         }
 
         self.hatch.note(pointer, prop, &[]);
@@ -237,7 +242,10 @@ pub(super) fn span(start: &str, end: &str) -> Option<String> {
 }
 
 /// A `RECUR` value as a RecurrenceRule object (draft 2.3.36).
-pub(super) fn rule_to_json(text: &str) -> Value {
+///
+/// A UTC `UNTIL` is told on the clock of `zone`, the object's own (RFC 8984
+/// 4.3.3), when `zones` or the database defines it.
+pub(super) fn rule_to_json(text: &str, zone: Option<&str>, zones: &[IcalTz]) -> Value {
     let mut rule = Map::new();
     rule.insert(
         "@type".to_owned(),
@@ -260,7 +268,18 @@ pub(super) fn rule_to_json(text: &str) -> Value {
 
         let converted = match name.as_str() {
             "FREQ" | "WKST" | "RSCALE" | "SKIP" => Value::String(value.to_lowercase()),
-            "UNTIL" => Value::String(local_text(value, false).unwrap_or_else(|| value.to_owned())),
+            "UNTIL" => {
+                let year = IcalRecurDateTime::parse(value).map(|until| until.year);
+                let value = match (zone, year) {
+                    (Some(id), Ok(year)) if value.ends_with(['Z', 'z']) => {
+                        until_zone(zones, id, year)
+                            .map_or_else(|| value.to_owned(), |zone| zone.told(value))
+                    }
+                    _ => value.to_owned(),
+                };
+
+                Value::String(local_text(&value, false).unwrap_or(value))
+            }
             "COUNT" | "INTERVAL" => match value.parse::<i64>() {
                 Ok(number) => Value::Number(number.into()),
                 Err(_) => Value::String(value.to_owned()),

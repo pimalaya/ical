@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed a `LAST-MODIFIED` beside a `DTSTAMP` being dropped converting to JSCalendar: `DTSTAMP` holds `updated` and `LAST-MODIFIED` stays in the `iCalendar` escape hatch.
+- Fixed a UTC `RRULE` `UNTIL` on a zoned series coming back from JSCalendar local and unshifted: it is told on the calendar's `VTIMEZONE` both ways when the calendar defines the zone.
+- Fixed a zoned `RRULE` `UNTIL` carried unshifted across JSCalendar when the calendar defines no `VTIMEZONE` for the zone, as with every JMAP object: behind the `tzdb` feature it is told between UTC and the zone on the bundled database, both ways, a local time in a gap or fold read as RFC 5545 3.3.5 reads a written one. Without the feature the digits stay unshifted.
+- Fixed a floating `RRULE` `UNTIL` coming back from JSCalendar in UTC, and an all-day one as a UTC date-time: they come back floating and as a `DATE`.
+
 ## [0.7.1] - 2026-11-16
 
 ### Changed

@@ -20,7 +20,7 @@ use crate::{
     value::IcalValue,
 };
 
-impl Builder {
+impl Builder<'_> {
     /// `LOCATION` is a named Location (RFC 8984 4.2.5).
     pub(super) fn location(&mut self, prop: &IcalProp<'_>) {
         let Some(name) = text(prop) else {

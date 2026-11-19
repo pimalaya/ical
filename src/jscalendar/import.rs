@@ -40,6 +40,7 @@ use crate::{
     },
     param::IcalParam,
     prop::{IcalProp, IcalPropKind, IcalPropName},
+    tz::IcalTz,
     value::{
         IcalValue,
         integer::IcalInteger,
@@ -142,6 +143,12 @@ pub(crate) fn ical(group: &Map<String, Value>) -> Ical<'static> {
         .map(Vec::as_slice)
         .unwrap_or_default();
 
+    let kept: Vec<IcalComponent<'static>> = kept_components(hatch, version)
+        .into_iter()
+        .map(IcalComponent::into_owned)
+        .collect();
+    let zones = IcalTz::of_components(&kept);
+
     let mut components: Vec<IcalComponent<'_>> = Vec::new();
     let mut method = None;
 
@@ -152,7 +159,7 @@ pub(crate) fn ical(group: &Map<String, Value>) -> Ical<'static> {
             method = object.get("method").and_then(Value::as_str);
         }
 
-        components.extend(entry(object, v2));
+        components.extend(entry(object, v2, &zones));
     }
 
     // NOTE: A 2.0 Group has no method; the entries' is the calendar's
@@ -164,11 +171,7 @@ pub(crate) fn ical(group: &Map<String, Value>) -> Ical<'static> {
         ));
     }
 
-    components.extend(
-        kept_components(hatch, version)
-            .into_iter()
-            .map(IcalComponent::into_owned),
-    );
+    components.extend(kept);
 
     Ical {
         version,
@@ -193,7 +196,7 @@ pub(crate) fn of_entry(object: &Value) -> Ical<'static> {
     Ical {
         version: IcalVersion::V2_0,
         props,
-        components: entry(object, v2),
+        components: entry(object, v2, &[]),
     }
 }
 
@@ -230,7 +233,7 @@ fn is_v2(object: &Value, group: bool) -> bool {
 /// A series carrying overrides comes back as several components: the series
 /// itself, then one overriding component per patch, which is how iCalendar
 /// states what JSCalendar folds into one object (draft 2.1.2).
-fn entry(entry: &Value, v2: bool) -> Vec<IcalComponent<'static>> {
+fn entry(entry: &Value, v2: bool, zones: &[IcalTz]) -> Vec<IcalComponent<'static>> {
     let Some(object) = entry.as_object() else {
         return Vec::new();
     };
@@ -252,7 +255,7 @@ fn entry(entry: &Value, v2: bool) -> Vec<IcalComponent<'static>> {
 
     let zone = series.get("timeZone").and_then(Value::as_str);
     let date_only = all_day(&series);
-    let mut components = vec![component(&series, name, task, v2)];
+    let mut components = vec![component(&series, name, task, v2, zones)];
 
     for (id, over) in &overrides {
         let Some(patch) = over.as_object() else {
@@ -281,7 +284,7 @@ fn entry(entry: &Value, v2: bool) -> Vec<IcalComponent<'static>> {
         instance.remove("recurrenceRules");
         instance.remove("excludedRecurrenceRules");
 
-        let mut overriding = component(&instance, name, task, v2);
+        let mut overriding = component(&instance, name, task, v2, zones);
         overriding
             .props
             .push(occurrence(IcalPropKind::RecurrenceId, id, zone, date_only));
@@ -317,6 +320,7 @@ fn component(
     name: IcalComponentKind,
     task: bool,
     v2: bool,
+    zones: &[IcalTz],
 ) -> IcalComponent<'static> {
     let hatch = hatch_of(object);
     let component = match task {
@@ -440,7 +444,10 @@ fn component(
                 };
 
                 for rule in rules {
-                    let mut prop = text_prop(record(kind), rule_from_json(rule, zone));
+                    let mut prop = text_prop(
+                        record(kind),
+                        rule_from_json(rule, zone, all_day(object), zones),
+                    );
                     prop.value = IcalValue::Recur(IcalRecur(match &prop.value {
                         IcalValue::Text(text) => text.0.clone(),
                         _ => Cow::Borrowed(""),
@@ -451,7 +458,7 @@ fn component(
             ("recurrenceRule", Value::Object(_)) => {
                 let mut prop = text_prop(
                     named(hatch, component, member, IcalPropKind::RRule),
-                    rule_from_json(value, zone),
+                    rule_from_json(value, zone, all_day(object), zones),
                 );
                 prop.value = IcalValue::Recur(IcalRecur(match &prop.value {
                     IcalValue::Text(text) => text.0.clone(),

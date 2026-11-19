@@ -27,6 +27,7 @@ use crate::{
     jscalendar::{IcalJscalendarVersion, export::temporal::utc, hatch::IcalHatch, patch},
     param::{IcalParam, IcalParamKind},
     prop::{IcalProp, IcalPropKind, IcalPropName},
+    tz::IcalTz,
     value::IcalValue,
     value::binary::IcalBinary,
     version::IcalVersion,
@@ -70,10 +71,12 @@ pub(crate) fn group(ical: &Ical<'_>, version: IcalJscalendarVersion) -> Value {
         }
     }
 
+    let zones = IcalTz::of_components(&ical.components);
+
     let converted: Vec<Option<Entry>> = ical
         .components
         .iter()
-        .map(|component| entry_kind(component).map(|task| entry(component, task, version)))
+        .map(|component| entry_kind(component).map(|task| entry(component, task, version, &zones)))
         .collect();
 
     // NOTE: An overriding component folds into the series it overrides, so its
@@ -263,7 +266,12 @@ fn calendar_prop(
 }
 
 /// One `VEVENT` or `VTODO` as an Event or Task object.
-fn entry(component: &IcalComponent<'_>, task: bool, version: IcalJscalendarVersion) -> Entry {
+fn entry(
+    component: &IcalComponent<'_>,
+    task: bool,
+    version: IcalJscalendarVersion,
+    zones: &[IcalTz],
+) -> Entry {
     let mut builder = Builder {
         object: Map::new(),
         hatch: IcalHatch::new(&component.name),
@@ -288,6 +296,11 @@ fn entry(component: &IcalComponent<'_>, task: bool, version: IcalJscalendarVersi
         jsprops: Map::new(),
         version,
         organizer: None,
+        zones,
+        stamped: component
+            .props
+            .iter()
+            .any(|prop| matches!(prop.name, IcalPropName::Kind(IcalPropKind::DtStamp))),
     };
 
     builder.object.insert(
@@ -304,7 +317,8 @@ fn entry(component: &IcalComponent<'_>, task: bool, version: IcalJscalendarVersi
     // Participant it made.
     let rank = |prop: &IcalProp<'_>| match prop.name {
         IcalPropName::Kind(IcalPropKind::Organizer) if version == IcalJscalendarVersion::V2_0 => 0,
-        IcalPropName::Kind(IcalPropKind::DtEnd) => 2,
+        IcalPropName::Kind(IcalPropKind::DtEnd)
+        | IcalPropName::Kind(IcalPropKind::RRule | IcalPropKind::ExRule) => 2,
         _ => 1,
     };
 
@@ -323,7 +337,7 @@ fn entry(component: &IcalComponent<'_>, task: bool, version: IcalJscalendarVersi
 
 /// An Event or Task under construction, one collection per JSCalendar member
 /// that holds several converted elements.
-pub(super) struct Builder {
+pub(super) struct Builder<'z> {
     object: Map<String, Value>,
     hatch: IcalHatch,
     links: Map<String, Value>,
@@ -352,6 +366,11 @@ pub(super) struct Builder {
     version: IcalJscalendarVersion,
     /// The 2.0 organizer, until an `ATTENDEE` of its address joins it.
     organizer: Option<Organizer>,
+    /// Whether the component states a `DTSTAMP`, which then holds `updated`
+    /// and leaves a `LAST-MODIFIED` to the escape hatch.
+    stamped: bool,
+    /// The zones the calendar defines, which an `UNTIL` is told on.
+    zones: &'z [IcalTz],
 }
 
 /// The Participant a 2.0 `ORGANIZER` made.
@@ -362,7 +381,7 @@ pub(super) struct Organizer {
     named: bool,
 }
 
-impl Builder {
+impl Builder<'_> {
     /// Convert one property, keeping it whole when nothing holds it.
     fn prop(&mut self, prop: &IcalProp<'_>) {
         let v2 = self.version == IcalJscalendarVersion::V2_0;
@@ -397,6 +416,7 @@ impl Builder {
             IcalPropKind::StyledDescription => self.styled_description(prop),
             IcalPropKind::Color => self.scalar("color", prop),
             IcalPropKind::Created => self.timestamp("created", prop),
+            IcalPropKind::LastModified if self.stamped => self.hatch.keep(prop),
             IcalPropKind::DtStamp | IcalPropKind::LastModified => self.timestamp("updated", prop),
             IcalPropKind::Completed => self.timestamp("progressUpdated", prop),
             IcalPropKind::Sequence => self.number("sequence", prop),

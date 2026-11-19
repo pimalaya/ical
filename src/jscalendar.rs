@@ -62,17 +62,18 @@
 //!
 //! ## What normalises
 //!
-//! Three things do not survive a round trip unchanged, and none of them is
+//! A few things do not survive a round trip unchanged, and none of them is
 //! recoverable from the JSON alone.
 //!
-//! An `RRULE`'s `UNTIL` is stated in UTC whenever `DTSTART` is, but RFC 8984
-//! states it in the object's own time zone. Shifting between the two needs
-//! the time-zone database, which this crate does not carry, so the wall-clock
-//! digits are carried across unshifted.
+//! An `RRULE`'s `UNTIL` is in UTC beside a zoned `DTSTART` (RFC 5545
+//! 3.3.10), but RFC 8984 states it on the object's own clock (4.3.3). It is
+//! told across on the calendar's `VTIMEZONE` for that zone and, behind the
+//! `tzdb` feature, on the bundled database's, a local time read as a written
+//! one (the earlier of a fold, the offset before a gap).
 //!
-//! That is exact for a floating or UTC object, and off by that zone's offset
-//! for any other. The whole of [`tz`](crate::tz) is available to a caller
-//! that wants to shift it from the calendar's own `VTIMEZONE`.
+//! A UTC `UNTIL` in a fold's second pass so reads back as the first. A zone
+//! neither defines keeps its wall-clock digits unshifted, which is exact for
+//! a floating or UTC object and off by that zone's offset for any other.
 //!
 //! A `DTEND` becomes a duration, so an event that ended in another time zone
 //! than it started in comes back with the start's zone on both ends.
@@ -96,11 +97,14 @@ mod patch;
 
 use core::{error, fmt, ops};
 
-use alloc::string::{String, ToString};
+use alloc::{
+    borrow::Cow,
+    string::{String, ToString},
+};
 
 use serde_json::Value;
 
-use crate::ical::Ical;
+use crate::{ical::Ical, tz::IcalTz};
 
 /// What a JSCalendar value cannot be read as.
 ///
@@ -207,6 +211,20 @@ impl<'a> Ical<'a> {
             Some(kind) => Err(IcalJscalendarError::NotAGroup(kind.to_string())),
         }
     }
+}
+
+/// The zone an `UNTIL` in `year` is told on: the one `zones` defines under
+/// `tzid`, completed from the database, else the database's.
+#[cfg(feature = "tzdb")]
+fn until_zone<'z>(zones: &'z [IcalTz], tzid: &str, year: i32) -> Option<Cow<'z, IcalTz>> {
+    crate::tzdb::zone_in(zones, tzid, year).map(Cow::Owned)
+}
+
+/// The zone an `UNTIL` in `year` is told on: the one `zones` defines under
+/// `tzid`, there being no database to ask.
+#[cfg(not(feature = "tzdb"))]
+fn until_zone<'z>(zones: &'z [IcalTz], tzid: &str, _year: i32) -> Option<Cow<'z, IcalTz>> {
+    zones.iter().find(|zone| zone.id == tzid).map(Cow::Borrowed)
 }
 
 #[cfg(test)]

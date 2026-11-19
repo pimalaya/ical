@@ -33,7 +33,7 @@
 //! A zone's record runs to hundreds of transitions, so [`vtimezone`]
 //! describes the one era its anchor falls in. The United States moved
 //! its rule in 2007, and an item from 1980 under today's rule would
-//! read an hour out through the weeks between the two .take_while(|onset| onset.year <= through.saturating_add(1))s.
+//! read an hour out through the weeks between the two rules.
 //!
 //! An observance states a yearly rule only where the transitions that
 //! follow agree on one, and a zone whose nearest shift is more than
@@ -232,6 +232,15 @@ pub fn zones(components: &[IcalComponent<'_>], through: i32) -> Vec<IcalTz> {
     }
 
     zones
+}
+
+/// The zone `tzid` names among `zones`, completed from the database as
+/// [`zones`] completes it, else the database's own.
+pub(crate) fn zone_in(zones: &[IcalTz], tzid: &str, through: i32) -> Option<IcalTz> {
+    match zones.iter().find(|zone| zone.id == tzid) {
+        Some(own) => Some(completed(own.clone(), through)),
+        None => zone(tzid, through),
+    }
 }
 
 /// A calendar's own zone, completed from the database when the database
