@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-11-19
+
 ### Fixed
 
 - Fixed a `LAST-MODIFIED` beside a `DTSTAMP` being dropped converting to JSCalendar: `DTSTAMP` holds `updated` and `LAST-MODIFIED` stays in the `iCalendar` escape hatch.
@@ -432,7 +434,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Added 190 real-world fixtures from the libical, ical4j and ical.js suites, swept for round-trip fidelity and cross-checked against calcard.
 
-[unreleased]: https://github.com/pimalaya/ical/compare/v0.6.1..HEAD
+[Unreleased]: https://github.com/pimalaya/ical/compare/v0.7.2..HEAD
+[0.7.2]: https://github.com/pimalaya/ical/compare/v0.7.1..v0.7.2
 [0.6.1]: https://github.com/pimalaya/ical/compare/v0.6.0..v0.6.1
 [0.6.0]: https://github.com/pimalaya/ical/compare/v0.5.3..v0.6.0
 [0.5.3]: https://github.com/pimalaya/ical/compare/v0.5.2..v0.5.3
