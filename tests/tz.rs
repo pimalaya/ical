@@ -8,9 +8,10 @@
 #![cfg(feature = "parser")]
 
 use ical::{
-    recur::IcalRecurDateTime,
+    component::IcalComponent,
+    recur::{IcalRecurDateTime, instant::IcalRecurTimeline},
     tree::cst::IcalCst,
-    tz::{IcalTz, IcalTzOffset},
+    tz::{IcalTz, IcalTzOffset, IcalTzTransitions},
 };
 
 /// The zone a calendar defines under `tzid`.
@@ -256,5 +257,121 @@ fn tells_the_local_time_an_instant_shows() {
 
     for (utc, local) in cases {
         assert_eq!(zone.local(utc.seconds()), local, "{utc:?}");
+    }
+}
+
+/// A daylight observance taking effect by `rule` from 1970, a standard one
+/// in 1980, and an event in June 2026, as pimdir's hostile zone vector.
+fn hostile(tzid: &str, until: &str, rule: &str) -> String {
+    format!(
+        concat!(
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\n",
+            "BEGIN:VTIMEZONE\r\nTZID:{tzid}\r\n{until}",
+            "BEGIN:DAYLIGHT\r\nDTSTART:19700101T000000\r\n",
+            "TZOFFSETFROM:+0000\r\nTZOFFSETTO:+0100\r\n{rule}\r\n",
+            "END:DAYLIGHT\r\n",
+            "BEGIN:STANDARD\r\nDTSTART:19800101T000000\r\n",
+            "TZOFFSETFROM:+0100\r\nTZOFFSETTO:+0000\r\nEND:STANDARD\r\n",
+            "END:VTIMEZONE\r\n",
+            "BEGIN:VEVENT\r\nUID:hostile@example.org\r\n",
+            "DTSTAMP:20260801T000000Z\r\n",
+            "DTSTART;TZID={tzid}:20260601T120000\r\n",
+            "DTEND;TZID={tzid}:20260601T130000\r\n",
+            "END:VEVENT\r\nEND:VCALENDAR\r\n",
+        ),
+        tzid = tzid,
+        until = until,
+        rule = rule,
+    )
+}
+
+/// The starts of an event's occurrences within a day of `around`, walked as
+/// a calendar reader walks them.
+fn starts(
+    raw: &str,
+    zones: impl Fn(&[IcalComponent<'_>]) -> Vec<IcalTz>,
+    around: IcalRecurDateTime,
+) -> Vec<i64> {
+    let cst = IcalCst::parse(raw).expect("parse");
+    let ical = cst.decode();
+    let zones = zones(&ical.components);
+    let timeline = IcalRecurTimeline::of_uid(&ical.components, "hostile@example.org", &zones);
+
+    timeline
+        .expand(around.seconds() - 86_400, around.seconds() + 86_400)
+        .map(|occurrence| occurrence.start)
+        .collect()
+}
+
+#[test]
+fn an_observance_taking_effect_every_second_resolves_on_a_bounded_walk() {
+    let june = at(2026, 6, 1, 12, 0);
+
+    for rule in [
+        "RRULE:FREQ=SECONDLY",
+        "RRULE:FREQ=SECONDLY;COUNT=4000000000",
+    ] {
+        let raw = hostile("Hostile", "", rule);
+        let zone = zone(&raw, "Hostile");
+
+        assert!(zone.transitions(2026).len() <= IcalTz::TRANSITIONS_MAX);
+        assert_eq!(zone.resolve(june), IcalTzOffset::One(0), "{rule}");
+        assert_eq!(zone.local(june.seconds()), june, "{rule}");
+        assert_eq!(
+            IcalTzTransitions::of_zone(zone).resolve(june),
+            IcalTzOffset::One(0),
+            "{rule}"
+        );
+        assert_eq!(
+            starts(&raw, IcalTz::of_components, june),
+            [june.seconds()],
+            "{rule}"
+        );
+    }
+}
+
+#[test]
+fn a_zone_ruled_from_1601_still_shifts_in_9999() {
+    let raw = US
+        .replace("20070311T020000", "16010311T020000")
+        .replace("20071104T020000", "16011104T020000");
+    let zone = zone(&raw, "America/New_York");
+
+    let cases = [
+        (at(9999, 1, 15, 12, 0), -5 * 3600),
+        (at(9999, 7, 1, 12, 0), -4 * 3600),
+    ];
+
+    for (local, offset) in cases {
+        let mut held = IcalTzTransitions::of_zone(zone.clone());
+
+        assert_eq!(zone.resolve(local), IcalTzOffset::One(offset), "{local:?}");
+        assert_eq!(held.resolve(local), IcalTzOffset::One(offset), "{local:?}");
+    }
+}
+
+#[cfg(feature = "tzdb")]
+#[test]
+fn a_hostile_observance_under_a_database_name_resolves_on_a_bounded_walk() {
+    let june = at(2026, 6, 1, 12, 0);
+    let zones = |components: &[IcalComponent<'_>]| ical::tzdb::zones(components, 2026);
+
+    let cases = [
+        (
+            "TZUNTIL:20000101T000000Z\r\n",
+            "RRULE:FREQ=SECONDLY",
+            -2 * 3600,
+        ),
+        ("", "RRULE:FREQ=SECONDLY;COUNT=4000000000", 0),
+    ];
+
+    for (until, rule, shift) in cases {
+        let raw = hostile("Europe/Paris", until, rule);
+
+        assert_eq!(
+            starts(&raw, zones, june),
+            [june.seconds() + shift],
+            "{until}{rule}"
+        );
     }
 }

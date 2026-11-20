@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Added `IcalTz::TRANSITIONS_MAX`, `IcalTzObservance::ONSETS_MAX` and `IcalTzObservance::walk`, the bounds a zone is read within.
+
+### Fixed
+
+- Fixed a `VTIMEZONE` observance taking effect every second (`RRULE:FREQ=SECONDLY` from 1970) exhausting memory on any resolution, crossing or `tzdb::zones` completion: an observance is read through its first 16384 onsets and a zone through 65536 in all, far above any real zone.
+
 ## [0.7.2] - 2026-11-19
 
 ### Fixed

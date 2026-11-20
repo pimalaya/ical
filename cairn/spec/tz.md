@@ -24,6 +24,20 @@ Every `DTSTART` inside an observance is local to the offset *before* the transit
 - WHEN any civil time is resolved
 - THEN that observance's offset is returned
 
+### Requirement: A zone is read through a bounded walk
+
+Reading a zone SHALL cost a bounded walk whatever its observances state. An observance SHALL be read through its first `IcalTzObservance::ONSETS_MAX` (16384) onsets, `IcalTzObservance::walk`, and past them as taking effect no more. One reading of a zone (`IcalTz::transitions`, which every resolution and crossing reads, and each step of a database completion) SHALL walk at most `IcalTz::TRANSITIONS_MAX` (65536) onsets over all its observances, in source order, an observance past that budget taking effect no more. No real zone comes near either bound: one shifting twice a year from 1601 to 9999 states 8399 onsets per observance, 16798 in all. What a zone past them answers is its own, deterministic and cheap, never one onset per second of its history.
+
+#### Scenario: An observance taking effect every second
+- GIVEN a `DAYLIGHT` observance from +0000 to +0100 with `RRULE:FREQ=SECONDLY` from `19700101T000000`, with or without `COUNT=4000000000`, and a `STANDARD` one from +0100 to +0000 at `19800101T000000`
+- WHEN noon on 1 June 2026 is resolved, held or through an event's timeline
+- THEN it answers +0000 in a fraction of a second and bounded memory, the daylight observance having stopped in 1970 and the standard one in force since 1980
+
+#### Scenario: A zone ruled from 1601
+- GIVEN America/New_York with both yearly rules starting in 1601
+- WHEN noon on 15 January and 1 July 9999 are resolved
+- THEN they answer -0500 and -0400, every real onset read
+
 ### Requirement: The gap and the fold are reported
 
 A local time a spring-forward skips SHALL be reported as skipped, and a local time a fall-back gives twice SHALL be reported as ambiguous with both candidate offsets. Neither SHALL be silently resolved to one answer.

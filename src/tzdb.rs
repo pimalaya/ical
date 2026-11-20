@@ -344,21 +344,31 @@ fn truncated(own: &IcalTz, database: &IcalTz, through: i32) -> Option<i64> {
 }
 
 /// A zone's observances cut to the onsets before an instant, each read as
-/// dated onsets up to the end of `through`.
+/// dated onsets up to the end of `through`, walking at most
+/// [`IcalTz::TRANSITIONS_MAX`] onsets in all.
 fn before(zone: &IcalTz, until: i64, through: i32) -> Vec<IcalTzObservance> {
-    zone.observances
-        .iter()
-        .filter_map(|observance| {
-            let onsets = observance
-                .onsets
-                .expand()
-                .map(|occurrence| occurrence.start)
-                .take_while(|onset| onset.year <= through)
-                .filter(|onset| onset.seconds() - i64::from(observance.from) < until);
+    let mut budget = IcalTz::TRANSITIONS_MAX;
+    let mut observances = Vec::new();
 
-            dated(observance, onsets)
-        })
-        .collect()
+    for observance in &zone.observances {
+        let mut onsets = Vec::new();
+
+        for onset in observance.walk().take(budget) {
+            budget -= 1;
+
+            if onset.year > through {
+                break;
+            }
+
+            if onset.seconds() - i64::from(observance.from) < until {
+                onsets.push(onset);
+            }
+        }
+
+        observances.extend(dated(observance, onsets.into_iter()));
+    }
+
+    observances
 }
 
 /// An observance holding the given onsets as dated ones, or none when no
@@ -388,18 +398,17 @@ fn dated(
 
 /// Whether daylight time and which offset observances put in force at an
 /// instant: the latest onset at or before it, else the offset the earliest
-/// says came before it, read as standard time.
+/// says came before it, read as standard time. At most
+/// [`IcalTz::TRANSITIONS_MAX`] onsets are walked in all.
 fn in_force(observances: &[IcalTzObservance], instant: i64) -> Option<(bool, i32)> {
+    let mut budget = IcalTz::TRANSITIONS_MAX;
     let mut latest: Option<(i64, bool, i32)> = None;
     let mut earliest: Option<(i64, bool, i32)> = None;
 
     for observance in observances {
-        let mut onsets = observance
-            .onsets
-            .expand()
-            .map(|occurrence| occurrence.start);
+        for onset in observance.walk().take(budget) {
+            budget -= 1;
 
-        for onset in onsets.by_ref() {
             let at = onset.seconds() - i64::from(observance.from);
 
             if earliest.is_none_or(|(first, ..)| at < first) {

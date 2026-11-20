@@ -257,6 +257,12 @@ impl IcalTzTransitions {
 }
 
 impl IcalTz {
+    /// The most transitions one reading of a zone walks, all its observances
+    /// together, which bounds what a hostile zone costs.
+    ///
+    /// A zone taking effect twice a year from 1601 to 9999 states 16798.
+    pub const TRANSITIONS_MAX: usize = 1 << 16;
+
     /// Read a `VTIMEZONE` component into its observances.
     ///
     /// `None` when the component is not a `VTIMEZONE` or carries no `TZID`: a
@@ -491,13 +497,20 @@ impl IcalTz {
     /// makes the list answer for the year itself: a fold reaches back from the
     /// transition that closes it, and a zone whose rules all start later still
     /// states the offset that came before them.
+    ///
+    /// Each observance is read through [`IcalTzObservance::walk`], and the
+    /// list holds at most [`TRANSITIONS_MAX`](Self::TRANSITIONS_MAX): an
+    /// observance past that budget, its source order deciding, is read as
+    /// taking effect no more.
     pub fn transitions(&self, through: i32) -> Vec<IcalTzTransition> {
         let mut transitions = Vec::new();
 
         for observance in &self.observances {
-            for onset in observance.onsets.expand() {
+            let budget = Self::TRANSITIONS_MAX - transitions.len();
+
+            for onset in observance.walk().take(budget) {
                 let transition = IcalTzTransition {
-                    local: onset.start,
+                    local: onset,
                     from: observance.from,
                     to: observance.to,
                 };
@@ -556,6 +569,22 @@ impl IcalTz {
 }
 
 impl IcalTzObservance {
+    /// The most onsets one observance is read through.
+    ///
+    /// A real one takes effect a few times a year at most, 8399 times from
+    /// 1601 to 9999, where `FREQ=SECONDLY` from 1970 would take billions.
+    pub const ONSETS_MAX: usize = 1 << 14;
+
+    /// The onsets it takes effect at, in order, the first
+    /// [`ONSETS_MAX`](Self::ONSETS_MAX) of them: past those it is read as
+    /// taking effect no more, so a reading costs a bounded walk.
+    pub fn walk(&self) -> impl Iterator<Item = IcalRecurDateTime> + '_ {
+        self.onsets
+            .expand()
+            .map(|onset| onset.start)
+            .take(Self::ONSETS_MAX)
+    }
+
     /// Read a `STANDARD` or `DAYLIGHT` component into an observance. `None` for
     /// anything else, and for one that states no offsets.
     pub fn of_component(component: &IcalComponent<'_>) -> Option<Self> {
